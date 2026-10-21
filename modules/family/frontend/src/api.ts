@@ -42,5 +42,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ delta }),
     }),
+  // 照片写回人员管理模块，由本模块后端转发。
+  setPhoto: (personId: number, photo: string) =>
+    request<{ personId: number; photo: string }>(`/api/family/members/${personId}/photo`, {
+      method: "PUT",
+      body: JSON.stringify({ photo }),
+    }),
   reset: () => request<void>("/api/family/scores", { method: "DELETE" }),
 };

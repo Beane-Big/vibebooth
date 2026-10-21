@@ -75,9 +75,9 @@ flowchart TB
 | `hello-frontend` | 示例模块前端（nginx） | 提供 `/apps/hello/` 下的页面 |
 | `hello-backend` | 示例模块后端（Go） | 提供 `/api/hello/` 下的接口；用 `core` 公开的公钥校验令牌，从而知道是谁在访问 |
 | `people-frontend` | 人员管理前端（React，nginx 提供） | 提供 `/apps/people/` 下的页面：增删改人员，上传头像 |
-| `people-backend` | 人员管理后端（Go + SQLite） | 对内接口 `/api/people/persons` 给自己的前端用；对外接口 `/api/people/ext/v1/persons` 给其他模块用，只返回 id、姓名、照片 |
+| `people-backend` | 人员管理后端（Go + SQLite） | 对内接口 `/api/people/persons` 给自己的前端用；对外接口 `/api/people/ext/v1/persons` 给其他模块用，只返回 id、姓名、照片，写操作只开放修改照片 |
 | `family-frontend` | 家庭优化大师前端（React，nginx 提供） | 提供 `/apps/family/` 的记分板和 `/apps/family/settings/` 的设置页 |
-| `family-backend` | 家庭优化大师后端（Go + SQLite） | 只存“人员 id → 分数”；人员名单和照片每次向 `people-backend` 的对外接口要 |
+| `family-backend` | 家庭优化大师后端（Go + SQLite） | 只存“人员 id → 分数”；人员名单和照片每次向 `people-backend` 的对外接口要，记分板上换的头像也通过对外接口写回人员管理 |
 
 ## 一次完整访问的过程
 
@@ -111,6 +111,8 @@ flowchart TB
 1. 浏览器请求 `/api/family/scores`，和其他模块请求一样先经过网关的登录校验，再到达 `family-backend`。
 2. `family-backend` 从自己的数据库里读出“人员 id → 分数”，再在内部网络里直接请求 `http://people-backend:8000/api/people/ext/v1/persons`，拿到人员名单和照片。
 3. 两边按人员 id 合并后返回给浏览器：人员模块里新加的人从 0 分开始，删掉的人不再显示。
+
+在记分板上点头像换照片时，浏览器把压缩后的照片发给 `/api/family/members/<人员id>/photo`，`family-backend` 再转给 `people-backend` 的 `PUT /api/people/ext/v1/persons/<人员id>/photo`。照片只存在人员管理里，人员管理页面和其他应用看到的都是同一张。
 
 几条规则：
 

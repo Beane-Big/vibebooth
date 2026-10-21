@@ -75,11 +75,17 @@
 /* 默认：上下排布（头像、名字、分数、按钮），尺寸全部用 cqmin，不设死最小值，小卡片不会被挤出去 */
 .in { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: space-evenly; min-width: 0; min-height: 0; }
 .info { display: contents; }
+.avatarWrap { position: relative; width: 30cqmin; height: 30cqmin; flex: none; }
 .avatar {
-  width: 30cqmin; height: 30cqmin; flex: none; border-radius: 50%; border: max(1px, 1cqmin) solid var(--bg);
-  overflow: hidden; display: block;
+  width: 100%; height: 100%; border-radius: 50%; border: max(1px, 1cqmin) solid var(--bg); padding: 0; cursor: pointer;
+  overflow: hidden; background: transparent; display: block;
 }
 .avatar img, .avatar svg { width: 100%; height: 100%; object-fit: cover; display: block; }
+.badge {
+  position: absolute; right: -1cqmin; bottom: 0; width: 9cqmin; height: 9cqmin; min-width: 16px; min-height: 16px;
+  border-radius: 50%; background: var(--fg); color: var(--bg); display: grid; place-items: center; pointer-events: none;
+}
+.badge svg { width: 58%; height: 58%; }
 .name {
   font-family: var(--font-display); font-size: max(12px, 9cqmin); line-height: 1.2; text-align: center; width: 100%; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px;
@@ -102,7 +108,8 @@
 @container (min-aspect-ratio: 8/5) {
   .in { flex-direction: row; justify-content: center; gap: 7cqh; }
   .info { display: flex; flex-direction: column; align-items: center; justify-content: space-evenly; height: 100%; width: 56cqh; min-width: 0; }
-  .avatar { width: 58cqh; height: 58cqh; }
+  .avatarWrap { width: 58cqh; height: 58cqh; }
+  .badge { width: 17cqh; height: 17cqh; }
   .name { font-size: max(12px, 15cqh); }
   .score { font-size: max(20px, 28cqh); }
   .btns { gap: 5cqh; }
@@ -129,7 +136,7 @@
   border: 2px solid var(--line); border-radius: 999px; padding: 5px 14px; cursor: pointer; touch-action: manipulation;
 }
 .tool:hover { color: var(--fg); border-color: var(--fg); }
-.tool:focus-visible, .btn:focus-visible { outline: 3px solid var(--star); outline-offset: 3px; }
+.tool:focus-visible, .btn:focus-visible, .avatar:focus-visible { outline: 3px solid var(--star); outline-offset: 3px; }
 
 @media (prefers-reduced-motion: reduce) {
   .pop, .float { animation: none; }

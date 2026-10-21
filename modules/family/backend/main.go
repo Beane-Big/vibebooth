@@ -31,6 +31,7 @@ func main() {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/family/scores", h.board)
 	api.HandleFunc("POST /api/family/scores/{personId}", h.change)
+	api.HandleFunc("PUT /api/family/members/{personId}/photo", h.setPhoto)
 	// 清零属于设置，只有管理员能做；门户只是对管理员显示设置入口，权限以这里为准。
 	api.HandleFunc("DELETE /api/family/scores", requireAdmin(h.reset))
 
@@ -130,6 +131,35 @@ func (h *handlers) change(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"personId": personID, "score": score})
+}
+
+// setPhoto 在记分板上点头像换照片；照片写回人员管理模块，其他应用也会看到新头像。
+func (h *handlers) setPhoto(w http.ResponseWriter, r *http.Request) {
+	personID, err := strconv.ParseInt(r.PathValue("personId"), 10, 64)
+	if err != nil || personID <= 0 {
+		writeError(w, http.StatusBadRequest, "personId 无效")
+		return
+	}
+	var in struct {
+		Photo string `json:"photo"`
+	}
+	// 照片由前端压缩到几十 KB，人员模块限制 300 KB，这里留一点余量。
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 320<<10)).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	p, err := h.people.SetPhoto(r.Context(), personID, in.Photo)
+	switch {
+	case errors.Is(err, errPersonNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, errInvalidPhoto):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case err != nil:
+		slog.Warn("修改头像失败", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "人员管理暂时不可用，请稍后再试")
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{"personId": p.ID, "photo": p.Photo})
+	}
 }
 
 func (h *handlers) reset(w http.ResponseWriter, r *http.Request) {

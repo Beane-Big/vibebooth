@@ -107,6 +107,18 @@ func (s *Store) Update(ctx context.Context, id int64, name, note, photo string) 
 	return s.Get(ctx, id)
 }
 
+func (s *Store) UpdatePhoto(ctx context.Context, id int64, photo string) (*Person, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE people SET photo = ?, updated_at = ? WHERE id = ?`, photo, time.Now().UTC(), id)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, errNotFound
+	}
+	return s.Get(ctx, id)
+}
+
 func (s *Store) Delete(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM people WHERE id = ?`, id)
 	if err != nil {

@@ -30,6 +30,30 @@ paths:
               schema: { $ref: "#/components/schemas/Person" }
         "404":
           description: 人员不存在
+  /api/people/ext/v1/persons/{id}/photo:
+    put:
+      summary: 修改一个人员的头像（只改照片，不改其他信息）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo: { type: string, description: JPEG 的 data URL，不超过 300 KB；空字符串表示去掉照片 }
+      responses:
+        "200":
+          description: 修改后的人员信息
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Person" }
+        "400":
+          description: 照片格式不对或太大
+        "404":
+          description: 人员不存在
 components:
   schemas:
     Person:

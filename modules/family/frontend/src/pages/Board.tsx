@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { api, type Member } from "../api";
+import { resizePhoto } from "../photo";
 import { playSound, watchBlocked } from "../sound";
 import s from "./Board.module.css";
 
@@ -39,6 +40,8 @@ export default function Board() {
 
   const cards = useRef(new Map<number, HTMLElement>());
   const scoreEls = useRef(new Map<number, HTMLElement>());
+  const fileInput = useRef<HTMLInputElement>(null);
+  const photoFor = useRef<number | null>(null); // 正在给谁换照片
   // 还没提交的加减分，以及正在提交中的请求数；有这两样时不用服务器的分数覆盖本地显示。
   const pending = useRef(new Map<number, number>());
   const inflight = useRef(new Map<number, number>());
@@ -168,6 +171,24 @@ export default function Board() {
     scheduleSort();
   }
 
+  function pickPhoto(personId: number) {
+    photoFor.current = personId;
+    fileInput.current?.click();
+  }
+
+  async function changePhoto(file: File | undefined) {
+    const personId = photoFor.current;
+    photoFor.current = null;
+    if (!file || personId === null) return;
+    try {
+      const res = await api.setPhoto(personId, await resizePhoto(file));
+      setMembers((ms) => ms && ms.map((m) => (m.personId === personId ? { ...m, photo: res.photo } : m)));
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "换照片失败");
+    }
+  }
+
   function toggleSound() {
     const next = !sound;
     setSound(next);
@@ -217,9 +238,14 @@ export default function Board() {
             >
               {top > 0 && m.score === top && <span className={s.crown}>榜首</span>}
               <div className={s.in}>
-                <span className={s.avatar}>
-                  {m.photo ? <img src={m.photo} alt={`${m.name}的照片`} /> : <Face hue={hueOf(m.personId)} />}
-                </span>
+                <div className={s.avatarWrap}>
+                  <button className={s.avatar} type="button" aria-label="更换照片" onClick={() => pickPhoto(m.personId)} disabled={!peopleAvailable}>
+                    {m.photo ? <img src={m.photo} alt={`${m.name}的照片`} /> : <Face hue={hueOf(m.personId)} />}
+                  </button>
+                  <span className={s.badge}>
+                    <CameraIcon />
+                  </span>
+                </div>
                 <div className={s.info}>
                   <div className={s.name}>{m.name || `#${m.personId}`}</div>
                   <div
@@ -268,6 +294,16 @@ export default function Board() {
           {!sound ? "声音：关" : blocked ? "声音：开（浏览器没放行，再点一下）" : "声音：开"}
         </button>
       </div>
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          changePhoto(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
     </div>
   );
 }
@@ -320,6 +356,15 @@ function HoldButton({ className, label, text, onStep }: { className: string; lab
     >
       {text}
     </button>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 8h4l2-3h6l2 3h4v11H3z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </svg>
   );
 }
 

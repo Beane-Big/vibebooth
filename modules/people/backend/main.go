@@ -44,6 +44,7 @@ func main() {
 	// 目前没有服务令牌，内部网络里的任何容器都能调用，所以只返回其他模块需要的字段（不含备注）。
 	mux.HandleFunc("GET /api/people/ext/v1/persons", h.extList)
 	mux.HandleFunc("GET /api/people/ext/v1/persons/{id}", h.extGet)
+	mux.HandleFunc("PUT /api/people/ext/v1/persons/{id}/photo", h.extSetPhoto)
 	mux.Handle("/api/people/", verifier.Middleware(api))
 
 	srv := &http.Server{Addr: ":8000", Handler: mux, ReadHeaderTimeout: 10 * time.Second}
@@ -149,11 +150,16 @@ func readPersonInput(w http.ResponseWriter, r *http.Request) (personInput, bool)
 	case utf8.RuneCountInString(in.Note) > 200:
 		writeError(w, http.StatusBadRequest, "备注不能超过 200 个字")
 		return in, false
-	case in.Photo != "" && (!strings.HasPrefix(in.Photo, photoPrefix) || len(in.Photo) > maxPhotoSize):
+	case !validPhoto(in.Photo):
 		writeError(w, http.StatusBadRequest, "照片格式不对或太大")
 		return in, false
 	}
 	return in, true
+}
+
+// validPhoto 允许空（表示没有照片），或者不超过 maxPhotoSize 的 JPEG data URL。
+func validPhoto(photo string) bool {
+	return photo == "" || (strings.HasPrefix(photo, photoPrefix) && len(photo) <= maxPhotoSize)
 }
 
 // ---- 对外接口 v1（契约见 contracts/openapi.yaml）----
@@ -184,6 +190,35 @@ func (h *handlers) extGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, err := h.store.Get(r.Context(), id)
+	if errors.Is(err, errNotFound) {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, extPerson{ID: p.ID, Name: p.Name, Photo: p.Photo})
+}
+
+// extSetPhoto 让其他模块（如家庭优化大师）替人员换头像，只能改照片，不能改其他信息。
+func (h *handlers) extSetPhoto(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		Photo string `json:"photo"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPhotoSize+4096)).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	if !validPhoto(in.Photo) {
+		writeError(w, http.StatusBadRequest, "照片格式不对或太大")
+		return
+	}
+	p, err := h.store.UpdatePhoto(r.Context(), id, in.Photo)
 	if errors.Is(err, errNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
