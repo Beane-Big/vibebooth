@@ -1,0 +1,23 @@
+# hello 模块的服务定义，由根目录 docker-compose.yml 通过 include 引入。
+services:
+  hello-backend:
+    build:
+      context: ../..
+      dockerfile: modules/hello/backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      JWKS_URL: http://core:8080/api/platform/.well-known/jwks.json
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.hello-api.rule=PathPrefix(`/api/hello/`)
+      - traefik.http.routers.hello-api.middlewares=platform-auth@docker
+      - traefik.http.services.hello-api.loadbalancer.server.port=8000
+
+  hello-frontend:
+    build: ./frontend
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.hello-web.rule=PathPrefix(`/apps/hello/`)
+      - traefik.http.routers.hello-web.middlewares=platform-auth@docker
+      - traefik.http.services.hello-web.loadbalancer.server.port=80

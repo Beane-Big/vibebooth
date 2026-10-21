@@ -1,0 +1,90 @@
+# 平台本体：网关、Docker 代理、PostgreSQL、平台核心、门户。
+# 各模块的服务写在 modules/<id>/compose.yaml 里，通过下面的 include 引入。
+name: home-platform
+
+include:
+  - modules/hello/compose.yaml
+
+services:
+  traefik:
+    image: traefik:v3.6
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=platform
+      - --entrypoints.web.address=:80
+      - --log.level=INFO
+    ports:
+      - "${PUBLIC_PORT:-8080}:80"
+    networks: [default, socket]
+    depends_on: [socket-proxy]
+
+  # Traefik 只需要读容器列表；通过代理只开放这一项，不把整个 Docker 交给它。
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      # 部分环境（如未开 IPv6 的 WSL2）监听 IPv6 会启动失败。
+      DISABLE_IPV6: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [socket]
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: platform
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      interval: 5s
+      retries: 10
+
+  core:
+    build: ./core
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://platform:${POSTGRES_PASSWORD}@postgres:5432/platform
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    volumes:
+      - core-data:/data
+      - ./modules:/modules:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.core.rule=PathPrefix(`/api/platform/`)
+      - traefik.http.services.core.loadbalancer.server.port=8080
+      # 所有模块路由都引用这个中间件：先问平台核心是否已登录、能否访问该模块。
+      - traefik.http.middlewares.platform-auth.forwardauth.address=http://core:8080/api/platform/auth/verify
+      - traefik.http.middlewares.platform-auth.forwardauth.authResponseHeaders=Authorization,X-User-Id,X-User-Roles
+
+  portal:
+    build: ./portal
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      # 未被任何模块认领的 /api/ 请求应返回 404，而不是门户页面。
+      - traefik.http.routers.portal.rule=PathPrefix(`/`) && !PathPrefix(`/api/`)
+      - traefik.http.routers.portal.priority=1
+      - traefik.http.services.portal.loadbalancer.server.port=80
+
+networks:
+  default:
+    name: platform
+  socket:
+    internal: true
+
+volumes:
+  pgdata:
+  core-data:
