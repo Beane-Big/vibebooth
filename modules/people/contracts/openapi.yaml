@@ -1,0 +1,41 @@
+openapi: 3.1.0
+info:
+  title: people 对外接口
+  version: 1.0.0
+  description: |
+    给其他模块后端在内部网络里调用，基础地址 http://people-backend:8000。
+    网关不转发 /api/people/ext/，浏览器访问不到。目前不需要令牌。
+paths:
+  /api/people/ext/v1/persons:
+    get:
+      summary: 列出全部人员
+      responses:
+        "200":
+          description: 人员列表，按 id 升序
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Person" }
+  /api/people/ext/v1/persons/{id}:
+    get:
+      summary: 查询一个人员
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: 人员信息
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Person" }
+        "404":
+          description: 人员不存在
+components:
+  schemas:
+    Person:
+      type: object
+      required: [id, name, photo]
+      properties:
+        id: { type: integer, description: 人员 id，其他模块只保存它 }
+        name: { type: string, description: 姓名 }
+        photo: { type: string, description: 头像，JPEG 的 data URL；没有时为空字符串 }

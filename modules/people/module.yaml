@@ -1,0 +1,10 @@
+# 模块清单：门户和网关靠它认识这个模块。
+id: people               # 全局唯一，必须与目录名一致，也是路径前缀
+name: 人员管理
+description: 维护家庭成员等人员信息，供其他应用使用
+icon: icon.svg
+version: 0.1.0
+frontend: /apps/people/
+backend: http://people-backend:8000
+health: /api/people/health
+roles: [user]            # 哪些角色能在门户里看到并打开它

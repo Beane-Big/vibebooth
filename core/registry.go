@@ -26,6 +26,9 @@ type Module struct {
 	Backend     string   `yaml:"backend"`
 	Health      string   `yaml:"health"`
 	Roles       []string `yaml:"roles"`
+	// Settings 是模块自己的设置页地址，门户的“设置”页汇总这些入口；不填表示没有设置页。
+	Settings      string   `yaml:"settings"`
+	SettingsRoles []string `yaml:"settingsRoles"`
 
 	dir string
 }
@@ -93,6 +96,13 @@ func readModule(path string) (*Module, error) {
 	if len(m.Roles) == 0 {
 		m.Roles = []string{"user"}
 	}
+	// 设置页必须在模块自己的前端路径下，防止清单把门户入口指向别的模块或外部网站。
+	if m.Settings != "" && (!strings.HasPrefix(m.Settings, m.Frontend) || strings.Contains(m.Settings, "..")) {
+		return nil, errInvalid("settings 必须以 frontend 路径开头")
+	}
+	if len(m.SettingsRoles) == 0 {
+		m.SettingsRoles = []string{"admin"}
+	}
 	return &m, nil
 }
 
@@ -126,6 +136,8 @@ type appView struct {
 	URL         string `json:"url"`
 	Icon        string `json:"icon,omitempty"`
 	Healthy     bool   `json:"healthy"`
+	// SettingsURL 只在用户有权查看该模块设置时返回。门户只负责展示入口，设置接口的权限仍由模块自己校验。
+	SettingsURL string `json:"settingsUrl,omitempty"`
 }
 
 // handleApps 返回当前用户有权限的应用，并并发检查各模块健康状态。
@@ -142,6 +154,9 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) 
 		views[i] = appView{ID: m.ID, Name: m.Name, Description: m.Description, Version: m.Version, URL: m.Frontend}
 		if m.Icon != "" {
 			views[i].Icon = "/api/platform/apps/" + m.ID + "/icon"
+		}
+		if m.Settings != "" && hasAnyRole(user.Roles, m.SettingsRoles) {
+			views[i].SettingsURL = m.Settings
 		}
 		wg.Add(1)
 		go func(i int, m *Module) {

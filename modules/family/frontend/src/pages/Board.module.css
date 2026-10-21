@@ -1,0 +1,137 @@
+/* 记分板沿用原“家长评分榜”的样式：满屏应用，竖屏 2 列、横屏 3 列，行数随人数变化；
+   卡片内所有尺寸跟随卡片大小缩放，卡片又宽又矮时改为左右排布；底部一条细工具栏。
+   用 CSS Modules 隔离类名，避免和设置页的通用样式（.card 等）互相影响。 */
+.board {
+  --bg: #e6f3ff;
+  --fg: #23305a;
+  --muted: #5d6b94;
+  --card-s: 85%;
+  --card-l: 90%;
+  --plus: #0f8a55;
+  --minus: #7c4dff;
+  --star: #ffb400;
+  --line: rgba(35, 48, 90, 0.2);
+  --btn-fg: #ffffff;
+  --font-display: "ZCOOL KuaiLe", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  --font-body: "Nunito", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-block: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+@media (prefers-color-scheme: dark) {
+  .board {
+    --bg: #131a38; --fg: #eef2ff; --muted: #a4b0d8;
+    --card-s: 38%; --card-l: 24%;
+    --plus: #2fc98a; --minus: #a58bff; --star: #ffcb3d;
+    --line: rgba(238, 242, 255, 0.28); --btn-fg: #10172f;
+    color-scheme: dark;
+  }
+}
+
+.grid {
+  flex: 1 1 0;
+  min-height: 420px;
+  display: grid;
+  gap: clamp(8px, 1.8vmin, 20px);
+  grid-template-columns: repeat(var(--cols-p), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows-p), minmax(0, 1fr));
+}
+
+@media (orientation: landscape) {
+  .grid {
+    min-height: 260px;
+    grid-template-columns: repeat(var(--cols-l), minmax(0, 1fr));
+    grid-template-rows: repeat(var(--rows-l), minmax(0, 1fr));
+  }
+}
+
+.card {
+  --h: 200;
+  position: relative;
+  overflow: hidden;
+  container-type: size;
+  background: hsl(var(--h) var(--card-s) var(--card-l));
+  border-radius: 8cqmin;
+  padding: 3cqmin 4cqmin;
+  min-width: 0;
+  min-height: 0;
+}
+
+.crown {
+  position: absolute; top: 5cqmin; left: 8cqmin; z-index: 1; font-family: var(--font-display); font-size: max(10px, 4.5cqmin); line-height: 1.3;
+  background: var(--star); color: #4a3200; border-radius: 999px; padding: 0.4cqmin 3cqmin;
+}
+
+/* 默认：上下排布（头像、名字、分数、按钮），尺寸全部用 cqmin，不设死最小值，小卡片不会被挤出去 */
+.in { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: space-evenly; min-width: 0; min-height: 0; }
+.info { display: contents; }
+.avatar {
+  width: 30cqmin; height: 30cqmin; flex: none; border-radius: 50%; border: max(1px, 1cqmin) solid var(--bg);
+  overflow: hidden; display: block;
+}
+.avatar img, .avatar svg { width: 100%; height: 100%; object-fit: cover; display: block; }
+.name {
+  font-family: var(--font-display); font-size: max(12px, 9cqmin); line-height: 1.2; text-align: center; width: 100%; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px;
+}
+.score { font-family: var(--font-display); font-size: max(20px, 21cqmin); line-height: 1; font-variant-numeric: tabular-nums; }
+.pop { animation: pop 0.45s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.35) rotate(-4deg); } 100% { transform: scale(1); } }
+.btns { display: flex; gap: 5cqmin; flex: none; }
+.btn {
+  width: max(28px, 18cqmin); height: max(28px, 18cqmin); border-radius: 50%; border: 0; cursor: pointer; color: var(--btn-fg);
+  font-family: var(--font-display); font-size: max(18px, 12cqmin); line-height: 1; display: grid; place-items: center; padding: 0;
+  box-shadow: 0 1.2cqmin 0 rgba(0, 0, 0, 0.22); transition: transform 0.08s, box-shadow 0.08s; touch-action: manipulation;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.btn:active { transform: translateY(1cqmin); box-shadow: 0 0.3cqmin 0 rgba(0, 0, 0, 0.22); }
+.plus { background: var(--plus); }
+.minus { background: var(--minus); }
+
+/* 卡片又宽又矮时：头像在左，名字、分数、按钮在右，尺寸改按卡片高度算 */
+@container (min-aspect-ratio: 8/5) {
+  .in { flex-direction: row; justify-content: center; gap: 7cqh; }
+  .info { display: flex; flex-direction: column; align-items: center; justify-content: space-evenly; height: 100%; width: 56cqh; min-width: 0; }
+  .avatar { width: 58cqh; height: 58cqh; }
+  .name { font-size: max(12px, 15cqh); }
+  .score { font-size: max(20px, 28cqh); }
+  .btns { gap: 5cqh; }
+  .btn { width: max(28px, 23cqh); height: max(28px, 23cqh); font-size: max(18px, 15cqh); }
+  .crown { top: 4cqh; left: 4cqh; font-size: max(10px, 9cqh); }
+}
+
+.float {
+  position: absolute; left: 50%; top: 55%; pointer-events: none; font-family: var(--font-display); font-size: 11cqmin;
+  animation: rise 0.9s ease-out forwards;
+}
+.up { color: var(--star); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.18); }
+.down { color: var(--minus); }
+@keyframes rise { from { transform: translate(var(--dx, -50%), 0) scale(0.7); opacity: 1; } to { transform: translate(var(--dx, -50%), -32cqmin) scale(1.3); opacity: 0; } }
+
+.empty { flex: 1; display: grid; place-items: center; text-align: center; color: var(--muted); }
+.empty a { color: var(--fg); }
+
+.bar { flex: none; display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 36px; }
+.spacer { flex: 1; }
+.warn { font-weight: 900; font-size: 13px; color: var(--minus); }
+.tool {
+  font: inherit; font-weight: 900; font-size: 13px; color: var(--muted); background: transparent; text-decoration: none;
+  border: 2px solid var(--line); border-radius: 999px; padding: 5px 14px; cursor: pointer; touch-action: manipulation;
+}
+.tool:hover { color: var(--fg); border-color: var(--fg); }
+.tool:focus-visible, .btn:focus-visible { outline: 3px solid var(--star); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pop, .float { animation: none; }
+  .float { display: none; }
+}

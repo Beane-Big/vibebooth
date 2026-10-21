@@ -13,6 +13,7 @@ export type App = {
   url: string;
   icon?: string;
   healthy: boolean;
+  settingsUrl?: string;
 };
 
 export class ApiError extends Error {

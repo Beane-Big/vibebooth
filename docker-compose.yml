@@ -4,6 +4,8 @@ name: home-platform
 
 include:
   - modules/hello/compose.yaml
+  - modules/people/compose.yaml
+  - modules/family/compose.yaml
 
 services:
   traefik:

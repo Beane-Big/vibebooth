@@ -2,7 +2,7 @@
 
 一个在家里电脑上运行的多应用平台：登录一次门户，就能打开各个独立的应用模块。设计说明见[架构设计文档](https://claude.ai/code/artifact/41500730-289a-40bb-9a1a-9f922d44d355)。部署步骤见 [DEPLOY.md](DEPLOY.md)，架构原理见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-当前是第 1 阶段骨架：网关、登录、门户和一个示例模块 `hello`。
+当前是第 1 阶段骨架（网关、登录、门户、示例模块 `hello`），加上两个实际应用：人员管理 `people` 和家庭优化大师 `family`。
 
 ## 组成
 
@@ -10,15 +10,19 @@
 | --- | --- |
 | `docker-compose.yml` | 网关 Traefik、Docker 代理、PostgreSQL、平台核心、门户 |
 | `core/` | 平台核心（Go）：登录与会话、给网关做登录校验、签发模块令牌、应用注册表 |
-| `portal/` | 门户前端（React + Vite）：登录页、应用列表 |
+| `portal/` | 门户前端（React + Vite）：登录页、应用列表、设置入口 |
 | `packages/sdk-go/` | 模块后端用的 Go SDK，目前提供令牌校验 |
 | `modules/hello/` | 示例模块：`module.yaml` 清单、`compose.yaml`、前端和后端 |
+| `modules/people/` | 人员管理（React + Go + SQLite）：维护人员和头像，通过对外接口提供给其他模块 |
+| `modules/family/` | 家庭优化大师（React + Go + SQLite）：家庭成员记分板，人员来自 `people` |
 
 请求路径约定：
 
 - `/` 门户
 - `/api/platform/` 平台核心接口
 - `/apps/<模块id>/` 模块前端，`/api/<模块id>/` 模块后端；都要先登录，并且用户角色要在模块清单的 `roles` 里
+- `/api/<模块id>/ext/v1/` 模块的对外接口，只给其他模块后端在内部网络里调用，网关不转发
+- `/settings` 门户的设置页，汇总模块清单里 `settings` 声明的设置页入口
 
 ## 第一次启动
 
@@ -32,7 +36,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-浏览器打开 <http://localhost:8080>，用 `.env` 里的管理员账号登录，应该能看到“你好”应用。
+浏览器打开 <http://localhost:8080>，用 `.env` 里的管理员账号登录，应该能看到“你好”“人员管理”“家庭优化大师”三个应用。
 
 常用命令：
 
@@ -55,7 +59,7 @@ docker compose down               # 停止（数据保留在卷里）
 
 网页安装在第 4 阶段实现，现在先手工添加：
 
-1. 复制 `modules/hello` 为 `modules/<新id>`，把 `module.yaml`、`compose.yaml`、代码里的 `hello` 都换成新 id。
+1. 复制 `modules/hello` 为 `modules/<新id>`，把 `module.yaml`、`compose.yaml`、代码里的 `hello` 都换成新 id。需要 React 前端、自己的数据库或设置页时，参照 `modules/family`。
 2. 在根目录 `docker-compose.yml` 的 `include` 里加上 `modules/<新id>/compose.yaml`。
 3. `docker compose up -d --build` 启动新模块，再 `docker compose restart core` 让平台核心重新扫描模块清单，门户里就会出现它。
 

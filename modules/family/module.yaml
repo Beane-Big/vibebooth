@@ -1,0 +1,12 @@
+# 模块清单：门户和网关靠它认识这个模块。
+id: family               # 全局唯一，必须与目录名一致，也是路径前缀
+name: 家庭优化大师
+description: 家庭成员积分排行榜，记录每一次加分和减分
+icon: icon.svg
+version: 0.1.0
+frontend: /apps/family/
+backend: http://family-backend:8000
+health: /api/family/health
+roles: [user]            # 哪些角色能在门户里看到并打开它
+settings: /apps/family/settings/  # 门户“设置”页里的入口
+settingsRoles: [admin]   # 哪些角色能在门户里看到设置入口

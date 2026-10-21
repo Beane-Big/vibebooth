@@ -3,7 +3,7 @@ import { api, ApiError, type User } from "./api";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 
-// 门户只有两个页面，用路径区分即可，不引入路由库。
+// 门户只有登录、应用、设置三个页面，用路径区分即可，不引入路由库。
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
