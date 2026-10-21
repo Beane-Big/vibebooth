@@ -1,6 +1,6 @@
 # home-platform
 
-一个在家里电脑上运行的多应用平台：登录一次门户，就能打开各个独立的应用模块。设计说明见[架构设计文档](https://claude.ai/code/artifact/41500730-289a-40bb-9a1a-9f922d44d355)。
+一个在家里电脑上运行的多应用平台：登录一次门户，就能打开各个独立的应用模块。设计说明见[架构设计文档](https://claude.ai/code/artifact/41500730-289a-40bb-9a1a-9f922d44d355)。部署步骤见 [DEPLOY.md](DEPLOY.md)，架构原理见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 当前是第 1 阶段骨架：网关、登录、门户和一个示例模块 `hello`。
 
