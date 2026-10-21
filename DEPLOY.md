@@ -103,6 +103,16 @@ cd ~/home-platform
 >
 > 代码要放在 `~/home-platform`，不要放在 `/mnt/c/` 下面，那里读写慢，也容易出权限问题。想用 Windows 资源管理器查看这些文件，在项目文件夹里运行 `explorer.exe .` 就行。
 
+**令牌找不到了怎么办：** 令牌只在生成时显示一次，之后 GitHub 不会再显示。丢了就按上面的步骤重新生成一个，旧的可以在 <https://github.com/settings/personal-access-tokens> 里删掉。
+
+**不想每次都输入令牌（可选）：** 在 Ubuntu 里执行一次：
+
+```bash
+git config --global credential.helper store
+```
+
+下次 clone 或 pull 时输入一次，之后就会记住。注意令牌会以明文保存在 `~/.git-credentials`。令牌只有这个仓库的只读权限，风险不大，但在公司电脑上要自己判断要不要用。
+
 ## 第 5 步：填配置文件 .env
 
 `.env` 是一个写设置的文本文件，这一步只需要填两个密码：
@@ -152,6 +162,29 @@ grep PASSWORD .env
 
 4. 在浏览器里打开 **http://localhost:8080**，用户名填 `admin`，密码填第 5 步设置的管理员密码。
 5. 能看到“你好”“人员管理”“家庭优化大师”三个应用并且能点开，就部署成功了。先在“人员管理”里添加家庭成员，家庭优化大师的记分板上就会出现他们。部署完之后可以把代理软件切回规则模式。
+
+## 代码更新后重新部署
+
+Windows 上的 `C:\Users\huang\Documents\code\个人\home-platform` 和 Ubuntu 里的 `~/home-platform` 是**两份独立的仓库**。在 Windows 上改了代码，要先推送到 GitHub，再拉到 Ubuntu 里重新构建。
+
+1. 在 Windows（Git Bash 或 PowerShell）里推送：
+
+   ```bash
+   cd "C:\Users\huang\Documents\code\个人\home-platform"
+   git push
+   ```
+
+2. 在 Ubuntu 里拉取并重新构建：
+
+   ```bash
+   cd ~/home-platform
+   git pull
+   docker compose up -d --build
+   ```
+
+- `git pull` 要求输入时，用户名填 `Beane-Big`，密码填第 4 步的只读令牌。
+- 代理保持 **TUN + 全局** 模式，因为新代码可能要下载新的依赖。
+- 完成后运行 `docker compose ps`，确认各服务都是 Up。
 
 ---
 
