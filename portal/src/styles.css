@@ -157,3 +157,69 @@ button.link {
 }
 
 .tab.active { background: var(--bg); color: var(--text); font-weight: 600; }
+
+/* 应用管理页和用户页 */
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.stack-sm { display: flex; flex-direction: column; gap: 10px; }
+.section { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.section h2 { margin: 0; font-size: 17px; }
+.section h3 { margin: 8px 0 0; font-size: 15px; }
+.section label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.section label.checkbox { flex-direction: row; align-items: center; gap: 8px; }
+.success { color: var(--accent); font-size: 14px; margin: 0; }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.row input:not([type="checkbox"]) { flex: 1; min-width: 180px; }
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+button.secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 8px 14px; font-size: 14px; }
+button.danger { background: var(--danger); padding: 8px 14px; font-size: 14px; }
+button.plain { background: none; color: inherit; padding: 0; text-align: left; font-size: inherit; }
+
+.list { list-style: none; margin: 0; padding: 0; }
+
+.list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.list-item:first-child { border-top: 0; }
+.list-item.selected .app-name { color: var(--accent); }
+.list-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+
+.tag {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.menu-group { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid var(--border); }
+
+pre.log {
+  margin: 8px 0 0;
+  padding: 12px;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+code { font-size: 13px; }
+
+/* 手机上标签较多时允许换行 */
+.topbar { flex-wrap: wrap; }
