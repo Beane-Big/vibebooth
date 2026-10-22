@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, isAdmin, type MenuGrant, type User, type UserMenus } from "../api";
 
-// 用户页：给家人开账号、重置密码、停用账号，并按人勾选能看到哪些应用的哪些菜单。
+// 用户页：给使用者开账号、重置密码、停用账号，并按人勾选能看到哪些应用的哪些菜单。
 export default function Users({ me }: { me: User }) {
   const [users, setUsers] = useState<User[] | null>(null);
   const [error, setError] = useState("");

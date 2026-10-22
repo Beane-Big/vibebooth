@@ -32,7 +32,7 @@ export default function Layout({
   return (
     <>
       <header className="topbar">
-        <span className="title">家庭应用门户</span>
+        <span className="title">Vibebooth</span>
         <nav className="tabs">
           {tabs
             .filter((t) => t.shown)

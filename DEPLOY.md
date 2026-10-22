@@ -1,6 +1,6 @@
 # Vibebooth 部署文档（Windows + WSL）
 
-整个流程分 6 步，顺利的话 1 小时内能在浏览器里打开 `http://localhost:8080` 并登录。如果之前已经按旧版本部署过，代码更新后先看文末的“从旧版本迁移”。
+整个流程分 6 步，顺利的话 1 小时内能在浏览器里打开 `http://localhost:8080` 并登录。
 
 1. 装 WSL（Windows 里的 Ubuntu）
 2. 在 Ubuntu 里装 Docker
@@ -83,7 +83,7 @@ failed to fetch anonymous token ... EOF
 
 1. 打开 <https://github.com/settings/personal-access-tokens/new>
 2. Token name 随便填，例如 `home-pc`；Expiration 选 30 天。
-3. Repository access 选 **Only select repositories**，然后选 `vibebooth`（以前叫 home-platform）、`vibebooth-module-people` 和 `vibebooth-module-family-score`。以后新建了模块仓库，也要回到这里把它加上。
+3. Repository access 选 **Only select repositories**，然后选 `vibebooth`（以前叫 home-platform），再选上要安装的各个模块仓库。以后新建了模块仓库，也要回到这里把它加上。
 4. 在 Permissions 里把 **Contents** 设为 **Read-only**。
 5. 点 Generate token，**马上复制**。离开这个页面后就再也看不到了。
 
@@ -166,20 +166,20 @@ grep PASSWORD .env
    sudo apt-get install -y nodejs
    ```
 
-   然后下载并安装两个模块。`people` 要先装，家庭优化大师（模块 id `family-score`）依赖它。`npm run install:local` 会在本地构建镜像、打包，再交给安装器安装，最后一行显示“已就绪”就成功了：
+   然后对每个要安装的模块，下载它的仓库并运行 `npm run install:local`。它会在本地构建镜像、打包，再交给安装器安装，最后一行显示“已就绪”就成功了。一个模块的 `module.yaml` 里写了 `requires` 时，要先装它依赖的模块：
 
    ```bash
    cd ~
-   git clone https://github.com/Beane-Big/vibebooth-module-people.git
-   git clone https://github.com/Beane-Big/vibebooth-module-family-score.git
-   cd ~/vibebooth-module-people && npm run install:local
-   cd ~/vibebooth-module-family-score && npm run install:local
+   git clone https://github.com/Beane-Big/<模块仓库>.git
+   cd ~/<模块仓库> && npm run install:local
    ```
+
+   已经有模块包（zip）的话，也可以跳过这一条，第 5 步登录后在“应用管理”页上传。
 
    构建时要从私有的平台仓库下载 SDK，用的是 git 记住的令牌（第 4 步最后的可选设置）；没让 git 记住的话，先运行 `export VIBEBOOTH_GITHUB_TOKEN=<令牌>`。
 
 5. 在浏览器里打开 **http://localhost:8080**，用户名填 `admin`，密码填第 5 步设置的管理员密码。
-6. 能看到“人员管理”“家庭优化大师”两个应用并且能点开，就部署成功了。先在“人员管理”里添加家庭成员，家庭优化大师的记分板上就会出现他们。要给家人开账号，在顶部的“用户”页里新建。部署完之后可以把代理软件切回规则模式。
+6. 能看到装好的应用并且能点开，就部署成功了。要给其他人开账号，在顶部的“用户”页里新建。部署完之后可以把代理软件切回规则模式。
 
 ## 代码更新后重新部署
 
@@ -201,31 +201,12 @@ Windows 上的 `C:\Users\<你的用户名>\...\home-platform` 和 Ubuntu 里的 
 
 3. 看改的是哪部分：
    - **改了平台本体**（`core/`、`portal/`、`installer/`、`packages/`、`docker-compose.yml`）：运行 `docker compose up -d --build`。只重建平台本体，模块不受影响。
-   - **改了某个模块**：模块在自己的仓库里，同样先推送、再在 Ubuntu 里 `cd ~/vibebooth-module-<名字>` 并 `git pull`。确认 `module.yaml` 的 `version` 已经改大，再运行 `npm run install:local`，只升级这一个模块，期间它会中断几秒。也可以运行 `npm run pack`，把 `dist/` 里生成的 zip 在门户“应用管理”页上传。
+   - **改了某个模块**：模块在自己的仓库里，同样先推送、再在 Ubuntu 里 `cd ~/<模块仓库>` 并 `git pull`。确认 `module.yaml` 的 `version` 已经改大，再运行 `npm run install:local`，只升级这一个模块，期间它会中断几秒。也可以运行 `npm run pack`，把 `dist/` 里生成的 zip 在门户“应用管理”页上传。
 
 - 仓库已经从 home-platform 改名为 vibebooth，旧地址会自动跳转到新地址。想换成新地址，就在 Windows 和 Ubuntu 的仓库里各运行一次 `git remote set-url origin https://github.com/Beane-Big/vibebooth.git`。本地文件夹名不用改。
 - `git pull` 要求输入时，用户名填 `Beane-Big`，密码填第 4 步的只读令牌。
 - 代理保持 **TUN + 全局** 模式，因为新代码可能要下载新的依赖。
 - 完成后运行 `docker compose ps` 和 `scripts/module list`，确认平台本体都是 Up、模块都是 `"healthy": true`。
-
-## 从旧版本迁移（只做一次）
-
-旧版本里模块写在根目录 `docker-compose.yml` 的 `include` 里，和平台本体是同一个 Compose 项目；新版本里每个模块由安装器单独安装。人员和分数存在卷里，卷名会从 `home-platform_people-data` 变成 `mod-people_people-data`，所以要拷一次数据。登录账号在 postgres 里，不受影响。
-
-```bash
-cd ~/home-platform
-git pull
-# 1. 重建平台本体，并删掉旧的模块容器（--remove-orphans），旧的数据卷还在
-docker compose up -d --build --remove-orphans
-# 2. 把人员管理和家庭优化大师的数据拷到新卷，旧卷保留不删
-scripts/migrate-volumes
-```
-
-3. 按“第 6 步”的第 4 条安装模块。
-
-完成后打开门户，确认人员和分数都还在。确认无误后，旧卷可以用 `docker volume rm home-platform_people-data home-platform_family-data` 删除，不删也不影响使用。这次迁移会重启整个平台，之后安装、升级、卸载模块就都不用重启了。
-
-家庭优化大师拆到独立仓库时，模块 id 从 `family` 改成了 `family-score`，平台会把它当成新模块，旧的分数不会带过来。以前装过 `family` 的，装好 `family-score` 后在门户“应用管理”页卸载 `family` 即可；勾选“同时删除数据”会连旧分数一起删掉。
 
 ---
 
@@ -238,7 +219,7 @@ scripts/migrate-volumes
 | 查看平台本体状态 | `docker compose ps` |
 | 查看已安装的模块 | `scripts/module list` |
 | 查看平台核心的日志（Ctrl+C 退出） | `docker compose logs -f core` |
-| 查看某个模块的日志 | `docker logs -f mod-family-score-family-score-backend-1` |
+| 查看某个模块的日志 | `docker logs -f mod-<id>-<id>-backend-1` |
 | 停止平台本体（数据保留，模块容器不受影响） | `docker compose down` |
 | 再次启动，或改了平台本体后重新构建 | `docker compose up -d --build` |
 | 安装或升级一个模块 | 在模块仓库里运行 `npm run install:local`；已有模块包时运行 `scripts/module install <模块包.zip>` |
@@ -260,18 +241,18 @@ scripts/migrate-volumes
 | `core` 一直显示 Restarting | 看日志才能确定，常见原因是管理员密码不足 8 位 | 运行 `docker compose logs core` 查看原因 |
 | `找不到安装器镜像` 或 `平台没有在运行` | 安装模块之前平台本体没有起来 | 先运行 `docker compose up -d --build` |
 | 安装模块时 `没有通过健康检查` | 模块后端启动失败 | 看命令输出最后几十行的模块日志；新装的模块会自动删掉，升级会自动恢复旧版本 |
-| 安装模块时 `依赖模块 people，请先安装它` | `family-score` 要调用人员管理 | 先在 `~/vibebooth-module-people` 里运行 `npm run install:local` |
+| 安装模块时 `依赖模块 <id>，请先安装它` | 这个模块要调用另一个模块的接口 | 先安装提示里的那个模块 |
 | 下载后端依赖时 `github.com/Beane-Big/vibebooth/packages/sdk-go` 报 `not found` 或要求输入用户名 | 令牌没有 `vibebooth` 仓库的权限，或者 git 没记住令牌 | 按第 4 步检查令牌勾选的仓库，或者先 `export VIBEBOOTH_GITHUB_TOKEN=<令牌>` 再运行 |
 | `docker compose down` 时提示 `Network platform Resource is still in use` | 模块容器还接在 `platform` 网络上 | 正常现象，不用处理；下次 `up` 会继续用这个网络 |
 | `scripts/module: Permission denied` | Windows 上编辑过，脚本丢了可执行权限 | 用 `bash scripts/module ...` 运行 |
 | 页面能打开但登录失败 | 账号在第一次启动时已经创建，后来改的密码没有生效 | 用第一次设置的密码登录；忘了就用 `down -v` 推倒重来 |
 | 装 WSL 时报错 0x80370102 | BIOS 里关闭了虚拟化 | 进 BIOS 打开 Intel VT-x 或 AMD-V |
 
-## 在家里让家人用（可选，只在家里的电脑上做）
+## 让局域网里的其他设备访问（可选，只在自己的网络里做，不要在公司电脑上做）
 
 1. 在路由器里给这台电脑固定一个局域网 IP。
 2. 在 Windows 防火墙里为 8080 端口添加入站规则，只允许“专用”网络。
-3. 家人的设备连同一个 Wi-Fi，然后访问 `http://<电脑的局域网IP>:8080`。
+3. 其他设备连同一个 Wi-Fi，然后访问 `http://<电脑的局域网IP>:8080`。
 
 > WSL 默认的网络模式下，局域网里的其他设备可能访问不到 WSL 里的端口，这一点还没有验证过。如果访问不了，记下现象再排查。
 >

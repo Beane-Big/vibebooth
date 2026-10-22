@@ -69,7 +69,7 @@ type Manifest struct {
 	Icon        string             `yaml:"icon"`
 	Version     string             `yaml:"version"`
 	Services    map[string]Service `yaml:"services"`
-	// Requires 是本模块要调用的其他模块，写成 people 或 people>=0.2。没装或版本不够就不能安装，
+	// Requires 是本模块要调用的其他模块，写成 contacts 或 contacts>=0.2。没装或版本不够就不能安装，
 	// 被依赖的模块不能先卸载。解析结果在 Deps 里。
 	Requires []string `yaml:"requires"`
 	Menus    []Menu   `yaml:"menus"`
@@ -147,7 +147,7 @@ func (m *Manifest) validate() error {
 	for _, r := range m.Requires {
 		match := requirePattern.FindStringSubmatch(strings.ReplaceAll(r, " ", ""))
 		if match == nil || !ValidID(match[1]) || match[1] == m.ID {
-			return fmt.Errorf("requires 里的 %q 不合法，要写成其他模块的 id，例如 people 或 people>=0.2", r)
+			return fmt.Errorf("requires 里的 %q 不合法，要写成其他模块的 id，例如 contacts 或 contacts>=0.2", r)
 		}
 		min := match[2]
 		if strings.Count(min, ".") == 1 {
@@ -242,7 +242,7 @@ func (m *Manifest) APIPath() string { return "/api/" + m.ID + "/" }
 // HealthPath 是后端的健康检查接口，平台核心和安装器在内部网络直接调用。
 func (m *Manifest) HealthPath() string { return m.APIPath() + "health" }
 
-// ContainerName 是服务在内部网络里的名字，例如 family-backend。
+// ContainerName 是服务在内部网络里的名字，例如 notes-backend。
 func (m *Manifest) ContainerName(service string) string { return m.ID + "-" + service }
 
 // BackendURL 是内部网络里访问后端的地址；没有后端时返回空字符串。

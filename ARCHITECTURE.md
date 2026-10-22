@@ -1,6 +1,6 @@
 # Vibebooth 架构说明
 
-> 对应代码版本：平台本体（含模块安装器、用户与菜单权限），以人员管理、家庭优化大师两个模块为例（模块在各自的仓库里）。代码里的服务、路由、登录流程有变化时，要同步更新本文档。部署步骤见 [DEPLOY.md](DEPLOY.md)，模块开发规范见 [docs/module-spec.md](docs/module-spec.md)。
+> 对应代码版本：平台本体（含模块安装器、用户与菜单权限）。模块在各自的仓库里，不属于本仓库；下文用两个假想的模块 `notes`（记事）和 `contacts`（通讯录）举例。代码里的服务、路由、登录流程有变化时，要同步更新本文档。部署步骤见 [DEPLOY.md](DEPLOY.md)，模块开发规范见 [docs/module-spec.md](docs/module-spec.md)。
 
 ## 一句话总结
 
@@ -32,8 +32,8 @@ flowchart TB
             mods[("卷 modules-data<br/>已安装模块的清单和图标")]
         end
         subgraph modules["模块 · 每个一个 Compose 项目 mod-&lt;id&gt;，由安装器启动"]
-            people["mod-people<br/>/apps/people/ · /api/people/<br/>卷 mod-people_people-data"]
-            family["mod-family-score<br/>/apps/family-score/ · /api/family-score/<br/>卷 mod-family-score_data"]
+            notes["mod-notes<br/>/apps/notes/ · /api/notes/<br/>卷 mod-notes_data"]
+            contacts["mod-contacts<br/>/apps/contacts/ · /api/contacts/<br/>卷 mod-contacts_data"]
         end
     end
     browser -- "端口 8080" --> traefik
@@ -41,17 +41,17 @@ flowchart TB
     traefik --> portal
     traefik --> core
     traefik --> installer
-    traefik --> people
-    traefik --> family
+    traefik --> notes
+    traefik --> contacts
     core --> pg
     core -. "每 5 秒扫描" .-> mods
     installer --> mods
     installer --> iproxy
     iproxy -. "创建、删除容器" .-> modules
-    family == "对外接口 /api/people/ext/v1/<br/>内部网络直连" ==> people
+    notes == "对外接口 /api/contacts/ext/v1/<br/>内部网络直连" ==> contacts
 ```
 
-只有 traefik 对外开放了端口（8080）。其他容器不对外暴露端口，它们在 Docker 的内部网络 `platform` 里用服务名互相访问，模块容器也接在这个网络上。模块后端向 core 获取公钥，用来确认令牌确实是 core 签发的（图里省略了这些线）。粗线表示家庭优化大师的后端直接调用人员管理的对外接口，不经过网关，见下文“模块之间怎么通信”。
+只有 traefik 对外开放了端口（8080）。其他容器不对外暴露端口，它们在 Docker 的内部网络 `platform` 里用服务名互相访问，模块容器也接在这个网络上。模块后端向 core 获取公钥，用来确认令牌确实是 core 签发的（图里省略了这些线）。粗线表示一个模块的后端直接调用另一个模块的对外接口，不经过网关，见下文“模块之间怎么通信”。
 
 ## Docker 的六个概念
 
@@ -63,8 +63,8 @@ flowchart TB
 | 容器（container） | 镜像运行起来之后的一个实例 | 拆开料包做出来的菜 | `docker compose ps` 列出平台本体的 7 个，`docker ps` 还能看到 `mod-` 开头的模块容器 |
 | Dockerfile | 说明怎样从源码构建镜像的脚本 | 菜谱 | `core/Dockerfile`：先用 Go 编译，再把编译结果放进一个很小的 alpine 系统 |
 | Compose | 用一个文件描述多个容器以及它们的关系，一条命令就能全部启动 | 整桌菜的菜单 | 根目录 `docker-compose.yml` 是平台本体；每个模块有自己的 `compose.yaml`，由安装器作为独立项目 `mod-<id>` 启动 |
-| 网络（network） | 容器之间的内部局域网，容器之间用服务名互相访问 | 厨房里的传菜口 | 在 `platform` 网络里，`core` 用 `postgres:5432` 就能连上数据库，`family-score-backend` 用 `people-backend:8000` 就能连上人员管理 |
-| 卷（volume） | 容器之外保存数据的地方，容器删掉后数据还在 | 冰箱 | `pgdata` 存数据库数据，`core-data` 存登录令牌的签名密钥（`jwt.pem`），`modules-data` 存已安装模块的清单；模块的卷带项目前缀，例如 `mod-people_people-data` 存人员管理的 SQLite 数据库文件 |
+| 网络（network） | 容器之间的内部局域网，容器之间用服务名互相访问 | 厨房里的传菜口 | 在 `platform` 网络里，`core` 用 `postgres:5432` 就能连上数据库，`notes-backend` 用 `contacts-backend:8000` 就能连上另一个模块 |
+| 卷（volume） | 容器之外保存数据的地方，容器删掉后数据还在 | 冰箱 | `pgdata` 存数据库数据，`core-data` 存登录令牌的签名密钥（`jwt.pem`），`modules-data` 存已安装模块的清单；模块的卷带项目前缀，例如 `mod-notes_data` 存 notes 模块的 SQLite 数据库文件 |
 
 所以 `docker compose down` 只是把"菜"倒掉，"冰箱"里的数据还在；加上 `-v` 才会连冰箱一起清空。卸载模块也一样，默认保留它的卷，勾选“同时删除数据”才会删。
 
@@ -81,20 +81,19 @@ flowchart TB
 | `portal` | 门户（自己写的 React 代码，由 nginx 提供） | 登录页、应用列表、设置入口；管理员还能看到“应用管理”和“用户”两页 |
 | `installer` | 模块安装器（自己写的 Go 代码） | 校验上传的模块包，导入镜像，以独立的 Compose 项目启动模块，并把清单写进 `modules-data` 卷；也负责卸载。只有管理员能调用 |
 | `installer-proxy` | 安装器专用的 Docker 门卫（现成软件） | 开放创建、删除容器、镜像、网络、卷的权限，只接在安装器所在的内部网络上 |
-| `people-frontend` / `people-backend` | 人员管理（React / Go + SQLite） | 增删改人员，上传头像。对内接口 `/api/people/persons` 给自己的前端用；对外接口 `/api/people/ext/v1/persons` 给其他模块用，只返回 id、姓名、照片，写操作只开放修改照片 |
-| `family-score-frontend` / `family-score-backend` | 家庭优化大师（React / Go + SQLite） | `/apps/family-score/` 的记分板和 `/apps/family-score/settings/` 的设置页；只存“人员 id → 分数”，人员名单和照片每次向 `people-backend` 的对外接口要 |
+| `<id>-frontend` / `<id>-backend` | 模块（各自的仓库，技术栈自选） | 模块 `<id>` 的页面 `/apps/<id>/` 和接口 `/api/<id>/`；后端用 `core` 公开的公钥校验令牌，从而知道是谁在访问 |
 
 ## 一次完整访问的过程
 
-以"打开网页 → 登录 → 点开'人员管理'应用"为例。每一步的请求都先到 Traefik，再由它按网址分发：
+以"打开网页 → 登录 → 点开 notes 应用"为例。每一步的请求都先到 Traefik，再由它按网址分发：
 
 1. **打开 `localhost:8080`**：网址不以 `/api/` 开头，Traefik 把请求转给 `portal`，浏览器拿到门户页面。页面再请求 `/api/platform/me`，向 `core` 询问当前用户是谁；如果还没登录，就显示登录页。
 2. **登录**：页面把用户名和密码发到 `/api/platform/auth/login`。`core` 到 `postgres` 里核对密码，核对通过后在数据库里记一条会话，并给浏览器发一个 Cookie（`hp_session`，30 天有效）。之后浏览器的每次请求都会自动带上这个 Cookie。
 3. **显示应用列表**：门户请求 `/api/platform/apps`。`core` 每 5 秒扫描一次已安装模块的清单，这时只挑出这个人至少有一个菜单的模块，在内部网络里直接调用各模块的健康检查接口，然后把应用列表连同各模块是否健康一起返回。
-4. **点开"人员管理"（`/apps/people/`）**：这条路由挂了登录校验。Traefik 先把请求头（包括 Cookie）发给 `core` 的 `/api/platform/auth/verify`，`core` 检查：是否已登录、这个模块是否存在、这个人有没有这个模块的菜单；如果访问的是某个菜单的页面（例如 `/apps/family-score/settings/`），还要有那个菜单。
-    - 都通过：返回"放行"，并附上一个 5 分钟有效、只能用于 people 模块的令牌（JWT），令牌里写着这个人在本模块有哪些菜单。Traefik 把令牌放进请求头，再转给 `people-frontend`。
+4. **点开 notes（`/apps/notes/`）**：这条路由挂了登录校验。Traefik 先把请求头（包括 Cookie）发给 `core` 的 `/api/platform/auth/verify`，`core` 检查：是否已登录、这个模块是否存在、这个人有没有这个模块的菜单；如果访问的是某个菜单的页面（例如 `/apps/notes/settings/`），还要有那个菜单。
+    - 都通过：返回"放行"，并附上一个 5 分钟有效、只能用于 notes 模块的令牌（JWT），令牌里写着这个人在本模块有哪些菜单。Traefik 把令牌放进请求头，再转给 `notes-frontend`。
     - 没有登录：跳回登录页。没有菜单：返回"没有权限"。
-5. **模块调用自己的后端（`/api/people/persons`）**：请求同样先经过第 4 步的校验，再到达 `people-backend`。后端用 `core` 公开的公钥（`/api/platform/.well-known/jwks.json`）确认令牌是真的，从令牌里读出用户和菜单，然后返回人员名单。
+5. **模块调用自己的后端（`/api/notes/items`）**：请求同样先经过第 4 步的校验，再到达 `notes-backend`。后端用 `core` 公开的公钥（`/api/platform/.well-known/jwks.json`）确认令牌是真的，从令牌里读出用户和菜单，然后返回这个人的记事。
 
 这样设计的好处是登录逻辑只写在 `core` 一处。每个模块都不用自己实现登录，只需要验证令牌。
 
@@ -115,7 +114,7 @@ flowchart TB
 
 不管是在门户“应用管理”页上传，还是在命令行运行 `npm run install:local` 或 `scripts/module install <模块包.zip>`，最后都由安装器完成，步骤相同：
 
-1. **打开模块包**：zip 里只能有 `module.yaml`、`compose.yaml`、`images.tar` 和图标。安装器校验清单（规范版本 `platform`、id、版本、服务、菜单、依赖），按白名单检查 `compose.yaml`（不允许端口映射、特权、宿主机网络、挂载宿主机目录、自己写标签等），并确认 `images.tar` 里的镜像正好是 `vb-<id>-<服务>:<版本>`，不能借机覆盖别的镜像。`requires` 里的模块必须已经装好，写了版本（如 `people>=0.2`）时版本也要满足；反过来，已经被依赖的模块不能装回不满足依赖的旧版本。
+1. **打开模块包**：zip 里只能有 `module.yaml`、`compose.yaml`、`images.tar` 和图标。安装器校验清单（规范版本 `platform`、id、版本、服务、菜单、依赖），按白名单检查 `compose.yaml`（不允许端口映射、特权、宿主机网络、挂载宿主机目录、自己写标签等），并确认 `images.tar` 里的镜像正好是 `vb-<id>-<服务>:<版本>`，不能借机覆盖别的镜像。`requires` 里的模块必须已经装好，写了版本（如 `contacts>=0.2`）时版本也要满足；反过来，已经被依赖的模块不能装回不满足依赖的旧版本。
 2. **生成最终的 compose 文件**：在模块的 `compose.yaml` 上补上网络 `platform`、Traefik 路由标签（`/apps/<id>/` 和 `/api/<id>/`，排除 `/api/<id>/ext/`）和 `JWKS_URL`。路由由安装器按约定生成，模块自己写不了，也就抢不走门户或别的模块的网址。
 3. **导入镜像并启动**：`docker load`，然后以项目 `mod-<id>` 执行 `docker compose up -d`。网关通过标签自动接上路由，平台本体和其他模块不动。
 4. **等健康检查**：最多 60 秒，后端 `/api/<id>/health` 要返回 2xx，前端端口要能连上。
@@ -132,39 +131,37 @@ flowchart TB
 
 ## 模块之间怎么通信
 
-以家庭优化大师显示排行榜为例：
+以 notes 在记事里显示联系人姓名为例（notes 的 `module.yaml` 里写了 `requires: [contacts]`）：
 
-1. 浏览器请求 `/api/family-score/scores`，和其他模块请求一样先经过网关的登录校验，再到达 `family-score-backend`。
-2. `family-score-backend` 从自己的数据库里读出“人员 id → 分数”，再在内部网络里直接请求 `http://people-backend:8000/api/people/ext/v1/persons`，拿到人员名单和照片。
-3. 两边按人员 id 合并后返回给浏览器：人员模块里新加的人从 0 分开始，删掉的人不再显示。
-
-在记分板上点头像换照片时，浏览器把压缩后的照片发给 `/api/family-score/members/<人员id>/photo`，`family-score-backend` 再转给 `people-backend` 的 `PUT /api/people/ext/v1/persons/<人员id>/photo`。照片只存在人员管理里，人员管理页面和其他应用看到的都是同一张。
+1. 浏览器请求 `/api/notes/items`，和其他模块请求一样先经过网关的登录校验，再到达 `notes-backend`。
+2. `notes-backend` 从自己的数据库里读出记事，里面只存了联系人 id；再在内部网络里直接请求 `http://contacts-backend:8000/api/contacts/ext/v1/contacts`，拿到联系人名单。
+3. 两边按联系人 id 合并后返回给浏览器。
 
 几条规则：
 
 - **对内接口**（`/api/<id>/...`）只给模块自己的前端用；**对外接口**（`/api/<id>/ext/v1/...`）给其他模块的后端用，契约写在模块仓库的 `contracts/openapi.yaml`，不兼容的改动只能新开 v2。
-- 人员信息只存在人员管理模块里，其他模块只保存人员 id，不复制人员表，避免改名、删除时两边对不上。
-- 网关不转发对外接口：`people` 的路由规则排除了 `/api/people/ext/`，浏览器访问会得到 404。
-- 人员模块不可用时，家庭优化大师降级为只显示分数，打分会提示稍后再试。
+- 数据只存在拥有它的模块里，其他模块只保存 id，不复制对方的表，避免改名、删除时两边对不上。
+- 网关不转发对外接口：每个模块的路由规则都排除了 `/api/<id>/ext/`，浏览器访问会得到 404。
+- 被调用的模块不可用时，调用方应该降级显示，而不是整页报错。
 
 **目前的限制**：设计里模块之间要带“服务令牌”调用，网关拒绝越权调用；这一层还没实现。现在内部网络里的任何容器都能调用对外接口，所以对外接口只返回其他模块确实需要的字段（例如不返回备注）。以后实现服务令牌时，调用方改为经网关、带令牌调用。
 
 ## 用户与菜单权限
 
-每个家人一个登录账号，管理员在门户“用户”页创建账号、重置密码、停用账号。账号由 `core` 管，和人员管理模块里的“人员”是两回事：前者决定谁能登录、能看到什么，后者是业务数据。
+每个使用者一个登录账号，管理员在门户“用户”页创建账号、重置密码、停用账号。账号由 `core` 管，和模块里的业务数据（例如通讯录里的联系人）是两回事：前者决定谁能登录、能看到什么，后者归模块自己。
 
 模块在 `module.yaml` 里声明自己的页面（菜单），以及默认拥有它的角色：
 
 ```yaml
 menus:
-  - {id: board, name: 记分板, path: /apps/family-score/, default: [user]}
-  - {id: settings, name: 设置, path: /apps/family-score/settings/, default: [admin], settings: true}
+  - {id: home, name: 记事, path: /apps/notes/, default: [user]}
+  - {id: settings, name: 设置, path: /apps/notes/settings/, default: [admin], settings: true}
 ```
 
 - **谁有哪个菜单**：管理员在“用户”页对每个人勾选或取消，覆盖默认值；没改过的跟随默认值。只记录和默认不同的部分（表 `menu_grants`），模块升级新增的菜单自动按默认值生效。管理员拥有全部菜单。
 - **看得到**：一个人对某个模块一个菜单都没有，门户里就看不到这个模块，网关也不放行。
 - **页面拦截**：网关校验时，`core` 按网址找到路径最长匹配的菜单，没有就返回“没有权限”。模块首页（`path` 等于 `/apps/<id>/` 的菜单）下还放着静态资源，所以只要有这个模块的任一菜单就能打开；需要单独控制的页面要放在子路径下。
-- **接口权限**：令牌里带着这个人在本模块的菜单 id，模块后端用 SDK 的 `HasMenu("settings")` 判断。例如家庭优化大师的“分数清零”只允许有“设置”菜单的人调用。接口要不要检查、检查哪个菜单，由模块自己负责。
+- **接口权限**：令牌里带着这个人在本模块的菜单 id，模块后端用 SDK 的 `HasMenu("settings")` 判断。例如 notes 的“清空全部记事”只允许有“设置”菜单的人调用。接口要不要检查、检查哪个菜单，由模块自己负责。
 - **模块前端的导航**：模块前端可以调用 `GET /api/platform/apps/<id>/menus` 拿到当前用户的菜单来渲染导航，不用写死。
 - **生效时间**：页面拦截立刻生效；模块令牌 5 分钟有效，而网关每个请求都会重新签发令牌，所以接口权限也是下一个请求就生效。
 
