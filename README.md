@@ -2,7 +2,7 @@
 
 一个给 vibe coding 作品用的自托管平台，在自己的电脑上运行：登录一次门户，就能打开各个独立的应用模块。设计说明见[架构设计文档](https://claude.ai/code/artifact/41500730-289a-40bb-9a1a-9f922d44d355)。部署步骤见 [DEPLOY.md](DEPLOY.md)，架构原理见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-平台本体包括网关、登录、门户、模块安装器和按人的菜单权限；模块在各自的仓库里开发、打包，在门户“应用管理”页上传安装，不用重启平台。新模块用脚手架 [create-vibebooth](https://github.com/Beane-Big/create-vibebooth) 生成。现有模块：人员管理 [vibebooth-module-people](https://github.com/Beane-Big/vibebooth-module-people)、家庭优化大师 [vibebooth-module-family-score](https://github.com/Beane-Big/vibebooth-module-family-score)（模块 id 是 `family`）。
+平台本体包括网关、登录、门户、模块安装器和按人的菜单权限；模块在各自的仓库里开发、打包，在门户“应用管理”页上传安装，不用重启平台。新模块用脚手架 [create-vibebooth](https://github.com/Beane-Big/create-vibebooth) 生成。现有模块：人员管理 [vibebooth-module-people](https://github.com/Beane-Big/vibebooth-module-people)、家庭优化大师 [vibebooth-module-family-score](https://github.com/Beane-Big/vibebooth-module-family-score)。
 
 ## 组成
 
@@ -39,7 +39,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-浏览器打开 <http://localhost:8080>，用 `.env` 里的管理员账号登录。这时还没有应用，在“应用管理”页上传模块包（zip）就能装上；模块包在各模块仓库里用 `npm run pack` 生成，`people` 要先装，`family` 依赖它。
+浏览器打开 <http://localhost:8080>，用 `.env` 里的管理员账号登录。这时还没有应用，在“应用管理”页上传模块包（zip）就能装上；模块包在各模块仓库里用 `npm run pack` 生成，`people` 要先装，`family-score` 依赖它。
 
 常用命令：
 

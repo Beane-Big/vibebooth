@@ -168,7 +168,7 @@ grep PASSWORD .env
    sudo apt-get install -y nodejs
    ```
 
-   然后下载并安装两个模块。`people` 要先装，`family` 依赖它。`npm run install:local` 会在本地构建镜像、打包，再交给安装器安装，最后一行显示“已就绪”就成功了：
+   然后下载并安装两个模块。`people` 要先装，家庭优化大师（模块 id `family-score`）依赖它。`npm run install:local` 会在本地构建镜像、打包，再交给安装器安装，最后一行显示“已就绪”就成功了：
 
    ```bash
    cd ~
@@ -227,6 +227,8 @@ scripts/migrate-volumes
 
 完成后打开门户，确认人员和分数都还在。确认无误后，旧卷可以用 `docker volume rm home-platform_people-data home-platform_family-data` 删除，不删也不影响使用。这次迁移会重启整个平台，之后安装、升级、卸载模块就都不用重启了。
 
+家庭优化大师拆到独立仓库时，模块 id 从 `family` 改成了 `family-score`，平台会把它当成新模块，旧的分数不会带过来。以前装过 `family` 的，装好 `family-score` 后在门户“应用管理”页卸载 `family` 即可；勾选“同时删除数据”会连旧分数一起删掉。
+
 ---
 
 ## 常用命令
@@ -238,7 +240,7 @@ scripts/migrate-volumes
 | 查看平台本体状态 | `docker compose ps` |
 | 查看已安装的模块 | `scripts/module list` |
 | 查看平台核心的日志（Ctrl+C 退出） | `docker compose logs -f core` |
-| 查看某个模块的日志 | `docker logs -f mod-family-family-backend-1` |
+| 查看某个模块的日志 | `docker logs -f mod-family-score-family-score-backend-1` |
 | 停止平台本体（数据保留，模块容器不受影响） | `docker compose down` |
 | 再次启动，或改了平台本体后重新构建 | `docker compose up -d --build` |
 | 安装或升级一个模块 | 在模块仓库里运行 `npm run install:local`；已有模块包时运行 `scripts/module install <模块包.zip>` |
@@ -260,7 +262,7 @@ scripts/migrate-volumes
 | `core` 一直显示 Restarting | 看日志才能确定，常见原因是管理员密码不足 8 位 | 运行 `docker compose logs core` 查看原因 |
 | `找不到安装器镜像` 或 `平台没有在运行` | 安装模块之前平台本体没有起来 | 先运行 `docker compose up -d --build` |
 | 安装模块时 `没有通过健康检查` | 模块后端启动失败 | 看命令输出最后几十行的模块日志；新装的模块会自动删掉，升级会自动恢复旧版本 |
-| 安装模块时 `依赖模块 people，请先安装它` | `family` 要调用人员管理 | 先在 `~/vibebooth-module-people` 里运行 `npm run install:local` |
+| 安装模块时 `依赖模块 people，请先安装它` | `family-score` 要调用人员管理 | 先在 `~/vibebooth-module-people` 里运行 `npm run install:local` |
 | 下载后端依赖时 `github.com/Beane-Big/vibebooth/packages/sdk-go` 报 `not found` 或要求输入用户名 | 令牌没有 `vibebooth` 仓库的权限，或者 git 没记住令牌 | 按第 4 步检查令牌勾选的仓库，或者先 `export VIBEBOOTH_GITHUB_TOKEN=<令牌>` 再运行 |
 | `docker compose down` 时提示 `Network platform Resource is still in use` | 模块容器还接在 `platform` 网络上 | 正常现象，不用处理；下次 `up` 会继续用这个网络 |
 | `scripts/module: Permission denied` | Windows 上编辑过，脚本丢了可执行权限 | 用 `bash scripts/module ...` 运行 |

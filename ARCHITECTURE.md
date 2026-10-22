@@ -33,7 +33,7 @@ flowchart TB
         end
         subgraph modules["模块 · 每个一个 Compose 项目 mod-&lt;id&gt;，由安装器启动"]
             people["mod-people<br/>/apps/people/ · /api/people/<br/>卷 mod-people_people-data"]
-            family["mod-family<br/>/apps/family/ · /api/family/<br/>卷 mod-family_family-data"]
+            family["mod-family-score<br/>/apps/family-score/ · /api/family-score/<br/>卷 mod-family-score_data"]
         end
     end
     browser -- "端口 8080" --> traefik
@@ -63,7 +63,7 @@ flowchart TB
 | 容器（container） | 镜像运行起来之后的一个实例 | 拆开料包做出来的菜 | `docker compose ps` 列出平台本体的 7 个，`docker ps` 还能看到 `mod-` 开头的模块容器 |
 | Dockerfile | 说明怎样从源码构建镜像的脚本 | 菜谱 | `core/Dockerfile`：先用 Go 编译，再把编译结果放进一个很小的 alpine 系统 |
 | Compose | 用一个文件描述多个容器以及它们的关系，一条命令就能全部启动 | 整桌菜的菜单 | 根目录 `docker-compose.yml` 是平台本体；每个模块有自己的 `compose.yaml`，由安装器作为独立项目 `mod-<id>` 启动 |
-| 网络（network） | 容器之间的内部局域网，容器之间用服务名互相访问 | 厨房里的传菜口 | 在 `platform` 网络里，`core` 用 `postgres:5432` 就能连上数据库，`family-backend` 用 `people-backend:8000` 就能连上人员管理 |
+| 网络（network） | 容器之间的内部局域网，容器之间用服务名互相访问 | 厨房里的传菜口 | 在 `platform` 网络里，`core` 用 `postgres:5432` 就能连上数据库，`family-score-backend` 用 `people-backend:8000` 就能连上人员管理 |
 | 卷（volume） | 容器之外保存数据的地方，容器删掉后数据还在 | 冰箱 | `pgdata` 存数据库数据，`core-data` 存登录令牌的签名密钥（`jwt.pem`），`modules-data` 存已安装模块的清单；模块的卷带项目前缀，例如 `mod-people_people-data` 存人员管理的 SQLite 数据库文件 |
 
 所以 `docker compose down` 只是把"菜"倒掉，"冰箱"里的数据还在；加上 `-v` 才会连冰箱一起清空。卸载模块也一样，默认保留它的卷，勾选“同时删除数据”才会删。
@@ -82,7 +82,7 @@ flowchart TB
 | `installer` | 模块安装器（自己写的 Go 代码） | 校验上传的模块包，导入镜像，以独立的 Compose 项目启动模块，并把清单写进 `modules-data` 卷；也负责卸载。只有管理员能调用 |
 | `installer-proxy` | 安装器专用的 Docker 门卫（现成软件） | 开放创建、删除容器、镜像、网络、卷的权限，只接在安装器所在的内部网络上 |
 | `people-frontend` / `people-backend` | 人员管理（React / Go + SQLite） | 增删改人员，上传头像。对内接口 `/api/people/persons` 给自己的前端用；对外接口 `/api/people/ext/v1/persons` 给其他模块用，只返回 id、姓名、照片，写操作只开放修改照片 |
-| `family-frontend` / `family-backend` | 家庭优化大师（React / Go + SQLite） | `/apps/family/` 的记分板和 `/apps/family/settings/` 的设置页；只存“人员 id → 分数”，人员名单和照片每次向 `people-backend` 的对外接口要 |
+| `family-score-frontend` / `family-score-backend` | 家庭优化大师（React / Go + SQLite） | `/apps/family-score/` 的记分板和 `/apps/family-score/settings/` 的设置页；只存“人员 id → 分数”，人员名单和照片每次向 `people-backend` 的对外接口要 |
 
 ## 一次完整访问的过程
 
@@ -91,7 +91,7 @@ flowchart TB
 1. **打开 `localhost:8080`**：网址不以 `/api/` 开头，Traefik 把请求转给 `portal`，浏览器拿到门户页面。页面再请求 `/api/platform/me`，向 `core` 询问当前用户是谁；如果还没登录，就显示登录页。
 2. **登录**：页面把用户名和密码发到 `/api/platform/auth/login`。`core` 到 `postgres` 里核对密码，核对通过后在数据库里记一条会话，并给浏览器发一个 Cookie（`hp_session`，30 天有效）。之后浏览器的每次请求都会自动带上这个 Cookie。
 3. **显示应用列表**：门户请求 `/api/platform/apps`。`core` 每 5 秒扫描一次已安装模块的清单，这时只挑出这个人至少有一个菜单的模块，在内部网络里直接调用各模块的健康检查接口，然后把应用列表连同各模块是否健康一起返回。
-4. **点开"人员管理"（`/apps/people/`）**：这条路由挂了登录校验。Traefik 先把请求头（包括 Cookie）发给 `core` 的 `/api/platform/auth/verify`，`core` 检查：是否已登录、这个模块是否存在、这个人有没有这个模块的菜单；如果访问的是某个菜单的页面（例如 `/apps/family/settings/`），还要有那个菜单。
+4. **点开"人员管理"（`/apps/people/`）**：这条路由挂了登录校验。Traefik 先把请求头（包括 Cookie）发给 `core` 的 `/api/platform/auth/verify`，`core` 检查：是否已登录、这个模块是否存在、这个人有没有这个模块的菜单；如果访问的是某个菜单的页面（例如 `/apps/family-score/settings/`），还要有那个菜单。
     - 都通过：返回"放行"，并附上一个 5 分钟有效、只能用于 people 模块的令牌（JWT），令牌里写着这个人在本模块有哪些菜单。Traefik 把令牌放进请求头，再转给 `people-frontend`。
     - 没有登录：跳回登录页。没有菜单：返回"没有权限"。
 5. **模块调用自己的后端（`/api/people/persons`）**：请求同样先经过第 4 步的校验，再到达 `people-backend`。后端用 `core` 公开的公钥（`/api/platform/.well-known/jwks.json`）确认令牌是真的，从令牌里读出用户和菜单，然后返回人员名单。
@@ -134,11 +134,11 @@ flowchart TB
 
 以家庭优化大师显示排行榜为例：
 
-1. 浏览器请求 `/api/family/scores`，和其他模块请求一样先经过网关的登录校验，再到达 `family-backend`。
-2. `family-backend` 从自己的数据库里读出“人员 id → 分数”，再在内部网络里直接请求 `http://people-backend:8000/api/people/ext/v1/persons`，拿到人员名单和照片。
+1. 浏览器请求 `/api/family-score/scores`，和其他模块请求一样先经过网关的登录校验，再到达 `family-score-backend`。
+2. `family-score-backend` 从自己的数据库里读出“人员 id → 分数”，再在内部网络里直接请求 `http://people-backend:8000/api/people/ext/v1/persons`，拿到人员名单和照片。
 3. 两边按人员 id 合并后返回给浏览器：人员模块里新加的人从 0 分开始，删掉的人不再显示。
 
-在记分板上点头像换照片时，浏览器把压缩后的照片发给 `/api/family/members/<人员id>/photo`，`family-backend` 再转给 `people-backend` 的 `PUT /api/people/ext/v1/persons/<人员id>/photo`。照片只存在人员管理里，人员管理页面和其他应用看到的都是同一张。
+在记分板上点头像换照片时，浏览器把压缩后的照片发给 `/api/family-score/members/<人员id>/photo`，`family-score-backend` 再转给 `people-backend` 的 `PUT /api/people/ext/v1/persons/<人员id>/photo`。照片只存在人员管理里，人员管理页面和其他应用看到的都是同一张。
 
 几条规则：
 
@@ -157,8 +157,8 @@ flowchart TB
 
 ```yaml
 menus:
-  - {id: board, name: 记分板, path: /apps/family/, default: [user]}
-  - {id: settings, name: 设置, path: /apps/family/settings/, default: [admin], settings: true}
+  - {id: board, name: 记分板, path: /apps/family-score/, default: [user]}
+  - {id: settings, name: 设置, path: /apps/family-score/settings/, default: [admin], settings: true}
 ```
 
 - **谁有哪个菜单**：管理员在“用户”页对每个人勾选或取消，覆盖默认值；没改过的跟随默认值。只记录和默认不同的部分（表 `menu_grants`），模块升级新增的菜单自动按默认值生效。管理员拥有全部菜单。
