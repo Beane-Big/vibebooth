@@ -2,18 +2,18 @@
 
 > 规范版本：`platform: 1`。规则收紧、老的模块包会装不上时版本加 1；新增可选字段不加。
 
-平台只规定模块和平台怎么交接；语言、框架、库表设计由模块自己决定。下面标“安装器检查”的规则，不符合时 `scripts/module pack` 在本地就会报错，平台也会拒绝安装。各模块自己的约定写在 `modules/<id>/AGENTS.md`。
+平台只规定模块和平台怎么交接；语言、框架、库表设计由模块自己决定。下面标“安装器检查”的规则，不符合时 `npm run pack` 在本地就会报错，平台也会拒绝安装。每个模块一个仓库，模块自己的约定写在仓库根目录的 `AGENTS.md`。
 
 ## 开发流程
 
-1. `scripts/module new <id>`：从 `modules/hello` 复制出新模块，改好 `module.yaml` 里的名称、说明和图标。
+1. `npx github:Beane-Big/create-vibebooth <id>`：生成模块仓库 `vibebooth-module-<id>/`，选好前端和后端的技术栈。
 2. 写代码。平台要先用 `docker compose up -d --build` 跑起来。
-3. `scripts/module install <id>`：在本地构建镜像、打包、装到本地平台。改了代码再运行一次即可，只重建这一个模块。
-4. 验证没问题后，`scripts/module pack <id>` 生成的 `dist/<id>-<版本>.zip` 就是要上传到正式平台“应用管理”页的模块包。改了代码要发布时先改 `module.yaml` 的 `version`。
+3. `npm run install:local`：在本地构建镜像、打包、装到本地平台。改了代码再运行一次即可，只重建这一个模块。
+4. 验证没问题后，`npm run pack` 生成的 `dist/<id>-<版本>.zip` 就是要上传到正式平台“应用管理”页的模块包。改了代码要发布时先改 `module.yaml` 的 `version`。
 
 ## 安装器检查的规则
 
-- **id**：小写字母开头，只含小写字母、数字和连字符，与目录名一致；不能用 `platform`、`core`、`portal`、`traefik`、`postgres`、`socket`、`installer`。
+- **id**：小写字母开头，只含小写字母、数字和连字符，2 到 31 个字符；装上以后不能再改，改了就是另一个模块；不能用 `platform`、`core`、`portal`、`traefik`、`postgres`、`socket`、`installer`。
 - **规范版本**：`platform` 写模块遵循的规范版本，不填为 1。比平台支持的版本高时拒绝安装，提示先升级平台。
 - **版本**：`version` 是 `x.y.z`。镜像名固定为 `vb-<id>-<服务>:<版本>`，开发用的 `compose.yaml` 里写 `image: vb-<id>-backend:${VERSION}`，打包时换成真实版本号。
 - **容器**：对外的服务只能是 `<id>-frontend`（接 `/apps/<id>/`）和 `<id>-backend`（接 `/api/<id>/`），在 `module.yaml` 的 `services` 里写端口；可以再有 `<id>-<名字>` 形式的辅助容器，它们不对外。
@@ -25,8 +25,8 @@
 
 ## 编码约定
 
-- 只读写本模块目录和本模块自己的数据（`volumes` 里声明的卷，安装后卷名是 `mod-<id>_<卷名>`）。默认用 SQLite 文件放在卷里。
-- 不写登录代码。后端用 SDK `github.com/Beane-Big/vibebooth/packages/sdk-go/auth` 校验网关注入的令牌，不自己解析请求头里的用户信息；其他语言要按同样的规则用 JWKS 公钥验签（RS256，`iss` 是 `home-platform`，`aud` 是模块 id）。
+- 只读写本模块仓库和本模块自己的数据（`volumes` 里声明的卷，安装后卷名是 `mod-<id>_<卷名>`）。默认用 SQLite 文件放在卷里。
+- 不写登录代码。后端用 SDK `github.com/Beane-Big/vibebooth/packages/sdk-go/auth` 校验网关注入的令牌（`go.mod` 里按版本引用，例如 `v0.1.0`，对应平台仓库的标签 `packages/sdk-go/v0.1.0`），不自己解析请求头里的用户信息；其他语言要按同样的规则用 JWKS 公钥验签（RS256，`iss` 是 `home-platform`，`aud` 是模块 id）。
 - 接口权限用令牌里的菜单判断（Go 里是 `auth.UserFrom(ctx).HasMenu("<菜单 id>")`），不要用角色判断。
 - 跨模块只调用对方 `/api/<id>/ext/v1/` 下的对外接口，不 import 其他模块的代码，也不读别人的数据。对外接口的契约写在 `contracts/openapi.yaml`，不兼容的改动新开 v2。
-- 前端沿用 `modules/family` 的写法和样式变量；共享 UI 组件包做出来后优先用它。页面要适配手机和平板。
+- 前端沿用脚手架生成的 `styles.css` 里的样式变量；共享 UI 组件包做出来后优先用它。页面要适配手机和平板。

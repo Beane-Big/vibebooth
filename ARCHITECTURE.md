@@ -1,6 +1,6 @@
 # Vibebooth 架构说明
 
-> 对应代码版本：平台本体（含模块安装器、用户与菜单权限），加上你好、人员管理、家庭优化大师三个模块。代码里的服务、路由、登录流程有变化时，要同步更新本文档。部署步骤见 [DEPLOY.md](DEPLOY.md)，模块开发规范见 [docs/module-spec.md](docs/module-spec.md)。
+> 对应代码版本：平台本体（含模块安装器、用户与菜单权限），以人员管理、家庭优化大师两个模块为例（模块在各自的仓库里）。代码里的服务、路由、登录流程有变化时，要同步更新本文档。部署步骤见 [DEPLOY.md](DEPLOY.md)，模块开发规范见 [docs/module-spec.md](docs/module-spec.md)。
 
 ## 一句话总结
 
@@ -32,7 +32,6 @@ flowchart TB
             mods[("卷 modules-data<br/>已安装模块的清单和图标")]
         end
         subgraph modules["模块 · 每个一个 Compose 项目 mod-&lt;id&gt;，由安装器启动"]
-            hello["mod-hello<br/>/apps/hello/ · /api/hello/"]
             people["mod-people<br/>/apps/people/ · /api/people/<br/>卷 mod-people_people-data"]
             family["mod-family<br/>/apps/family/ · /api/family/<br/>卷 mod-family_family-data"]
         end
@@ -42,7 +41,6 @@ flowchart TB
     traefik --> portal
     traefik --> core
     traefik --> installer
-    traefik --> hello
     traefik --> people
     traefik --> family
     core --> pg
@@ -72,7 +70,7 @@ flowchart TB
 
 ## 各个服务负责什么
 
-前 7 个是平台本体，定义在 `docker-compose.yml` 里；后面是模块，每个模块的容器定义在 `modules/<id>/compose.yaml` 里，由安装器安装。
+前 7 个是平台本体，定义在 `docker-compose.yml` 里；后面是模块，每个模块在自己的仓库里开发，容器定义在模块仓库的 `compose.yaml` 里，打成模块包后由安装器安装。
 
 | 服务 | 是什么 | 职责 |
 | --- | --- | --- |
@@ -83,21 +81,20 @@ flowchart TB
 | `portal` | 门户（自己写的 React 代码，由 nginx 提供） | 登录页、应用列表、设置入口；管理员还能看到“应用管理”和“用户”两页 |
 | `installer` | 模块安装器（自己写的 Go 代码） | 校验上传的模块包，导入镜像，以独立的 Compose 项目启动模块，并把清单写进 `modules-data` 卷；也负责卸载。只有管理员能调用 |
 | `installer-proxy` | 安装器专用的 Docker 门卫（现成软件） | 开放创建、删除容器、镜像、网络、卷的权限，只接在安装器所在的内部网络上 |
-| `hello-frontend` / `hello-backend` | 示例模块（nginx / Go） | `/apps/hello/` 的页面和 `/api/hello/` 的接口；用 `core` 公开的公钥校验令牌，从而知道是谁在访问 |
 | `people-frontend` / `people-backend` | 人员管理（React / Go + SQLite） | 增删改人员，上传头像。对内接口 `/api/people/persons` 给自己的前端用；对外接口 `/api/people/ext/v1/persons` 给其他模块用，只返回 id、姓名、照片，写操作只开放修改照片 |
 | `family-frontend` / `family-backend` | 家庭优化大师（React / Go + SQLite） | `/apps/family/` 的记分板和 `/apps/family/settings/` 的设置页；只存“人员 id → 分数”，人员名单和照片每次向 `people-backend` 的对外接口要 |
 
 ## 一次完整访问的过程
 
-以"打开网页 → 登录 → 点开'你好'应用"为例。每一步的请求都先到 Traefik，再由它按网址分发：
+以"打开网页 → 登录 → 点开'人员管理'应用"为例。每一步的请求都先到 Traefik，再由它按网址分发：
 
 1. **打开 `localhost:8080`**：网址不以 `/api/` 开头，Traefik 把请求转给 `portal`，浏览器拿到门户页面。页面再请求 `/api/platform/me`，向 `core` 询问当前用户是谁；如果还没登录，就显示登录页。
 2. **登录**：页面把用户名和密码发到 `/api/platform/auth/login`。`core` 到 `postgres` 里核对密码，核对通过后在数据库里记一条会话，并给浏览器发一个 Cookie（`hp_session`，30 天有效）。之后浏览器的每次请求都会自动带上这个 Cookie。
 3. **显示应用列表**：门户请求 `/api/platform/apps`。`core` 每 5 秒扫描一次已安装模块的清单，这时只挑出这个人至少有一个菜单的模块，在内部网络里直接调用各模块的健康检查接口，然后把应用列表连同各模块是否健康一起返回。
-4. **点开"你好"（`/apps/hello/`）**：这条路由挂了登录校验。Traefik 先把请求头（包括 Cookie）发给 `core` 的 `/api/platform/auth/verify`，`core` 检查：是否已登录、这个模块是否存在、这个人有没有这个模块的菜单；如果访问的是某个菜单的页面（例如 `/apps/family/settings/`），还要有那个菜单。
-    - 都通过：返回"放行"，并附上一个 5 分钟有效、只能用于 hello 模块的令牌（JWT），令牌里写着这个人在本模块有哪些菜单。Traefik 把令牌放进请求头，再转给 `hello-frontend`。
+4. **点开"人员管理"（`/apps/people/`）**：这条路由挂了登录校验。Traefik 先把请求头（包括 Cookie）发给 `core` 的 `/api/platform/auth/verify`，`core` 检查：是否已登录、这个模块是否存在、这个人有没有这个模块的菜单；如果访问的是某个菜单的页面（例如 `/apps/family/settings/`），还要有那个菜单。
+    - 都通过：返回"放行"，并附上一个 5 分钟有效、只能用于 people 模块的令牌（JWT），令牌里写着这个人在本模块有哪些菜单。Traefik 把令牌放进请求头，再转给 `people-frontend`。
     - 没有登录：跳回登录页。没有菜单：返回"没有权限"。
-5. **模块调用自己的后端（`/api/hello/greeting`）**：请求同样先经过第 4 步的校验，再到达 `hello-backend`。后端用 `core` 公开的公钥（`/api/platform/.well-known/jwks.json`）确认令牌是真的，从令牌里读出用户名，然后回复"你好，admin！"。
+5. **模块调用自己的后端（`/api/people/persons`）**：请求同样先经过第 4 步的校验，再到达 `people-backend`。后端用 `core` 公开的公钥（`/api/platform/.well-known/jwks.json`）确认令牌是真的，从令牌里读出用户和菜单，然后返回人员名单。
 
 这样设计的好处是登录逻辑只写在 `core` 一处。每个模块都不用自己实现登录，只需要验证令牌。
 
@@ -116,7 +113,7 @@ flowchart TB
 
 ## 安装一个模块的过程
 
-不管是在门户“应用管理”页上传，还是在命令行运行 `scripts/module install <id>`，最后都由安装器完成，步骤相同：
+不管是在门户“应用管理”页上传，还是在命令行运行 `npm run install:local` 或 `scripts/module install <模块包.zip>`，最后都由安装器完成，步骤相同：
 
 1. **打开模块包**：zip 里只能有 `module.yaml`、`compose.yaml`、`images.tar` 和图标。安装器校验清单（规范版本 `platform`、id、版本、服务、菜单、依赖），按白名单检查 `compose.yaml`（不允许端口映射、特权、宿主机网络、挂载宿主机目录、自己写标签等），并确认 `images.tar` 里的镜像正好是 `vb-<id>-<服务>:<版本>`，不能借机覆盖别的镜像。`requires` 里的模块必须已经装好，写了版本（如 `people>=0.2`）时版本也要满足；反过来，已经被依赖的模块不能装回不满足依赖的旧版本。
 2. **生成最终的 compose 文件**：在模块的 `compose.yaml` 上补上网络 `platform`、Traefik 路由标签（`/apps/<id>/` 和 `/api/<id>/`，排除 `/api/<id>/ext/`）和 `JWKS_URL`。路由由安装器按约定生成，模块自己写不了，也就抢不走门户或别的模块的网址。
@@ -145,7 +142,7 @@ flowchart TB
 
 几条规则：
 
-- **对内接口**（`/api/<id>/...`）只给模块自己的前端用；**对外接口**（`/api/<id>/ext/v1/...`）给其他模块的后端用，契约写在 `modules/<id>/contracts/openapi.yaml`，不兼容的改动只能新开 v2。
+- **对内接口**（`/api/<id>/...`）只给模块自己的前端用；**对外接口**（`/api/<id>/ext/v1/...`）给其他模块的后端用，契约写在模块仓库的 `contracts/openapi.yaml`，不兼容的改动只能新开 v2。
 - 人员信息只存在人员管理模块里，其他模块只保存人员 id，不复制人员表，避免改名、删除时两边对不上。
 - 网关不转发对外接口：`people` 的路由规则排除了 `/api/people/ext/`，浏览器访问会得到 404。
 - 人员模块不可用时，家庭优化大师降级为只显示分数，打分会提示稍后再试。

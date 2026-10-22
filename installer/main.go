@@ -1,7 +1,7 @@
 // 模块安装器：校验模块包、导入镜像、以独立的 Compose 项目启动模块，并把清单写进模块卷供平台核心读取。
 // 它是平台里唯一能创建容器的服务，经过单独的 socket-proxy 访问 Docker。
 //
-// 同一个程序也是命令行工具，scripts/module 通过它打包和安装：
+// 同一个程序也是命令行工具：模块仓库里的 scripts/vb.mjs 用它打包和安装，平台的 scripts/module 用它管理已装的模块。
 //
 //	installer pack <模块目录> <images.tar> <输出.zip>
 //	installer install <模块包.zip>

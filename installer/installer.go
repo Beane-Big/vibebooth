@@ -330,7 +330,7 @@ func orEmpty(s []string) []string {
 	return s
 }
 
-// Pack 把开发目录 modules/<id>/ 和 docker save 导出的镜像打成模块包。
+// Pack 把模块的开发目录（模块仓库的根目录）和 docker save 导出的镜像打成模块包。
 // 开发用的 compose.yaml 里有 build 和 ${VERSION}，打包时去掉 build、把版本号写死，再按安装器的规则完整校验一遍。
 func Pack(moduleDir, imagesPath, out string) error {
 	manifestData, err := os.ReadFile(filepath.Join(moduleDir, manifestFile))
