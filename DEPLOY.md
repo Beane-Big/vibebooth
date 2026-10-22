@@ -2,7 +2,7 @@
 
 > 2026-10-21 在公司电脑上实际部署过一遍，这份文档按当时真实走通的路线整理，踩过的坑都写进去了。
 
-整个流程分 6 步，顺利的话 1 小时内能在浏览器里打开 `http://localhost:8080` 并登录：
+整个流程分 6 步，顺利的话 1 小时内能在浏览器里打开 `http://localhost:8080` 并登录。如果之前已经按旧版本部署过，代码更新后先看文末的“从旧版本迁移”。
 
 1. 装 WSL（Windows 里的 Ubuntu）
 2. 在 Ubuntu 里装 Docker
@@ -137,15 +137,16 @@ grep PASSWORD .env
 
 ## 第 6 步：启动并访问
 
-1. 先把三个现成的镜像逐个下载下来。一次只下一个更稳，哪条失败就重新运行哪条：
+1. 先把现成的镜像逐个下载下来。一次只下一个更稳，哪条失败就重新运行哪条：
 
    ```bash
    docker pull tecnativa/docker-socket-proxy:v0.4.1
    docker pull traefik:v3.6
    docker pull postgres:17-alpine
+   docker pull docker:29-cli
    ```
 
-2. 构建并启动。第一次运行要几分钟，屏幕上滚过很多输出是正常的：
+2. 构建并启动平台本体。第一次运行要几分钟，屏幕上滚过很多输出是正常的：
 
    ```bash
    cd ~/home-platform
@@ -158,10 +159,18 @@ grep PASSWORD .env
    docker compose ps
    ```
 
-   正常情况下有 11 行，STATUS 都是 Up，postgres 那一行带 healthy。
+   正常情况下有 7 行（traefik、socket-proxy、postgres、core、portal、installer、installer-proxy），STATUS 都是 Up，postgres 那一行带 healthy。
 
-4. 在浏览器里打开 **http://localhost:8080**，用户名填 `admin`，密码填第 5 步设置的管理员密码。
-5. 能看到“你好”“人员管理”“家庭优化大师”三个应用并且能点开，就部署成功了。先在“人员管理”里添加家庭成员，家庭优化大师的记分板上就会出现他们。部署完之后可以把代理软件切回规则模式。
+4. 安装三个模块。`people` 要先装，`family` 依赖它。每条命令会在本地构建镜像、打包，再交给安装器安装，最后一行显示“已就绪”就成功了：
+
+   ```bash
+   scripts/module install people
+   scripts/module install family
+   scripts/module install hello
+   ```
+
+5. 在浏览器里打开 **http://localhost:8080**，用户名填 `admin`，密码填第 5 步设置的管理员密码。
+6. 能看到“你好”“人员管理”“家庭优化大师”三个应用并且能点开，就部署成功了。先在“人员管理”里添加家庭成员，家庭优化大师的记分板上就会出现他们。要给家人开账号，在顶部的“用户”页里新建。部署完之后可以把代理软件切回规则模式。
 
 ## 代码更新后重新部署
 
@@ -174,17 +183,39 @@ Windows 上的 `C:\Users\huang\Documents\code\个人\home-platform` 和 Ubuntu �
    git push
    ```
 
-2. 在 Ubuntu 里拉取并重新构建：
+2. 在 Ubuntu 里拉取：
 
    ```bash
    cd ~/home-platform
    git pull
-   docker compose up -d --build
    ```
+
+3. 看改的是哪部分：
+   - **改了平台本体**（`core/`、`portal/`、`installer/`、`packages/`、`docker-compose.yml`）：运行 `docker compose up -d --build`。只重建平台本体，模块不受影响。
+   - **改了某个模块**（`modules/<id>/`）：先把 `modules/<id>/module.yaml` 的 `version` 改大，再运行 `scripts/module install <id>`，只升级这一个模块，期间它会中断几秒。也可以运行 `scripts/module pack <id>`，把 `dist/` 里生成的 zip 在门户“应用管理”页上传。
 
 - `git pull` 要求输入时，用户名填 `Beane-Big`，密码填第 4 步的只读令牌。
 - 代理保持 **TUN + 全局** 模式，因为新代码可能要下载新的依赖。
-- 完成后运行 `docker compose ps`，确认各服务都是 Up。
+- 完成后运行 `docker compose ps` 和 `scripts/module list`，确认平台本体都是 Up、模块都是 `"healthy": true`。
+
+## 从旧版本迁移（只做一次）
+
+旧版本里模块写在根目录 `docker-compose.yml` 的 `include` 里，和平台本体是同一个 Compose 项目；新版本里每个模块由安装器单独安装。人员和分数存在卷里，卷名会从 `home-platform_people-data` 变成 `mod-people_people-data`，所以要拷一次数据。登录账号在 postgres 里，不受影响。
+
+```bash
+cd ~/home-platform
+git pull
+# 1. 重建平台本体，并删掉旧的模块容器（--remove-orphans），旧的数据卷还在
+docker compose up -d --build --remove-orphans
+# 2. 把人员管理和家庭优化大师的数据拷到新卷，旧卷保留不删
+scripts/migrate-volumes
+# 3. 按新方式安装三个模块
+scripts/module install people
+scripts/module install family
+scripts/module install hello
+```
+
+完成后打开门户，确认人员和分数都还在。确认无误后，旧卷可以用 `docker volume rm home-platform_people-data home-platform_family-data` 删除，不删也不影响使用。这次迁移会重启整个平台，之后安装、升级、卸载模块就都不用重启了。
 
 ---
 
@@ -194,12 +225,16 @@ Windows 上的 `C:\Users\huang\Documents\code\个人\home-platform` 和 Ubuntu �
 
 | 想做什么 | 命令 |
 | --- | --- |
-| 查看各服务状态 | `docker compose ps` |
-| 查看某个服务的日志（Ctrl+C 退出） | `docker compose logs -f core` |
-| 停止（数据保留） | `docker compose down` |
-| 再次启动，或改代码后重新构建 | `docker compose up -d --build` |
+| 查看平台本体状态 | `docker compose ps` |
+| 查看已安装的模块 | `scripts/module list` |
+| 查看平台核心的日志（Ctrl+C 退出） | `docker compose logs -f core` |
+| 查看某个模块的日志 | `docker logs -f mod-family-family-backend-1` |
+| 停止平台本体（数据保留，模块容器不受影响） | `docker compose down` |
+| 再次启动，或改了平台本体后重新构建 | `docker compose up -d --build` |
+| 安装或升级一个模块 | `scripts/module install <id>` |
+| 卸载一个模块（数据保留；加 `--purge` 连数据一起删） | `scripts/module uninstall <id>` |
 | 拉取仓库最新代码 | `git pull` |
-| 推倒重来（**删除所有数据和账号，无法恢复**） | `docker compose down -v` |
+| 推倒重来（**删除平台的所有数据和账号，无法恢复**；模块要先逐个 `uninstall --purge`） | `docker compose down -v` |
 
 ## 常见问题
 
@@ -213,6 +248,11 @@ Windows 上的 `C:\Users\huang\Documents\code\个人\home-platform` 和 Ubuntu �
 | `请在 .env 中设置 POSTGRES_PASSWORD` | 没有 `.env` 文件 | 做一遍第 5 步 |
 | `port is already allocated` | 8080 端口被其他程序占用 | 在 `.env` 里把 `PUBLIC_PORT` 改成 8081，重新运行 `up -d`，然后访问 `localhost:8081` |
 | `core` 一直显示 Restarting | 看日志才能确定，常见原因是管理员密码不足 8 位 | 运行 `docker compose logs core` 查看原因 |
+| `找不到安装器镜像` 或 `平台没有在运行` | 运行 `scripts/module` 之前平台本体没有起来 | 先运行 `docker compose up -d --build` |
+| 安装模块时 `没有通过健康检查` | 模块后端启动失败 | 看命令输出最后几十行的模块日志；新装的模块会自动删掉，升级会自动恢复旧版本 |
+| 安装模块时 `依赖模块 people，请先安装它` | `family` 要调用人员管理 | 先运行 `scripts/module install people` |
+| `docker compose down` 时提示 `Network platform Resource is still in use` | 模块容器还接在 `platform` 网络上 | 正常现象，不用处理；下次 `up` 会继续用这个网络 |
+| `scripts/module: Permission denied` | Windows 上编辑过，脚本丢了可执行权限 | 用 `bash scripts/module ...` 运行 |
 | 页面能打开但登录失败 | 账号在第一次启动时已经创建，后来改的密码没有生效 | 用第一次设置的密码登录；忘了就用 `down -v` 推倒重来 |
 | 装 WSL 时报错 0x80370102 | BIOS 里关闭了虚拟化 | 进 BIOS 打开 Intel VT-x 或 AMD-V |
 
