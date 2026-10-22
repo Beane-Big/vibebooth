@@ -144,7 +144,7 @@ const (
 	legacyImagePrefix = "hp-"
 )
 
-// imageName 是服务必须使用的镜像名，例如 vb-family-backend:0.2.0。安装器只导入这些名字的镜像，
+// imageName 是服务必须使用的镜像名，例如 vb-notes-backend:0.2.0。安装器只导入这些名字的镜像，
 // 模块包不能借 docker load 覆盖平台或其他模块的镜像。
 func imageName(m *manifest.Manifest, service string) string {
 	return imagePrefix + service + ":" + m.Version

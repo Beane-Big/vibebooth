@@ -23,7 +23,7 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
   return (
     <div className="center">
       <form className="card login" onSubmit={submit}>
-        <h1>家庭应用门户</h1>
+        <h1>Vibebooth</h1>
         <label>
           用户名
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" required />

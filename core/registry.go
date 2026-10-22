@@ -76,7 +76,7 @@ func (r *Registry) Watch(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// summary 用于判断模块列表是否有变化，例如 "family@0.2.0 hello@0.1.0"。
+// summary 用于判断模块列表是否有变化，例如 "contacts@0.2.0 notes@0.1.0"。
 func summary(modules map[string]*Module) string {
 	items := make([]string, 0, len(modules))
 	for id, m := range modules {
