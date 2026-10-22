@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -27,11 +28,19 @@ type User struct {
 	ID    string   `json:"sub"`
 	Name  string   `json:"name"`
 	Roles []string `json:"roles"`
+	// Menus 是这个人在本模块里有权限的菜单 id，由管理员在门户“用户”页按人设置。
+	Menus []string `json:"menus"`
+}
+
+// HasMenu 判断当前用户有没有某个菜单的权限。模块后端用它检查接口权限，例如只有有“设置”菜单的人能清零。
+func (u *User) HasMenu(id string) bool {
+	return slices.Contains(u.Menus, id)
 }
 
 type claims struct {
 	Name  string   `json:"name"`
 	Roles []string `json:"roles"`
+	Menus []string `json:"menus"`
 	jwt.RegisteredClaims
 }
 
@@ -76,7 +85,7 @@ func (v *Verifier) Verify(ctx context.Context, authorization string) (*User, err
 	if err != nil {
 		return nil, err
 	}
-	return &User{ID: c.Subject, Name: c.Name, Roles: c.Roles}, nil
+	return &User{ID: c.Subject, Name: c.Name, Roles: c.Roles, Menus: c.Menus}, nil
 }
 
 // Middleware 拦截未通过校验的请求；通过后可用 UserFrom 取当前用户。

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -32,8 +31,8 @@ func main() {
 	api.HandleFunc("GET /api/family/scores", h.board)
 	api.HandleFunc("POST /api/family/scores/{personId}", h.change)
 	api.HandleFunc("PUT /api/family/members/{personId}/photo", h.setPhoto)
-	// 清零属于设置，只有管理员能做；门户只是对管理员显示设置入口，权限以这里为准。
-	api.HandleFunc("DELETE /api/family/scores", requireAdmin(h.reset))
+	// 清零属于设置，只有有“设置”菜单的人能做；门户只是对他们显示设置入口，权限以这里为准。
+	api.HandleFunc("DELETE /api/family/scores", requireMenu("settings", h.reset))
 
 	mux := http.NewServeMux()
 	// 健康检查由平台核心在内部网络直接调用，不经过网关，也不需要令牌。
@@ -172,10 +171,11 @@ func (h *handlers) reset(w http.ResponseWriter, r *http.Request) {
 
 // ---- 工具函数 ----
 
-func requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+// requireMenu 要求当前用户有某个菜单的权限，菜单由管理员在门户“用户”页按人设置。
+func requireMenu(menu string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !slices.Contains(auth.UserFrom(r.Context()).Roles, "admin") {
-			writeError(w, http.StatusForbidden, "只有管理员能修改设置")
+		if !auth.UserFrom(r.Context()).HasMenu(menu) {
+			writeError(w, http.StatusForbidden, "没有修改设置的权限")
 			return
 		}
 		next(w, r)

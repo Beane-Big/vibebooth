@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# 一次性迁移：以前模块和平台在同一个 Compose 项目里，数据卷叫 home-platform_<卷名>；
+# 改成由安装器安装后，模块是独立项目 mod-<id>，卷名变成 mod-<id>_<卷名>。
+# 这个脚本把旧卷的数据拷到新卷，旧卷保留不删。要在安装模块之前运行，步骤见 DEPLOY.md。
+set -euo pipefail
+
+copy() {
+  local from=$1 project=$2 name=$3 to="$2_$3"
+  if ! docker volume inspect "$from" >/dev/null 2>&1; then
+    echo "跳过 $from：不存在"
+    return
+  fi
+  if docker volume inspect "$to" >/dev/null 2>&1; then
+    echo "跳过 $to：已经存在，没有覆盖"
+    return
+  fi
+  # 带上 Compose 的标签，安装器启动模块时才会把它当成本项目的卷，而不是报“卷已存在”。
+  docker volume create --label "com.docker.compose.project=$project" --label "com.docker.compose.volume=$name" "$to" >/dev/null
+  # cp -a 保留文件属主，模块容器里的程序以 uid 10001 运行，需要能继续写这些文件。
+  docker run --rm -v "$from:/from:ro" -v "$to:/to" alpine:3.22 cp -a /from/. /to/
+  echo "已复制 $from → $to"
+}
+
+copy home-platform_people-data mod-people people-data
+copy home-platform_family-data mod-family family-data

@@ -6,37 +6,19 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/Beane-Big/home-platform/packages/manifest"
 )
 
-// Module 对应每个模块目录下的 module.yaml。
+// Module 是一个已安装的模块：清单内容加上它在模块卷里的目录（图标从这里读）。
 type Module struct {
-	ID          string   `yaml:"id"`
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Icon        string   `yaml:"icon"`
-	Version     string   `yaml:"version"`
-	Frontend    string   `yaml:"frontend"`
-	Backend     string   `yaml:"backend"`
-	Health      string   `yaml:"health"`
-	Roles       []string `yaml:"roles"`
-	// Settings 是模块自己的设置页地址，门户的“设置”页汇总这些入口；不填表示没有设置页。
-	Settings      string   `yaml:"settings"`
-	SettingsRoles []string `yaml:"settingsRoles"`
-
+	*manifest.Manifest
 	dir string
 }
-
-var moduleIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,30}$`)
-
-// 平台自己占用的路径前缀，模块不能用。
-var reservedIDs = map[string]bool{"platform": true}
 
 type Registry struct {
 	dir     string
@@ -48,67 +30,61 @@ func NewRegistry(dir string) *Registry {
 	return &Registry{dir: dir, modules: map[string]*Module{}}
 }
 
-// Load 扫描 modules/*/module.yaml；以 _ 开头的目录（如 _template）跳过。
+// Load 扫描模块卷里的 */module.yaml。以 _ 或 . 开头的目录跳过，安装器用 . 开头的目录暂存安装中的模块。
 func (r *Registry) Load() {
 	paths, _ := filepath.Glob(filepath.Join(r.dir, "*", "module.yaml"))
 	found := map[string]*Module{}
 	for _, p := range paths {
 		dir := filepath.Dir(p)
-		if strings.HasPrefix(filepath.Base(dir), "_") {
+		if strings.HasPrefix(filepath.Base(dir), "_") || strings.HasPrefix(filepath.Base(dir), ".") {
 			continue
 		}
-		m, err := readModule(p)
-		if err != nil {
-			slog.Warn("跳过无效模块", "path", p, "err", err)
-			continue
+		data, err := os.ReadFile(p)
+		if err == nil {
+			var m *manifest.Manifest
+			if m, err = manifest.Parse(data); err == nil {
+				if m.ID != filepath.Base(dir) {
+					slog.Warn("跳过模块：id 必须与目录名一致", "path", p, "id", m.ID)
+					continue
+				}
+				found[m.ID] = &Module{Manifest: m, dir: dir}
+				continue
+			}
 		}
-		if m.ID != filepath.Base(dir) {
-			slog.Warn("跳过模块：id 必须与目录名一致", "path", p, "id", m.ID)
-			continue
-		}
-		m.dir = dir
-		found[m.ID] = m
+		slog.Warn("跳过无效模块", "path", p, "err", err)
 	}
 	r.mu.Lock()
+	changed := summary(r.modules) != summary(found)
 	r.modules = found
 	r.mu.Unlock()
-	slog.Info("已加载模块", "count", len(found))
+	if changed {
+		slog.Info("已加载模块", "count", len(found), "modules", summary(found))
+	}
 }
 
-func readModule(path string) (*Module, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+// Watch 定期重新扫描，安装器装好或卸载模块后，门户和网关几秒内就能认出来，不用重启平台核心。
+func (r *Registry) Watch(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			r.Load()
+		}
 	}
-	var m Module
-	if err := yaml.Unmarshal(data, &m); err != nil {
-		return nil, err
-	}
-	if !moduleIDPattern.MatchString(m.ID) || reservedIDs[m.ID] {
-		return nil, errInvalid("id 只能是小写字母、数字和连字符，且不能是保留名")
-	}
-	if m.Name == "" {
-		return nil, errInvalid("缺少 name")
-	}
-	if m.Frontend == "" {
-		m.Frontend = "/apps/" + m.ID + "/"
-	}
-	if len(m.Roles) == 0 {
-		m.Roles = []string{"user"}
-	}
-	// 设置页必须在模块自己的前端路径下，防止清单把门户入口指向别的模块或外部网站。
-	if m.Settings != "" && (!strings.HasPrefix(m.Settings, m.Frontend) || strings.Contains(m.Settings, "..")) {
-		return nil, errInvalid("settings 必须以 frontend 路径开头")
-	}
-	if len(m.SettingsRoles) == 0 {
-		m.SettingsRoles = []string{"admin"}
-	}
-	return &m, nil
 }
 
-type errInvalid string
-
-func (e errInvalid) Error() string { return string(e) }
+// summary 用于判断模块列表是否有变化，例如 "family@0.2.0 hello@0.1.0"。
+func summary(modules map[string]*Module) string {
+	items := make([]string, 0, len(modules))
+	for id, m := range modules {
+		items = append(items, id+"@"+m.Version)
+	}
+	sort.Strings(items)
+	return strings.Join(items, " ")
+}
 
 func (r *Registry) Get(id string) (*Module, bool) {
 	r.mu.RLock()
@@ -136,27 +112,37 @@ type appView struct {
 	URL         string `json:"url"`
 	Icon        string `json:"icon,omitempty"`
 	Healthy     bool   `json:"healthy"`
-	// SettingsURL 只在用户有权查看该模块设置时返回。门户只负责展示入口，设置接口的权限仍由模块自己校验。
+	// SettingsURL 是用户有权限的第一个设置菜单（settings: true）。门户只负责展示入口，设置接口的权限仍由模块自己校验。
 	SettingsURL string `json:"settingsUrl,omitempty"`
 }
 
-// handleApps 返回当前用户有权限的应用，并并发检查各模块健康状态。
+// handleApps 返回当前用户至少有一个菜单的应用，并并发检查各模块健康状态。
 func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) {
+	g, err := s.store.Grants(r.Context(), user.ID)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
 	var apps []*Module
+	var userMenus [][]manifest.Menu
 	for _, m := range s.registry.List() {
-		if hasAnyRole(user.Roles, m.Roles) {
+		if menus := menusFor(user, m, g); len(menus) > 0 {
 			apps = append(apps, m)
+			userMenus = append(userMenus, menus)
 		}
 	}
 	views := make([]appView, len(apps))
 	var wg sync.WaitGroup
 	for i, m := range apps {
-		views[i] = appView{ID: m.ID, Name: m.Name, Description: m.Description, Version: m.Version, URL: m.Frontend}
+		views[i] = appView{ID: m.ID, Name: m.Name, Description: m.Description, Version: m.Version, URL: m.FrontendPath()}
 		if m.Icon != "" {
 			views[i].Icon = "/api/platform/apps/" + m.ID + "/icon"
 		}
-		if m.Settings != "" && hasAnyRole(user.Roles, m.SettingsRoles) {
-			views[i].SettingsURL = m.Settings
+		for _, menu := range userMenus[i] {
+			if menu.Settings {
+				views[i].SettingsURL = menu.Path
+				break
+			}
 		}
 		wg.Add(1)
 		go func(i int, m *Module) {
@@ -171,10 +157,10 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) 
 var healthClient = &http.Client{Timeout: 1500 * time.Millisecond}
 
 func checkHealth(ctx context.Context, m *Module) bool {
-	if m.Backend == "" || m.Health == "" {
+	if m.BackendURL() == "" {
 		return true
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(m.Backend, "/")+m.Health, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.BackendURL()+m.HealthPath(), nil)
 	if err != nil {
 		return false
 	}
@@ -190,7 +176,16 @@ var iconTypes = map[string]string{".svg": "image/svg+xml", ".png": "image/png"}
 
 func (s *Server) handleAppIcon(w http.ResponseWriter, r *http.Request, user *User) {
 	m, ok := s.registry.Get(r.PathValue("id"))
-	if !ok || m.Icon == "" || !hasAnyRole(user.Roles, m.Roles) {
+	if !ok || m.Icon == "" {
+		http.NotFound(w, r)
+		return
+	}
+	g, err := s.store.Grants(r.Context(), user.ID)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	if len(menusFor(user, m, g)) == 0 {
 		http.NotFound(w, r)
 		return
 	}

@@ -178,18 +178,29 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	appID := appIDFromURI(uri)
-	app, ok := s.registry.Get(appID)
+	path, _, _ := strings.Cut(uri, "?")
+	app, ok := s.registry.Get(appIDFromURI(path))
 	if !ok {
 		writeError(w, http.StatusNotFound, "应用不存在")
 		return
 	}
-	if !hasAnyRole(user.Roles, app.Roles) {
+	g, err := s.store.Grants(r.Context(), user.ID)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	menus := menusFor(user, app, g)
+	if len(menus) == 0 {
 		writeError(w, http.StatusForbidden, "没有访问这个应用的权限")
 		return
 	}
+	// 接口的细粒度权限由模块后端用令牌里的 menus 判断；这里只拦页面。
+	if !isAPI && !canOpenPage(app, menus, path) {
+		writeError(w, http.StatusForbidden, "没有访问这个页面的权限")
+		return
+	}
 
-	token, err := s.issueToken(user, appID)
+	token, err := s.issueToken(user, app.ID, menuIDs(menus))
 	if err != nil {
 		internalError(w, err)
 		return
@@ -197,6 +208,31 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Authorization", "Bearer "+token)
 	w.Header().Set("X-User-Id", strconv.FormatInt(user.ID, 10))
 	w.Header().Set("X-User-Roles", strings.Join(user.Roles, ","))
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleVerifyAdmin 给平台自己的管理接口（目前是安装器 /api/platform/installer/）做登录校验：只放行管理员。
+// 通过时附上一个只能用于安装器的令牌，安装器再用公钥验签。
+func (s *Server) handleVerifyAdmin(w http.ResponseWriter, r *http.Request) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "未登录")
+		return
+	}
+	if !user.IsAdmin() {
+		writeError(w, http.StatusForbidden, "只有管理员能管理应用")
+		return
+	}
+	token, err := s.issueToken(user, "installer", nil)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	w.Header().Set("Authorization", "Bearer "+token)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -274,7 +310,8 @@ func loadOrCreateKey(path string) (*signingKey, error) {
 	return &signingKey{private: priv, kid: base64.RawURLEncoding.EncodeToString(sum[:8])}, nil
 }
 
-func (s *Server) issueToken(user *User, audience string) (string, error) {
+// issueToken 签发给某个模块用的令牌，menus 是这个人在该模块里有权限的菜单。
+func (s *Server) issueToken(user *User, audience string, menus []string) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"iss":   tokenIssuer,
@@ -284,6 +321,7 @@ func (s *Server) issueToken(user *User, audience string) (string, error) {
 		"exp":   now.Add(tokenTTL).Unix(),
 		"name":  user.DisplayName,
 		"roles": user.Roles,
+		"menus": menus,
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	t.Header["kid"] = s.key.kid

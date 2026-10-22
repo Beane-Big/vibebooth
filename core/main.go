@@ -75,6 +75,7 @@ func main() {
 		limiter:  newLoginLimiter(10, 15*time.Minute),
 	}
 	go s.cleanupSessions(ctx)
+	go registry.Watch(ctx, 5*time.Second)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -95,6 +96,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/platform/auth/logout", s.handleLogout)
 	// Traefik 的 forwardAuth 用 GET 调用，但这里不限制方法，避免版本差异。
 	mux.HandleFunc("/api/platform/auth/verify", s.handleVerify)
+	mux.HandleFunc("/api/platform/auth/verify-admin", s.handleVerifyAdmin)
 	mux.HandleFunc("GET /api/platform/.well-known/jwks.json", s.handleJWKS)
 	mux.HandleFunc("GET /api/platform/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -102,6 +104,13 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/me", s.requireUser(s.handleMe))
 	mux.HandleFunc("GET /api/platform/apps", s.requireUser(s.handleApps))
 	mux.HandleFunc("GET /api/platform/apps/{id}/icon", s.requireUser(s.handleAppIcon))
+	mux.HandleFunc("GET /api/platform/apps/{id}/menus", s.requireUser(s.handleAppMenus))
+	mux.HandleFunc("GET /api/platform/users", s.requireRole("admin", s.handleListUsers))
+	mux.HandleFunc("POST /api/platform/users", s.requireRole("admin", s.handleCreateUser))
+	mux.HandleFunc("PUT /api/platform/users/{id}", s.requireRole("admin", s.handleUpdateUser))
+	mux.HandleFunc("PUT /api/platform/users/{id}/password", s.requireRole("admin", s.handleSetPassword))
+	mux.HandleFunc("GET /api/platform/users/{id}/menus", s.requireRole("admin", s.handleUserMenus))
+	mux.HandleFunc("PUT /api/platform/users/{id}/menus", s.requireRole("admin", s.handleSetUserMenu))
 	mux.HandleFunc("POST /api/platform/registry/reload", s.requireRole("admin", s.handleReload))
 	return mux
 }

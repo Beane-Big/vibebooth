@@ -1,23 +1,12 @@
-# hello 模块的服务定义，由根目录 docker-compose.yml 通过 include 引入。
+# hello 模块的容器。scripts/module pack 按 build 构建镜像，打包时去掉 build、把 ${VERSION} 换成 module.yaml 里的版本号。
+# 网络、网关路由标签和 JWKS_URL 由安装器补上，这里不写，写了也会被拒绝；允许的字段见 modules/AGENTS.md。
 services:
   hello-backend:
+    image: hp-hello-backend:${VERSION}
     build:
       context: ../..
       dockerfile: modules/hello/backend/Dockerfile
-    restart: unless-stopped
-    environment:
-      JWKS_URL: http://core:8080/api/platform/.well-known/jwks.json
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.hello-api.rule=PathPrefix(`/api/hello/`)
-      - traefik.http.routers.hello-api.middlewares=platform-auth@docker
-      - traefik.http.services.hello-api.loadbalancer.server.port=8000
 
   hello-frontend:
+    image: hp-hello-frontend:${VERSION}
     build: ./frontend
-    restart: unless-stopped
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.hello-web.rule=PathPrefix(`/apps/hello/`)
-      - traefik.http.routers.hello-web.middlewares=platform-auth@docker
-      - traefik.http.services.hello-web.loadbalancer.server.port=80

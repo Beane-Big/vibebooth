@@ -1,29 +1,17 @@
-# people 模块的服务定义，由根目录 docker-compose.yml 通过 include 引入。
+# people 模块的容器。scripts/module pack 按 build 构建镜像，打包时去掉 build、把 ${VERSION} 换成 module.yaml 里的版本号。
+# 网络、网关路由标签和 JWKS_URL 由安装器补上；网关不转发对外接口 /api/people/ext/，只给其他模块在内部网络里直接调用。
 services:
   people-backend:
+    image: hp-people-backend:${VERSION}
     build:
       context: ../..
       dockerfile: modules/people/backend/Dockerfile
-    restart: unless-stopped
-    environment:
-      JWKS_URL: http://core:8080/api/platform/.well-known/jwks.json
     volumes:
       - people-data:/data
-    labels:
-      - traefik.enable=true
-      # 对外接口 /api/people/ext/ 只给内部网络里的其他模块直接调用，网关不转发。
-      - traefik.http.routers.people-api.rule=PathPrefix(`/api/people/`) && !PathPrefix(`/api/people/ext/`)
-      - traefik.http.routers.people-api.middlewares=platform-auth@docker
-      - traefik.http.services.people-api.loadbalancer.server.port=8000
 
   people-frontend:
+    image: hp-people-frontend:${VERSION}
     build: ./frontend
-    restart: unless-stopped
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.people-web.rule=PathPrefix(`/apps/people/`)
-      - traefik.http.routers.people-web.middlewares=platform-auth@docker
-      - traefik.http.services.people-web.loadbalancer.server.port=80
 
 volumes:
   people-data:
