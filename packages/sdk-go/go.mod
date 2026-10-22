@@ -1,4 +1,4 @@
-module github.com/Beane-Big/home-platform/packages/sdk-go
+module github.com/Beane-Big/vibebooth/packages/sdk-go
 
 go 1.26
 

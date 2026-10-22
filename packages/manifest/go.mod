@@ -1,4 +1,4 @@
-module github.com/Beane-Big/home-platform/packages/manifest
+module github.com/Beane-Big/vibebooth/packages/manifest
 
 go 1.26
 

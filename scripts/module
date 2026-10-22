@@ -1,91 +1,36 @@
 #!/usr/bin/env bash
-# 模块命令行工具。在仓库根目录或任意子目录运行都可以；除 new 以外都要求平台已经用 docker compose up -d 启动。
+# 管理已安装的模块。在仓库根目录或任意子目录运行都可以，要求平台已经用 docker compose up -d 启动。
+# 模块在各自的仓库里开发和打包（npm run pack），见 docs/module-spec.md。
 #
-#   scripts/module new <id>               从 modules/hello 复制出一个新模块
-#   scripts/module pack <id>              构建镜像并打包成 dist/<id>-<版本>.zip，这个文件就是要上传到平台的模块包
-#   scripts/module install <id|模块包.zip>  安装或升级；给 id 时先打包再安装，本地开发调试就用这个
+#   scripts/module install <模块包.zip>     安装或升级
 #   scripts/module uninstall <id> [--purge] 卸载；默认保留数据卷，--purge 连数据一起删除
-#   scripts/module list                   列出已安装的模块
+#   scripts/module list                    列出已安装的模块
 set -euo pipefail
-cd "$(dirname "$0")/.."
 
 die() { echo "错误: $*" >&2; exit 1; }
 
-module_dir() {
-  [[ "$1" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || die "模块 id 只能是小写字母开头的小写字母、数字和连字符"
-  echo "modules/$1"
-}
+# 模块包路径相对于运行命令的目录，切换到仓库根目录之前先转成绝对路径。
+if [ "${1:-}" = install ] && [ $# -eq 2 ]; then
+  [ -f "$2" ] || die "$2 不存在"
+  zip=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
+fi
+cd "$(dirname "$0")/.."
 
-version_of() {
-  sed -n 's/^version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$1/module.yaml"
-}
-
-# 打包和安装都由平台的安装器镜像完成，保证本地的校验和平台上的完全一样。
-installer_image() {
-  docker image inspect home-platform-installer >/dev/null 2>&1 \
-    || die "找不到安装器镜像，请先在仓库根目录运行 docker compose up -d --build"
-  echo home-platform-installer
-}
-
-installer_exec() {
-  [ -n "$(docker compose ps -q installer 2>/dev/null)" ] || die "平台没有在运行，请先运行 docker compose up -d"
-  docker compose exec -T installer installer "$@"
-}
-
-cmd_new() {
-  local id=$1 dir
-  dir=$(module_dir "$id")
-  [ ! -e "$dir" ] || die "$dir 已经存在"
-  cp -r modules/hello "$dir"
-  # 文件内容和 Go 模块路径里的 hello 都换成新 id；显示名称、说明、图标请自己改。
-  grep -rlI hello "$dir" | xargs sed -i "s/hello/$id/g"
-  sed -i "s/^version:.*/version: 0.1.0/" "$dir/module.yaml"
-  echo "已创建 $dir。改好 module.yaml 里的 name 和 description 后，运行 scripts/module install $id 装到本地平台。"
-}
-
-cmd_pack() {
-  local id=$1 dir version images out
-  dir=$(module_dir "$id")
-  [ -f "$dir/module.yaml" ] || die "$dir/module.yaml 不存在"
-  version=$(version_of "$dir")
-  [ -n "$version" ] || die "$dir/module.yaml 里没有 version"
-  export VERSION=$version
-
-  echo "构建 $id $version 的镜像…"
-  docker compose -p "mod-$id" -f "$dir/compose.yaml" build
-  images=$(docker compose -p "mod-$id" -f "$dir/compose.yaml" config --images)
-
-  mkdir -p dist
-  pack_tmp=$(mktemp -d dist/.pack-XXXXXX)
-  trap 'rm -rf "$pack_tmp"' EXIT
-  echo "导出镜像…"
-  # shellcheck disable=SC2086
-  docker save -o "$pack_tmp/images.tar" $images
-  out="dist/$id-$version.zip"
-  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work "$(installer_image)" \
-    pack "$dir" "$pack_tmp/images.tar" "$out"
-}
-
-cmd_install() {
-  local target=$1 zip container
-  if [[ "$target" == *.zip ]]; then
-    zip=$target
-    [ -f "$zip" ] || die "$zip 不存在"
-  else
-    cmd_pack "$target"
-    zip="dist/$target-$(version_of "modules/$target").zip"
-  fi
+installer_container() {
+  local container
   container=$(docker compose ps -q installer 2>/dev/null)
   [ -n "$container" ] || die "平台没有在运行，请先运行 docker compose up -d"
-  docker cp "$zip" "$container:/tmp/package.zip" >/dev/null
-  installer_exec install /tmp/package.zip
+  echo "$container"
 }
 
 case "${1:-}" in
-  new)       [ $# -eq 2 ] || die "用法: scripts/module new <id>"; cmd_new "$2" ;;
-  pack)      [ $# -eq 2 ] || die "用法: scripts/module pack <id>"; cmd_pack "$2" ;;
-  install)   [ $# -eq 2 ] || die "用法: scripts/module install <id|模块包.zip>"; cmd_install "$2" ;;
-  uninstall) [ $# -ge 2 ] || die "用法: scripts/module uninstall <id> [--purge]"; shift; installer_exec uninstall "$@" ;;
-  list)      installer_exec list ;;
-  *)         sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  install)
+    [ $# -eq 2 ] && [[ "$2" == *.zip ]] || die "用法: scripts/module install <模块包.zip>"
+    container=$(installer_container)
+    docker cp "$zip" "$container:/tmp/package.zip" >/dev/null
+    docker exec "$container" installer install /tmp/package.zip
+    ;;
+  uninstall) [ $# -ge 2 ] || die "用法: scripts/module uninstall <id> [--purge]"; shift; docker exec "$(installer_container)" installer uninstall "$@" ;;
+  list)      docker exec "$(installer_container)" installer list ;;
+  *)         sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

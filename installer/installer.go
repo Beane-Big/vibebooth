@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Beane-Big/home-platform/packages/manifest"
+	"github.com/Beane-Big/vibebooth/packages/manifest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -101,9 +101,21 @@ func (in *Installer) Install(ctx context.Context, zipPath string, log io.Writer)
 	if err != nil {
 		return nil, err
 	}
-	for _, r := range m.Requires {
-		if _, ok := installed[r]; !ok {
-			return nil, invalid("%s 依赖模块 %s，请先安装它", m.ID, r)
+	for _, d := range m.Deps {
+		dep, ok := installed[d.ID]
+		if !ok {
+			return nil, invalid("%s 依赖模块 %s，请先安装它", m.ID, d)
+		}
+		if !d.SatisfiedBy(dep.Version) {
+			return nil, invalid("%s 依赖 %s，当前装的是 %s，请先升级它", m.ID, d, dep.Version)
+		}
+	}
+	// 反过来也要检查：装一个旧版本时，不能让已经依赖它新版本的模块失去依赖。
+	for other, om := range installed {
+		for _, d := range om.Deps {
+			if d.ID == m.ID && !d.SatisfiedBy(m.Version) {
+				return nil, invalid("%s 依赖 %s，不能装成 %s", other, d, m.Version)
+			}
 		}
 	}
 	old, upgrading := installed[m.ID]
@@ -284,7 +296,7 @@ func (in *Installer) Uninstall(ctx context.Context, id string, purge bool, log i
 func requiredBy(installed map[string]*manifest.Manifest, id string) []string {
 	var by []string
 	for other, m := range installed {
-		if slices.Contains(m.Requires, id) {
+		if slices.Contains(m.RequiredIDs(), id) {
 			by = append(by, other)
 		}
 	}
@@ -302,7 +314,7 @@ func (in *Installer) List(ctx context.Context) ([]Installed, error) {
 	for id, m := range installed {
 		list = append(list, Installed{
 			ID: id, Name: m.Name, Description: m.Description, Version: m.Version,
-			Requires: orEmpty(m.Requires), RequiredBy: orEmpty(requiredBy(installed, id)),
+			Requires: orEmpty(m.RequiredIDs()), RequiredBy: orEmpty(requiredBy(installed, id)),
 			Healthy: checkHealth(ctx, m) == nil,
 		})
 	}
@@ -318,7 +330,7 @@ func orEmpty(s []string) []string {
 	return s
 }
 
-// Pack 把开发目录 modules/<id>/ 和 docker save 导出的镜像打成模块包。
+// Pack 把模块的开发目录（模块仓库的根目录）和 docker save 导出的镜像打成模块包。
 // 开发用的 compose.yaml 里有 build 和 ${VERSION}，打包时去掉 build、把版本号写死，再按安装器的规则完整校验一遍。
 func Pack(moduleDir, imagesPath, out string) error {
 	manifestData, err := os.ReadFile(filepath.Join(moduleDir, manifestFile))

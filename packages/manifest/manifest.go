@@ -9,10 +9,15 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// SupportedPlatform 是这个版本的平台支持的最高模块规范版本，对应 module.yaml 里的 platform。
+// 只有规则收紧、老的模块包会装不上时才加 1；新增可选字段不加。
+const SupportedPlatform = 1
 
 // 模块对外的两种服务，容器名固定为 <id>-frontend 和 <id>-backend。
 const (
@@ -36,23 +41,48 @@ type Menu struct {
 	Settings bool `yaml:"settings" json:"-"`
 }
 
+// Requirement 是 requires 里的一项：依赖的模块 id 和要求的最低版本（为空表示任何版本都行）。
+type Requirement struct {
+	ID  string
+	Min string
+}
+
+// SatisfiedBy 判断已安装的版本是否满足要求。
+func (r Requirement) SatisfiedBy(version string) bool {
+	return r.Min == "" || CompareVersions(version, r.Min) >= 0
+}
+
+func (r Requirement) String() string {
+	if r.Min == "" {
+		return r.ID
+	}
+	return r.ID + " " + r.Min + " 以上"
+}
+
 // Manifest 对应模块包里的 module.yaml。
 type Manifest struct {
+	// Platform 是模块遵循的规范版本，不填为 1。比平台支持的版本高时拒绝安装。
+	Platform    int                `yaml:"platform"`
 	ID          string             `yaml:"id"`
 	Name        string             `yaml:"name"`
 	Description string             `yaml:"description"`
 	Icon        string             `yaml:"icon"`
 	Version     string             `yaml:"version"`
 	Services    map[string]Service `yaml:"services"`
-	// Requires 是本模块要调用的其他模块，没装就不能安装，被依赖的模块不能先卸载。
+	// Requires 是本模块要调用的其他模块，写成 people 或 people>=0.2。没装或版本不够就不能安装，
+	// 被依赖的模块不能先卸载。解析结果在 Deps 里。
 	Requires []string `yaml:"requires"`
 	Menus    []Menu   `yaml:"menus"`
+
+	Deps []Requirement `yaml:"-"`
 }
 
 var (
 	idPattern      = regexp.MustCompile(`^[a-z][a-z0-9-]{1,30}$`)
 	menuIDPattern  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
 	versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+	// requires 里的一项：id，或 id>=x.y / id>=x.y.z。
+	requirePattern = regexp.MustCompile(`^([a-z][a-z0-9-]{1,30})(?:>=(\d+\.\d+(?:\.\d+)?))?$`)
 	// 平台自己的路径前缀和服务名，模块不能用，否则会抢走平台的路由或在内部网络里重名。
 	reservedIDs = map[string]bool{
 		"platform": true, "core": true, "portal": true, "traefik": true,
@@ -81,6 +111,15 @@ func Parse(data []byte) (*Manifest, error) {
 }
 
 func (m *Manifest) validate() error {
+	if m.Platform == 0 {
+		m.Platform = 1
+	}
+	if m.Platform < 0 {
+		return errors.New("platform 必须是正整数")
+	}
+	if m.Platform > SupportedPlatform {
+		return fmt.Errorf("这个模块需要平台规范 %d，当前平台只支持到 %d，请先升级平台", m.Platform, SupportedPlatform)
+	}
 	if !ValidID(m.ID) {
 		return errors.New("id 只能是小写字母开头的小写字母、数字和连字符，且不能是保留名")
 	}
@@ -104,10 +143,17 @@ func (m *Manifest) validate() error {
 			return fmt.Errorf("services.%s.port 必须在 1 到 65535 之间", name)
 		}
 	}
+	m.Deps = nil
 	for _, r := range m.Requires {
-		if !ValidID(r) || r == m.ID {
-			return fmt.Errorf("requires 里的 %q 不是合法的其他模块 id", r)
+		match := requirePattern.FindStringSubmatch(strings.ReplaceAll(r, " ", ""))
+		if match == nil || !ValidID(match[1]) || match[1] == m.ID {
+			return fmt.Errorf("requires 里的 %q 不合法，要写成其他模块的 id，例如 people 或 people>=0.2", r)
 		}
+		min := match[2]
+		if strings.Count(min, ".") == 1 {
+			min += ".0"
+		}
+		m.Deps = append(m.Deps, Requirement{ID: match[1], Min: min})
 	}
 	_, hasFrontend := m.Services[Frontend]
 	if hasFrontend && len(m.Menus) == 0 {
@@ -135,6 +181,31 @@ func (m *Manifest) validate() error {
 		ids[menu.ID], paths[menu.Path] = true, true
 	}
 	return nil
+}
+
+// RequiredIDs 返回依赖的模块 id。
+func (m *Manifest) RequiredIDs() []string {
+	ids := make([]string, 0, len(m.Deps))
+	for _, d := range m.Deps {
+		ids = append(ids, d.ID)
+	}
+	return ids
+}
+
+// CompareVersions 比较两个 x.y.z 版本号，a 小于、等于、大于 b 时分别返回 -1、0、1。
+func CompareVersions(a, b string) int {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(pa) && i < len(pb); i++ {
+		x, _ := strconv.Atoi(pa[i])
+		y, _ := strconv.Atoi(pb[i])
+		if x != y {
+			if x < y {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
 }
 
 // MenuFor 返回网址路径（不含查询参数）所属的菜单：路径前缀最长的那一个；不在任何菜单下时返回 nil。

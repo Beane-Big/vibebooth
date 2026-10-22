@@ -15,19 +15,19 @@ const testManifest = "id: demo\nname: 演示\nversion: 0.2.0\nicon: icon.svg\nse
 
 const testCompose = `services:
   demo-backend:
-    image: hp-demo-backend:0.2.0
+    image: vb-demo-backend:0.2.0
     environment:
       DATA_DIR: /data
     volumes:
       - demo-data:/data
   demo-frontend:
-    image: hp-demo-frontend:0.2.0
+    image: vb-demo-frontend:0.2.0
     depends_on: [demo-backend]
 volumes:
   demo-data:
 `
 
-var testTags = []string{"hp-demo-backend:0.2.0", "hp-demo-frontend:0.2.0"}
+var testTags = []string{"vb-demo-backend:0.2.0", "vb-demo-frontend:0.2.0"}
 
 // imagesTar 生成一个只有 manifest.json 的假 images.tar，足够检查镜像标签。
 func imagesTar(t *testing.T, tags ...string) []byte {
@@ -103,7 +103,7 @@ func TestOpenPackageRejects(t *testing.T) {
 			f[composeFile] = []byte(strings.Replace(testCompose, old, new, 1))
 		}
 	}
-	backend := "    image: hp-demo-backend:0.2.0\n"
+	backend := "    image: vb-demo-backend:0.2.0\n"
 	cases := map[string]func(map[string][]byte){
 		"多余文件":        func(f map[string][]byte) { f["run.sh"] = []byte("x") },
 		"缺少镜像":        func(f map[string][]byte) { delete(f, imagesFile) },
@@ -118,7 +118,8 @@ func TestOpenPackageRejects(t *testing.T) {
 		"挂载未声明的卷":     compose("demo-data:/data", "other:/data"),
 		"外部卷":         compose("volumes:\n  demo-data:\n", "volumes:\n  demo-data:\n    external: true\n"),
 		"卷选项不是映射":     compose("volumes:\n  demo-data:\n", "volumes:\n  demo-data: local\n"),
-		"镜像名不对":       compose("hp-demo-backend:0.2.0", "hp-demo-backend:latest"),
+		"镜像名不对":       compose("vb-demo-backend:0.2.0", "vb-demo-backend:latest"),
+		"旧的镜像前缀":      compose("vb-demo-backend:0.2.0", "hp-demo-backend:0.2.0"),
 		"服务名不对":       compose("demo-frontend:\n", "web:\n"),
 		"缺少后端服务":      compose("demo-backend:\n", "demo-api:\n"),
 		"依赖别的模块":      compose("depends_on: [demo-backend]", "depends_on: [people-backend]"),
@@ -146,7 +147,7 @@ func TestOpenPackageRejects(t *testing.T) {
 func TestPack(t *testing.T) {
 	dir := t.TempDir()
 	devCompose := strings.ReplaceAll(testCompose, "0.2.0", "${VERSION}")
-	devCompose = strings.Replace(devCompose, "    image: hp-demo-frontend:${VERSION}\n", "    image: hp-demo-frontend:${VERSION}\n    build: ./frontend\n", 1)
+	devCompose = strings.Replace(devCompose, "    image: vb-demo-frontend:${VERSION}\n", "    image: vb-demo-frontend:${VERSION}\n    build: ./frontend\n", 1)
 	files := map[string][]byte{manifestFile: []byte(testManifest), composeFile: []byte(devCompose), "icon.svg": []byte("<svg/>"), imagesFile: imagesTar(t, testTags...)}
 	for name, data := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {

@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Beane-Big/home-platform/packages/manifest"
+	"github.com/Beane-Big/vibebooth/packages/manifest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -138,10 +138,16 @@ var (
 	restartPolicies    = map[string]bool{"no": true, "always": true, "unless-stopped": true, "on-failure": true}
 )
 
-// imageName 是服务必须使用的镜像名，例如 hp-family-backend:0.2.0。安装器只导入这些名字的镜像，
+// imagePrefix 是模块镜像名的前缀；legacyImagePrefix 是改名为 Vibebooth 之前用的前缀，只在清理旧镜像时用到。
+const (
+	imagePrefix       = "vb-"
+	legacyImagePrefix = "hp-"
+)
+
+// imageName 是服务必须使用的镜像名，例如 vb-family-backend:0.2.0。安装器只导入这些名字的镜像，
 // 模块包不能借 docker load 覆盖平台或其他模块的镜像。
 func imageName(m *manifest.Manifest, service string) string {
-	return "hp-" + service + ":" + m.Version
+	return imagePrefix + service + ":" + m.Version
 }
 
 func parseCompose(m *manifest.Manifest, data []byte) (*compose, error) {
