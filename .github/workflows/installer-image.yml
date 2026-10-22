@@ -1,0 +1,32 @@
+# 发布模块安装器镜像。模块仓库打包时本机没有平台，就下载这个镜像来检查和打包模块。
+# 在 main 上打标签 installer/vX.Y.Z 时触发，发布为 ghcr.io/beane-big/vibebooth-installer:X.Y.Z。
+name: installer-image
+
+on:
+  push:
+    tags: ["installer/v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 取版本号
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#installer/v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: installer/Dockerfile
+          push: true
+          tags: ghcr.io/beane-big/vibebooth-installer:${{ steps.version.outputs.version }}
+          labels: org.opencontainers.image.source=https://github.com/Beane-Big/vibebooth

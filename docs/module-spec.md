@@ -9,7 +9,7 @@
 1. `npx github:Beane-Big/create-vibebooth <id>`：生成模块仓库 `vibebooth-module-<id>/`，选好前端和后端的技术栈。
 2. 写代码。平台要先用 `docker compose up -d --build` 跑起来。
 3. `npm run install:local`：在本地构建镜像、打包、装到本地平台。改了代码再运行一次即可，只重建这一个模块。
-4. 验证没问题后，`npm run pack` 生成的 `dist/<id>-<版本>.zip` 就是要上传到正式平台“应用管理”页的模块包。改了代码要发布时先改 `module.yaml` 的 `version`。
+4. 验证没问题后，`npm run pack` 生成的 `dist/<id>-<版本>.zip` 就是要上传到正式平台“应用管理”页的模块包。`npm run pack` 不需要本机有平台，没有时会下载发布版的安装器镜像。改了代码要发布时先改 `module.yaml` 的 `version`。
 
 ## 安装器检查的规则
 

@@ -16,6 +16,7 @@
 | `packages/sdk-go/` | 模块后端用的 Go SDK，目前提供令牌校验和菜单权限判断 |
 | `scripts/module` | 在命令行安装、卸载、列出模块 |
 | `docs/module-spec.md` | 模块开发规范 |
+| `.github/workflows/installer-image.yml` | 在 main 上打标签 `installer/vX.Y.Z` 时，把安装器镜像发布到 `ghcr.io/beane-big/vibebooth-installer`，模块在没有平台的机器上打包时用它 |
 
 请求路径约定：
 
