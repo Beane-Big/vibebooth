@@ -53,19 +53,20 @@ func (d Docker) RemoveImages(ctx context.Context, log io.Writer, images []string
 }
 
 // RemoveOldImages 删除模块旧版本的镜像，只保留当前版本，避免每次升级都多占一份磁盘。
+// 改名前用 hp- 前缀的旧镜像也一起删掉。
 func (d Docker) RemoveOldImages(ctx context.Context, log io.Writer, keep []string) {
-	if len(keep) == 0 {
-		return
-	}
 	repo := func(image string) string { return image[:strings.LastIndex(image, ":")] }
 	for _, image := range keep {
-		out, err := exec.CommandContext(ctx, "docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}", repo(image)).Output()
-		if err != nil {
-			continue
-		}
-		for _, old := range strings.Fields(string(out)) {
-			if old != image && !strings.HasSuffix(old, ":<none>") {
-				d.run(ctx, log, nil, "image", "rm", old)
+		legacy := legacyImagePrefix + strings.TrimPrefix(repo(image), imagePrefix)
+		for _, r := range []string{repo(image), legacy} {
+			out, err := exec.CommandContext(ctx, "docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}", r).Output()
+			if err != nil {
+				continue
+			}
+			for _, old := range strings.Fields(string(out)) {
+				if old != image && !strings.HasSuffix(old, ":<none>") {
+					d.run(ctx, log, nil, "image", "rm", old)
+				}
 			}
 		}
 	}

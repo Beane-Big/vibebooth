@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Beane-Big/home-platform/packages/manifest"
+	"github.com/Beane-Big/vibebooth/packages/manifest"
 )
 
 func testModule(t *testing.T) *Module {

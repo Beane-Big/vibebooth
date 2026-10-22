@@ -11,8 +11,8 @@ import (
 	"os"
 	"slices"
 
-	"github.com/Beane-Big/home-platform/packages/manifest"
-	"github.com/Beane-Big/home-platform/packages/sdk-go/auth"
+	"github.com/Beane-Big/vibebooth/packages/manifest"
+	"github.com/Beane-Big/vibebooth/packages/sdk-go/auth"
 )
 
 // 模块包上限。一个模块的镜像一般几十 MB，留足余量。
@@ -105,7 +105,7 @@ func (s *server) fail(w http.ResponseWriter, err error, log string) {
 }
 
 func installedView(m *manifest.Manifest) Installed {
-	return Installed{ID: m.ID, Name: m.Name, Description: m.Description, Version: m.Version, Requires: orEmpty(m.Requires), RequiredBy: []string{}, Healthy: true}
+	return Installed{ID: m.ID, Name: m.Name, Description: m.Description, Version: m.Version, Requires: orEmpty(m.RequiredIDs()), RequiredBy: []string{}, Healthy: true}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

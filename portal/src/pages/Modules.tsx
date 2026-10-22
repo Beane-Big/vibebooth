@@ -56,7 +56,7 @@ export default function Modules() {
       <form className="card section" onSubmit={install}>
         <h2>安装或升级应用</h2>
         <p className="muted">
-          上传用 <code>scripts/module pack</code> 生成的模块包（zip）。已安装的应用会升级到包里的版本，数据保留。
+          上传在模块仓库里用 <code>npm run pack</code> 生成的模块包（zip）。已安装的应用会升级到包里的版本，数据保留。
         </p>
         <div className="row">
           <input key={fileKey} type="file" accept=".zip" onChange={(e) => setFile(e.target.files?.[0] ?? null)} disabled={busy} />
