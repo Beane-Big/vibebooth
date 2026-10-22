@@ -1,6 +1,6 @@
-# home-platform 架构说明
+# Vibebooth 架构说明
 
-> 对应代码版本：平台本体（含模块安装器、用户与菜单权限），加上你好、人员管理、家庭优化大师三个模块。代码里的服务、路由、登录流程有变化时，要同步更新本文档。部署步骤见 [DEPLOY.md](DEPLOY.md)，模块开发规范见 [modules/AGENTS.md](modules/AGENTS.md)。
+> 对应代码版本：平台本体（含模块安装器、用户与菜单权限），加上你好、人员管理、家庭优化大师三个模块。代码里的服务、路由、登录流程有变化时，要同步更新本文档。部署步骤见 [DEPLOY.md](DEPLOY.md)，模块开发规范见 [docs/module-spec.md](docs/module-spec.md)。
 
 ## 一句话总结
 
@@ -118,7 +118,7 @@ flowchart TB
 
 不管是在门户“应用管理”页上传，还是在命令行运行 `scripts/module install <id>`，最后都由安装器完成，步骤相同：
 
-1. **打开模块包**：zip 里只能有 `module.yaml`、`compose.yaml`、`images.tar` 和图标。安装器校验清单（id、版本、服务、菜单、依赖），按白名单检查 `compose.yaml`（不允许端口映射、特权、宿主机网络、挂载宿主机目录、自己写标签等），并确认 `images.tar` 里的镜像正好是 `hp-<id>-<服务>:<版本>`，不能借机覆盖别的镜像。`requires` 里的模块必须已经装好。
+1. **打开模块包**：zip 里只能有 `module.yaml`、`compose.yaml`、`images.tar` 和图标。安装器校验清单（规范版本 `platform`、id、版本、服务、菜单、依赖），按白名单检查 `compose.yaml`（不允许端口映射、特权、宿主机网络、挂载宿主机目录、自己写标签等），并确认 `images.tar` 里的镜像正好是 `vb-<id>-<服务>:<版本>`，不能借机覆盖别的镜像。`requires` 里的模块必须已经装好，写了版本（如 `people>=0.2`）时版本也要满足；反过来，已经被依赖的模块不能装回不满足依赖的旧版本。
 2. **生成最终的 compose 文件**：在模块的 `compose.yaml` 上补上网络 `platform`、Traefik 路由标签（`/apps/<id>/` 和 `/api/<id>/`，排除 `/api/<id>/ext/`）和 `JWKS_URL`。路由由安装器按约定生成，模块自己写不了，也就抢不走门户或别的模块的网址。
 3. **导入镜像并启动**：`docker load`，然后以项目 `mod-<id>` 执行 `docker compose up -d`。网关通过标签自动接上路由，平台本体和其他模块不动。
 4. **等健康检查**：最多 60 秒，后端 `/api/<id>/health` 要返回 2xx，前端端口要能连上。

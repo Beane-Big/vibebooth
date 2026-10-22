@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/Beane-Big/home-platform/packages/manifest"
+	"github.com/Beane-Big/vibebooth/packages/manifest"
 )
 
 // menusFor 返回一个人在某个模块里能用的菜单：有单独设置的按设置，没有的按清单里的默认角色。

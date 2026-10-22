@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Beane-Big/home-platform/packages/sdk-go/auth"
+	"github.com/Beane-Big/vibebooth/packages/sdk-go/auth"
 )
 
 const moduleID = "hello"

@@ -1,4 +1,5 @@
-# 模块清单：安装器和门户靠它认识这个模块，规则见 modules/AGENTS.md。
+# 模块清单：安装器和门户靠它认识这个模块，规则见 docs/module-spec.md。
+platform: 1              # 遵循的模块规范版本，见 docs/module-spec.md
 id: family               # 全局唯一，必须与目录名一致，也是路径前缀
 name: 家庭优化大师
 description: 家庭成员积分排行榜，记录每一次加分和减分

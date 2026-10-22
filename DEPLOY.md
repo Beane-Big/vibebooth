@@ -1,4 +1,4 @@
-# home-platform 部署文档（Windows + WSL）
+# Vibebooth 部署文档（Windows + WSL）
 
 > 2026-10-21 在公司电脑上实际部署过一遍，这份文档按当时真实走通的路线整理，踩过的坑都写进去了。
 
@@ -85,14 +85,14 @@ failed to fetch anonymous token ... EOF
 
 1. 打开 <https://github.com/settings/personal-access-tokens/new>
 2. Token name 随便填，例如 `home-pc`；Expiration 选 30 天。
-3. Repository access 选 **Only select repositories**，然后选 `home-platform`。
+3. Repository access 选 **Only select repositories**，然后选 `vibebooth`（以前叫 home-platform）。
 4. 在 Permissions 里把 **Contents** 设为 **Read-only**。
 5. 点 Generate token，**马上复制**。离开这个页面后就再也看不到了。
 
 **clone 代码：**
 
 ```bash
-git clone https://github.com/Beane-Big/home-platform.git ~/home-platform
+git clone https://github.com/Beane-Big/vibebooth.git ~/home-platform
 cd ~/home-platform
 ```
 
@@ -174,12 +174,12 @@ grep PASSWORD .env
 
 ## 代码更新后重新部署
 
-Windows 上的 `C:\Users\huang\Documents\code\个人\home-platform` 和 Ubuntu 里的 `~/home-platform` 是**两份独立的仓库**。在 Windows 上改了代码，要先推送到 GitHub，再拉到 Ubuntu 里重新构建。
+Windows 上的 `C:\Users\<你的用户名>\...\home-platform` 和 Ubuntu 里的 `~/home-platform` 是**两份独立的仓库**。在 Windows 上改了代码，要先推送到 GitHub，再拉到 Ubuntu 里重新构建。
 
 1. 在 Windows（Git Bash 或 PowerShell）里推送：
 
    ```bash
-   cd "C:\Users\huang\Documents\code\个人\home-platform"
+   cd "C:\Users\<你的用户名>\...\home-platform"
    git push
    ```
 
@@ -194,6 +194,7 @@ Windows 上的 `C:\Users\huang\Documents\code\个人\home-platform` 和 Ubuntu �
    - **改了平台本体**（`core/`、`portal/`、`installer/`、`packages/`、`docker-compose.yml`）：运行 `docker compose up -d --build`。只重建平台本体，模块不受影响。
    - **改了某个模块**（`modules/<id>/`）：先把 `modules/<id>/module.yaml` 的 `version` 改大，再运行 `scripts/module install <id>`，只升级这一个模块，期间它会中断几秒。也可以运行 `scripts/module pack <id>`，把 `dist/` 里生成的 zip 在门户“应用管理”页上传。
 
+- 仓库已经从 home-platform 改名为 vibebooth，旧地址会自动跳转到新地址。想换成新地址，就在 Windows 和 Ubuntu 的仓库里各运行一次 `git remote set-url origin https://github.com/Beane-Big/vibebooth.git`。本地文件夹名不用改。
 - `git pull` 要求输入时，用户名填 `Beane-Big`，密码填第 4 步的只读令牌。
 - 代理保持 **TUN + 全局** 模式，因为新代码可能要下载新的依赖。
 - 完成后运行 `docker compose ps` 和 `scripts/module list`，确认平台本体都是 Up、模块都是 `"healthy": true`。

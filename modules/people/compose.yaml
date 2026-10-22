@@ -2,7 +2,7 @@
 # 网络、网关路由标签和 JWKS_URL 由安装器补上；网关不转发对外接口 /api/people/ext/，只给其他模块在内部网络里直接调用。
 services:
   people-backend:
-    image: hp-people-backend:${VERSION}
+    image: vb-people-backend:${VERSION}
     build:
       context: ../..
       dockerfile: modules/people/backend/Dockerfile
@@ -10,7 +10,7 @@ services:
       - people-data:/data
 
   people-frontend:
-    image: hp-people-frontend:${VERSION}
+    image: vb-people-frontend:${VERSION}
     build: ./frontend
 
 volumes:

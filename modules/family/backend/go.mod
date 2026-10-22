@@ -1,9 +1,9 @@
-module github.com/Beane-Big/home-platform/modules/family/backend
+module github.com/Beane-Big/vibebooth/modules/family/backend
 
 go 1.26.0
 
 require (
-	github.com/Beane-Big/home-platform/packages/sdk-go v0.0.0
+	github.com/Beane-Big/vibebooth/packages/sdk-go v0.0.0
 	modernc.org/sqlite v1.60.1
 )
 
@@ -20,4 +20,4 @@ require (
 	modernc.org/memory v1.12.1 // indirect
 )
 
-replace github.com/Beane-Big/home-platform/packages/sdk-go => ../../../packages/sdk-go
+replace github.com/Beane-Big/vibebooth/packages/sdk-go => ../../../packages/sdk-go

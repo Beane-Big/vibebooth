@@ -1,9 +1,9 @@
-module github.com/Beane-Big/home-platform/core
+module github.com/Beane-Big/vibebooth/core
 
 go 1.26.0
 
 require (
-	github.com/Beane-Big/home-platform/packages/manifest v0.0.0
+	github.com/Beane-Big/vibebooth/packages/manifest v0.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.11.0
 	golang.org/x/crypto v0.58.0
@@ -20,4 +20,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/Beane-Big/home-platform/packages/manifest => ../packages/manifest
+replace github.com/Beane-Big/vibebooth/packages/manifest => ../packages/manifest

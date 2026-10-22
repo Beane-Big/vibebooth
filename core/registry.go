@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Beane-Big/home-platform/packages/manifest"
+	"github.com/Beane-Big/vibebooth/packages/manifest"
 )
 
 // Module 是一个已安装的模块：清单内容加上它在模块卷里的目录（图标从这里读）。

@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Beane-Big/home-platform/packages/manifest"
+	"github.com/Beane-Big/vibebooth/packages/manifest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -101,9 +101,21 @@ func (in *Installer) Install(ctx context.Context, zipPath string, log io.Writer)
 	if err != nil {
 		return nil, err
 	}
-	for _, r := range m.Requires {
-		if _, ok := installed[r]; !ok {
-			return nil, invalid("%s 依赖模块 %s，请先安装它", m.ID, r)
+	for _, d := range m.Deps {
+		dep, ok := installed[d.ID]
+		if !ok {
+			return nil, invalid("%s 依赖模块 %s，请先安装它", m.ID, d)
+		}
+		if !d.SatisfiedBy(dep.Version) {
+			return nil, invalid("%s 依赖 %s，当前装的是 %s，请先升级它", m.ID, d, dep.Version)
+		}
+	}
+	// 反过来也要检查：装一个旧版本时，不能让已经依赖它新版本的模块失去依赖。
+	for other, om := range installed {
+		for _, d := range om.Deps {
+			if d.ID == m.ID && !d.SatisfiedBy(m.Version) {
+				return nil, invalid("%s 依赖 %s，不能装成 %s", other, d, m.Version)
+			}
 		}
 	}
 	old, upgrading := installed[m.ID]
@@ -284,7 +296,7 @@ func (in *Installer) Uninstall(ctx context.Context, id string, purge bool, log i
 func requiredBy(installed map[string]*manifest.Manifest, id string) []string {
 	var by []string
 	for other, m := range installed {
-		if slices.Contains(m.Requires, id) {
+		if slices.Contains(m.RequiredIDs(), id) {
 			by = append(by, other)
 		}
 	}
@@ -302,7 +314,7 @@ func (in *Installer) List(ctx context.Context) ([]Installed, error) {
 	for id, m := range installed {
 		list = append(list, Installed{
 			ID: id, Name: m.Name, Description: m.Description, Version: m.Version,
-			Requires: orEmpty(m.Requires), RequiredBy: orEmpty(requiredBy(installed, id)),
+			Requires: orEmpty(m.RequiredIDs()), RequiredBy: orEmpty(requiredBy(installed, id)),
 			Healthy: checkHealth(ctx, m) == nil,
 		})
 	}

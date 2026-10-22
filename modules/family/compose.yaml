@@ -2,7 +2,7 @@
 # 网络、网关路由标签和 JWKS_URL 由安装器补上，这里不写。
 services:
   family-backend:
-    image: hp-family-backend:${VERSION}
+    image: vb-family-backend:${VERSION}
     build:
       context: ../..
       dockerfile: modules/family/backend/Dockerfile
@@ -13,7 +13,7 @@ services:
       - family-data:/data
 
   family-frontend:
-    image: hp-family-frontend:${VERSION}
+    image: vb-family-frontend:${VERSION}
     build: ./frontend
 
 volumes:

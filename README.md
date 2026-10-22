@@ -1,6 +1,6 @@
-# home-platform
+# Vibebooth
 
-一个在家里电脑上运行的多应用平台：登录一次门户，就能打开各个独立的应用模块。设计说明见[架构设计文档](https://claude.ai/code/artifact/41500730-289a-40bb-9a1a-9f922d44d355)。部署步骤见 [DEPLOY.md](DEPLOY.md)，架构原理见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+一个给 vibe coding 作品用的自托管平台，在自己的电脑上运行：登录一次门户，就能打开各个独立的应用模块。设计说明见[架构设计文档](https://claude.ai/code/artifact/41500730-289a-40bb-9a1a-9f922d44d355)。部署步骤见 [DEPLOY.md](DEPLOY.md)，架构原理见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 平台本体包括网关、登录、门户、模块安装器和按人的菜单权限；模块单独开发、打包，在门户“应用管理”页上传安装，不用重启平台。现有三个模块：示例 `hello`、人员管理 `people`、家庭优化大师 `family`。
 
@@ -15,7 +15,7 @@
 | `packages/manifest/` | 模块清单 `module.yaml` 的解析和校验，平台核心和安装器共用 |
 | `packages/sdk-go/` | 模块后端用的 Go SDK，目前提供令牌校验和菜单权限判断 |
 | `scripts/module` | 模块命令行工具：新建、打包、安装、卸载 |
-| `modules/AGENTS.md` | 模块开发规范 |
+| `docs/module-spec.md` | 模块开发规范 |
 | `modules/hello/` | 示例模块，也是新模块的模板：`module.yaml` 清单、`compose.yaml`、前端和后端 |
 | `modules/people/` | 人员管理（React + Go + SQLite）：维护人员和头像，通过对外接口提供给其他模块 |
 | `modules/family/` | 家庭优化大师（React + Go + SQLite）：家庭成员记分板，人员来自 `people` |
@@ -68,7 +68,7 @@ scripts/module list               # 查看已安装的模块
 
 ## 开发一个新模块
 
-规范见 [modules/AGENTS.md](modules/AGENTS.md)，大致流程：
+规范见 [docs/module-spec.md](docs/module-spec.md)，大致流程：
 
 ```bash
 scripts/module new notes        # 从 modules/hello 复制出 modules/notes

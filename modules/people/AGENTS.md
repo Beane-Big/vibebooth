@@ -1,6 +1,6 @@
 # people 模块约定（给 AI 编码工具和自己看）
 
-通用规范见 `modules/AGENTS.md`，这里只写本模块特有的约定。
+通用规范见 `docs/module-spec.md`，这里只写本模块特有的约定。
 
 - 只读写本模块目录 `modules/people/` 和本模块自己的数据库（卷 `people-data` 里的 SQLite 文件，安装后叫 `mod-people_people-data`）。
 - 跨模块只调用对方 `/api/<id>/ext/v1/` 下的对外接口，不 import 其他模块的代码。
