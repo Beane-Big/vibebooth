@@ -1,4 +1,4 @@
-# 平台本体：网关、Docker 代理、PostgreSQL、平台核心、门户、模块安装器。
+# 平台本体：网关、Docker 代理、PostgreSQL、平台核心、门户、模块安装器、构建代理。
 # 模块不写在这里：每个模块由安装器以独立的 Compose 项目（mod-<id>）启动，接入共享网络 platform，
 # 安装、升级、卸载模块都不用重启平台。
 name: home-platform
@@ -120,12 +120,25 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [installer-socket]
 
+  # 构建代理：只给声明了 docker-build 特权的模块（例如构建器）用。只放行构建镜像，查看、打标签、导出和删除 vb- 开头的
+  # 模块镜像，碰不到平台自己的镜像和容器，规则见 build-proxy/rules.go。安装器给这类模块的后端接上 platform-build 网络。
+  build-proxy:
+    build: ./build-proxy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [build]
+
 networks:
   default:
     name: platform
   socket:
     internal: true
   installer-socket:
+    internal: true
+  # 名字固定，模块的 compose 文件按这个名字引用它。
+  build:
+    name: platform-build
     internal: true
 
 volumes:

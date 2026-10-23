@@ -1,7 +1,6 @@
 package main
 
 import (
-	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
@@ -19,7 +18,7 @@ import (
 	"time"
 
 	"github.com/Beane-Big/vibebooth/packages/manifest"
-	"gopkg.in/yaml.v3"
+	"github.com/Beane-Big/vibebooth/packages/modpkg"
 )
 
 // Installer 管理模块卷里的已安装模块。每个模块一个目录：module.yaml、生成的 compose.yaml、图标。
@@ -38,7 +37,9 @@ type Installed struct {
 	Description string   `json:"description"`
 	Version     string   `json:"version"`
 	Requires    []string `json:"requires"`
+	Optional    []string `json:"optional"`
 	RequiredBy  []string `json:"requiredBy"`
+	Privileges  []string `json:"privileges"`
 	Healthy     bool     `json:"healthy"`
 }
 
@@ -58,7 +59,7 @@ func (in *Installer) lock() (func(), error) {
 }
 
 func (in *Installer) installed() (map[string]*manifest.Manifest, error) {
-	paths, err := filepath.Glob(filepath.Join(in.dir, "*", manifestFile))
+	paths, err := filepath.Glob(filepath.Join(in.dir, "*", modpkg.ManifestFile))
 	if err != nil {
 		return nil, err
 	}
@@ -82,20 +83,31 @@ func (in *Installer) installed() (map[string]*manifest.Manifest, error) {
 	return found, nil
 }
 
-// Install 安装或升级一个模块包。失败时删除新容器；升级失败时恢复旧版本。
-func (in *Installer) Install(ctx context.Context, zipPath string, log io.Writer) (*manifest.Manifest, error) {
+// PrivilegeError 表示模块声明了特权，但管理员还没有确认。门户据此弹出确认框，确认后带上 allowPrivileges 重新安装。
+type PrivilegeError struct{ Privileges []string }
+
+func (e *PrivilegeError) Error() string {
+	return "这个模块需要特权 " + strings.Join(e.Privileges, "、") + "，请确认后再安装"
+}
+
+// Install 安装或升级一个模块包。模块声明了特权时，allowPrivileges 必须为 true。
+// 失败时删除新容器；升级失败时恢复旧版本。
+func (in *Installer) Install(ctx context.Context, zipPath string, allowPrivileges bool, log io.Writer) (*manifest.Manifest, error) {
 	unlock, err := in.lock()
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
 
-	pkg, err := OpenPackage(zipPath)
+	pkg, err := modpkg.OpenPackage(zipPath)
 	if err != nil {
 		return nil, err
 	}
 	defer pkg.Close()
 	m := pkg.Manifest
+	if len(m.Privileges) > 0 && !allowPrivileges {
+		return nil, &PrivilegeError{Privileges: m.Privileges}
+	}
 
 	installed, err := in.installed()
 	if err != nil {
@@ -104,17 +116,23 @@ func (in *Installer) Install(ctx context.Context, zipPath string, log io.Writer)
 	for _, d := range m.Deps {
 		dep, ok := installed[d.ID]
 		if !ok {
-			return nil, invalid("%s 依赖模块 %s，请先安装它", m.ID, d)
+			return nil, modpkg.Invalid("%s 依赖模块 %s，请先安装它", m.ID, d)
 		}
 		if !d.SatisfiedBy(dep.Version) {
-			return nil, invalid("%s 依赖 %s，当前装的是 %s，请先升级它", m.ID, d, dep.Version)
+			return nil, modpkg.Invalid("%s 依赖 %s，当前装的是 %s，请先升级它", m.ID, d, dep.Version)
 		}
 	}
-	// 反过来也要检查：装一个旧版本时，不能让已经依赖它新版本的模块失去依赖。
+	// 可选依赖没装没关系，装了就要满足版本要求。
+	for _, d := range m.OptionalDeps {
+		if dep, ok := installed[d.ID]; ok && !d.SatisfiedBy(dep.Version) {
+			return nil, modpkg.Invalid("%s 可选依赖 %s，当前装的是 %s，请先升级它", m.ID, d, dep.Version)
+		}
+	}
+	// 反过来也要检查：装一个旧版本时，不能让已经依赖它新版本的模块失去依赖，可选依赖也一样。
 	for other, om := range installed {
-		for _, d := range om.Deps {
+		for _, d := range slices.Concat(om.Deps, om.OptionalDeps) {
 			if d.ID == m.ID && !d.SatisfiedBy(m.Version) {
-				return nil, invalid("%s 依赖 %s，不能装成 %s", other, d, m.Version)
+				return nil, modpkg.Invalid("%s 依赖 %s，不能装成 %s", other, d, m.Version)
 			}
 		}
 	}
@@ -125,7 +143,7 @@ func (in *Installer) Install(ctx context.Context, zipPath string, log io.Writer)
 		fmt.Fprintf(log, "安装 %s %s\n", m.ID, m.Version)
 	}
 
-	c, err := parseCompose(m, pkg.Compose)
+	c, err := modpkg.ParseCompose(m, pkg.Compose)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +169,7 @@ func (in *Installer) Install(ctx context.Context, zipPath string, log io.Writer)
 		return nil, err
 	}
 
-	project, stagedCompose := projectName(m.ID), filepath.Join(staging, composeFile)
+	project, stagedCompose := modpkg.ProjectName(m.ID), filepath.Join(staging, modpkg.ComposeFile)
 	err = in.docker.Up(ctx, log, project, stagedCompose)
 	if err == nil {
 		err = in.waitHealthy(ctx, m)
@@ -161,12 +179,12 @@ func (in *Installer) Install(ctx context.Context, zipPath string, log io.Writer)
 		in.docker.Logs(ctx, log, project, stagedCompose)
 		if upgrading {
 			fmt.Fprintln(log, "恢复旧版本 "+old.Version)
-			if rerr := in.docker.Up(ctx, log, project, filepath.Join(in.moduleDir(m.ID), composeFile)); rerr != nil {
+			if rerr := in.docker.Up(ctx, log, project, filepath.Join(in.moduleDir(m.ID), modpkg.ComposeFile)); rerr != nil {
 				fmt.Fprintf(log, "恢复旧版本失败：%v\n", rerr)
 			}
 			// 版本号相同时新旧镜像是同一个名字，不能删。
 			if old.Version != m.Version {
-				in.docker.RemoveImages(ctx, log, c.images())
+				in.docker.RemoveImages(ctx, log, c.Images())
 			}
 		} else {
 			in.docker.Down(ctx, log, project, stagedCompose, false)
@@ -177,16 +195,16 @@ func (in *Installer) Install(ctx context.Context, zipPath string, log io.Writer)
 	if err := replaceDir(staging, in.moduleDir(m.ID)); err != nil {
 		return nil, err
 	}
-	in.docker.RemoveOldImages(ctx, log, c.images())
+	in.docker.RemoveOldImages(ctx, log, c.Images())
 	fmt.Fprintf(log, "%s %s 已就绪，几秒后出现在门户里\n", m.ID, m.Version)
 	return m, nil
 }
 
-func writeModuleDir(dir string, pkg *Package, rendered []byte) error {
+func writeModuleDir(dir string, pkg *modpkg.Package, rendered []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	files := map[string][]byte{manifestFile: pkg.ManifestData, composeFile: rendered}
+	files := map[string][]byte{modpkg.ManifestFile: pkg.ManifestData, modpkg.ComposeFile: rendered}
 	if pkg.Manifest.Icon != "" {
 		files[pkg.Manifest.Icon] = pkg.Icon
 	}
@@ -270,17 +288,17 @@ func (in *Installer) Uninstall(ctx context.Context, id string, purge bool, log i
 		return err
 	}
 	if _, ok := installed[id]; !ok {
-		return invalid("没有安装模块 %s", id)
+		return modpkg.Invalid("没有安装模块 %s", id)
 	}
 	if by := requiredBy(installed, id); len(by) > 0 {
-		return invalid("%s 被 %s 依赖，请先卸载它们", id, strings.Join(by, "、"))
+		return modpkg.Invalid("%s 被 %s 依赖，请先卸载它们", id, strings.Join(by, "、"))
 	}
 	removing := filepath.Join(in.dir, ".removing-"+id)
 	os.RemoveAll(removing)
 	if err := os.Rename(in.moduleDir(id), removing); err != nil {
 		return err
 	}
-	if err := in.docker.Down(ctx, log, projectName(id), filepath.Join(removing, composeFile), purge); err != nil {
+	if err := in.docker.Down(ctx, log, modpkg.ProjectName(id), filepath.Join(removing, modpkg.ComposeFile), purge); err != nil {
 		// 容器没删干净时把目录放回去，模块仍显示为已安装，可以再试一次。
 		os.Rename(removing, in.moduleDir(id))
 		return err
@@ -314,12 +332,21 @@ func (in *Installer) List(ctx context.Context) ([]Installed, error) {
 	for id, m := range installed {
 		list = append(list, Installed{
 			ID: id, Name: m.Name, Description: m.Description, Version: m.Version,
-			Requires: orEmpty(m.RequiredIDs()), RequiredBy: orEmpty(requiredBy(installed, id)),
+			Requires: orEmpty(m.RequiredIDs()), Optional: orEmpty(depIDs(m.OptionalDeps)),
+			RequiredBy: orEmpty(requiredBy(installed, id)), Privileges: orEmpty(m.Privileges),
 			Healthy: checkHealth(ctx, m) == nil,
 		})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 	return list, nil
+}
+
+func depIDs(deps []manifest.Requirement) []string {
+	var ids []string
+	for _, d := range deps {
+		ids = append(ids, d.ID)
+	}
+	return ids
 }
 
 // orEmpty 让 JSON 里输出 [] 而不是 null，前端不用判空。
@@ -328,104 +355,4 @@ func orEmpty(s []string) []string {
 		return []string{}
 	}
 	return s
-}
-
-// Pack 把模块的开发目录（模块仓库的根目录）和 docker save 导出的镜像打成模块包。
-// 开发用的 compose.yaml 里有 build 和 ${VERSION}，打包时去掉 build、把版本号写死，再按安装器的规则完整校验一遍。
-func Pack(moduleDir, imagesPath, out string) error {
-	manifestData, err := os.ReadFile(filepath.Join(moduleDir, manifestFile))
-	if err != nil {
-		return err
-	}
-	m, err := manifest.Parse(manifestData)
-	if err != nil {
-		return err
-	}
-	devCompose, err := os.ReadFile(filepath.Join(moduleDir, composeFile))
-	if err != nil {
-		return err
-	}
-	var raw map[string]any
-	if err := yaml.Unmarshal(devCompose, &raw); err != nil {
-		return fmt.Errorf("compose.yaml 格式错误: %w", err)
-	}
-	services, _ := raw["services"].(map[string]any)
-	for _, s := range services {
-		if s, ok := s.(map[string]any); ok {
-			delete(s, "build")
-			if img, ok := s["image"].(string); ok {
-				s["image"] = strings.ReplaceAll(img, "${VERSION}", m.Version)
-			}
-		}
-	}
-	composeData, err := yaml.Marshal(raw)
-	if err != nil {
-		return err
-	}
-	files := []zipEntry{
-		{name: manifestFile, data: manifestData},
-		{name: composeFile, data: composeData},
-		{name: imagesFile, path: imagesPath},
-	}
-	if m.Icon != "" {
-		files = append(files, zipEntry{name: m.Icon, path: filepath.Join(moduleDir, m.Icon)})
-	}
-
-	tmp := out + ".tmp"
-	if err := writeZip(tmp, files); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	// 用安装器打开包时的同一套校验检查一遍，不合规范的包在本地就报错。
-	pkg, err := OpenPackage(tmp)
-	if err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	pkg.Close()
-	return os.Rename(tmp, out)
-}
-
-// zipEntry 是模块包里的一个文件：内容要么在 data 里，要么从 path 读取（镜像文件很大，不读进内存）。
-type zipEntry struct {
-	name string
-	data []byte
-	path string
-}
-
-func writeZip(path string, files []zipEntry) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	zw := zip.NewWriter(f)
-	for _, file := range files {
-		w, err := zw.Create(file.name)
-		if err != nil {
-			return err
-		}
-		if file.path == "" {
-			_, err = w.Write(file.data)
-		} else {
-			err = copyFile(w, file.path)
-		}
-		if err != nil {
-			return err
-		}
-	}
-	if err := zw.Close(); err != nil {
-		return err
-	}
-	return f.Close()
-}
-
-func copyFile(w io.Writer, path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = io.Copy(w, f)
-	return err
 }

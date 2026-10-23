@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, ApiError, type InstalledModule } from "../api";
+import { api, ApiError, privilegeInfo, type InstalledModule } from "../api";
 
 // 应用管理：上传模块包安装或升级，卸载模块。安装和卸载都不会重启平台和其他应用。
 export default function Modules() {
@@ -13,6 +13,8 @@ export default function Modules() {
   const [result, setResult] = useState<{ ok: boolean; message: string; log: string } | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [purge, setPurge] = useState(false);
+  // 模块声明了特权时，安装器先拒绝并列出特权，管理员确认后再带上 allowPrivileges 装一次。
+  const [confirming, setConfirming] = useState<string[] | null>(null);
 
   function load() {
     api
@@ -28,22 +30,32 @@ export default function Modules() {
     try {
       const { log } = await action();
       setResult({ ok: true, message: success, log });
+      return true;
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setConfirming(err.privileges);
+        return false;
+      }
       const log = err instanceof ApiError ? err.log : "";
       setResult({ ok: false, message: err instanceof Error ? err.message : "操作失败", log });
+      return false;
     } finally {
       setBusy(false);
       load();
     }
   }
 
-  function install(e: FormEvent) {
-    e.preventDefault();
+  function install(e: FormEvent | null, allowPrivileges = false) {
+    e?.preventDefault();
     if (!file) return;
-    run(() => api.installModule(file), `${file.name} 已安装，几秒后出现在应用列表里。`).then(() => {
-      setFile(null);
-      setFileKey((k) => k + 1);
-    });
+    setConfirming(null);
+    run(() => api.installModule(file, allowPrivileges), `${file.name} 已安装，几秒后出现在应用列表里。`).then(
+      (done) => {
+        if (!done) return;
+        setFile(null);
+        setFileKey((k) => k + 1);
+      },
+    );
   }
 
   function uninstall(m: InstalledModule) {
@@ -59,12 +71,41 @@ export default function Modules() {
           上传在模块仓库里用 <code>npm run pack</code> 生成的模块包（zip）。已安装的应用会升级到包里的版本，数据保留。
         </p>
         <div className="row">
-          <input key={fileKey} type="file" accept=".zip" onChange={(e) => setFile(e.target.files?.[0] ?? null)} disabled={busy} />
+          <input
+            key={fileKey}
+            type="file"
+            accept=".zip"
+            onChange={(e) => {
+              setFile(e.target.files?.[0] ?? null);
+              setConfirming(null);
+            }}
+            disabled={busy}
+          />
           <button type="submit" disabled={!file || busy}>
             {busy ? "处理中…" : "安装"}
           </button>
         </div>
         {busy && <p className="muted">正在导入镜像并启动，可能需要一两分钟。关掉页面也不会中断安装。</p>}
+        {confirming && (
+          <div className="stack">
+            <p className="error">这个应用需要以下特权，确认后才会安装：</p>
+            <ul>
+              {confirming.map((p) => (
+                <li key={p}>
+                  <code>{p}</code>：{privilegeInfo[p] ?? "平台不认识的特权"}
+                </li>
+              ))}
+            </ul>
+            <div className="row">
+              <button type="button" className="danger" onClick={() => install(null, true)} disabled={busy}>
+                确认并安装
+              </button>
+              <button type="button" className="secondary" onClick={() => setConfirming(null)}>
+                取消
+              </button>
+            </div>
+          </div>
+        )}
       </form>
 
       {result && (
@@ -95,6 +136,8 @@ export default function Modules() {
                 <span className="muted">
                   {m.id}
                   {m.requires.length > 0 && ` · 依赖 ${m.requires.join("、")}`}
+                  {m.optional.length > 0 && ` · 可选依赖 ${m.optional.join("、")}`}
+                  {m.privileges.length > 0 && ` · 特权 ${m.privileges.join("、")}`}
                   {m.requiredBy.length > 0 && ` · 被 ${m.requiredBy.join("、")} 依赖`}
                 </span>
               </div>

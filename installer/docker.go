@@ -6,6 +6,8 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+
+	"github.com/Beane-Big/vibebooth/packages/modpkg"
 )
 
 // Docker 调用 docker 命令行。DOCKER_HOST 指向只给安装器用的 socket-proxy，见 docker-compose.yml。
@@ -57,7 +59,7 @@ func (d Docker) RemoveImages(ctx context.Context, log io.Writer, images []string
 func (d Docker) RemoveOldImages(ctx context.Context, log io.Writer, keep []string) {
 	repo := func(image string) string { return image[:strings.LastIndex(image, ":")] }
 	for _, image := range keep {
-		legacy := legacyImagePrefix + strings.TrimPrefix(repo(image), imagePrefix)
+		legacy := modpkg.LegacyImagePrefix + strings.TrimPrefix(repo(image), modpkg.ImagePrefix)
 		for _, r := range []string{repo(image), legacy} {
 			out, err := exec.CommandContext(ctx, "docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}", r).Output()
 			if err != nil {
