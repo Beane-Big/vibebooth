@@ -1,5 +1,7 @@
 # 构建上下文是仓库根目录（见 docker-compose.yml），以便引用 packages/manifest、packages/modpkg 和 packages/sdk-go。
 FROM golang:1.26-alpine AS build
+# 国内服务器上可以在 .env 里设置 GOPROXY 换成国内的 Go 代理，不设置时用官方代理。
+ARG GOPROXY=https://proxy.golang.org,direct
 WORKDIR /src
 COPY packages/manifest ./packages/manifest
 COPY packages/modpkg ./packages/modpkg

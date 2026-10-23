@@ -51,6 +51,8 @@ services:
     build:
       context: .
       dockerfile: core/Dockerfile
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://platform:${POSTGRES_PASSWORD}@postgres:5432/platform
@@ -76,7 +78,10 @@ services:
       - traefik.http.middlewares.platform-admin.forwardauth.authResponseHeaders=Authorization
 
   portal:
-    build: ./portal
+    build:
+      context: ./portal
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     restart: unless-stopped
     labels:
       - traefik.enable=true
@@ -89,6 +94,8 @@ services:
     build:
       context: .
       dockerfile: installer/Dockerfile
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
     restart: unless-stopped
     environment:
       DOCKER_HOST: tcp://installer-proxy:2375
@@ -123,7 +130,10 @@ services:
   # 构建代理：只给声明了 docker-build 特权的模块（例如构建器）用。只放行构建镜像，查看、打标签、导出和删除 vb- 开头的
   # 模块镜像，碰不到平台自己的镜像和容器，规则见 build-proxy/rules.go。安装器给这类模块的后端接上 platform-build 网络。
   build-proxy:
-    build: ./build-proxy
+    build:
+      context: ./build-proxy
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
