@@ -26,8 +26,15 @@ export type InstalledModule = {
   description: string;
   version: string;
   requires: string[];
+  optional: string[];
   requiredBy: string[];
+  privileges: string[];
   healthy: boolean;
+};
+
+// 模块能声明的特权，以及安装前给管理员看的说明。
+export const privilegeInfo: Record<string, string> = {
+  "docker-build": "在服务器上构建镜像。它碰不到平台自己的程序，但能替换其他应用的镜像，只安装你信任的模块。",
 };
 
 // 用户页：某个人对每个菜单的默认值、单独设置和最终结果。override 为 null 表示跟随默认。
@@ -59,6 +66,8 @@ export class ApiError extends Error {
     message: string,
     // 安装器失败时附带的安装日志。
     public log = "",
+    // 模块需要特权、等管理员确认时（409），列出需要的特权。
+    public privileges: string[] = [],
   ) {
     super(message);
   }
@@ -73,7 +82,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error ?? "请求失败", body.log);
+    throw new ApiError(res.status, body.error ?? "请求失败", body.log, body.privileges);
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }
@@ -92,9 +101,10 @@ export const api = {
 
   // 应用管理（只有管理员能调用）
   modules: () => request<InstalledModule[]>("/api/platform/installer/modules"),
-  installModule: (file: File) => {
+  installModule: (file: File, allowPrivileges = false) => {
     const form = new FormData();
     form.append("package", file);
+    if (allowPrivileges) form.append("allowPrivileges", "true");
     return request<{ module: InstalledModule; log: string }>("/api/platform/installer/modules", {
       method: "POST",
       body: form,

@@ -4,14 +4,14 @@
 
 ## 一句话总结
 
-整个平台由 7 个常驻的小程序（平台本体）加上若干个模块组成，每个程序都跑在自己的 Docker 容器里。浏览器只和其中的网关 Traefik 打交道，由网关按网址把请求转给后面对应的程序。模块由安装器单独安装和卸载，平台本体和其他模块不用重启。
+整个平台由 8 个常驻的小程序（平台本体）加上若干个模块组成，每个程序都跑在自己的 Docker 容器里。浏览器只和其中的网关 Traefik 打交道，由网关按网址把请求转给后面对应的程序。模块由安装器单独安装和卸载，平台本体和其他模块不用重启。
 
 从外到里一共四层，每一层都装在上一层里面：
 
 1. **Windows**：你的电脑，浏览器和代理软件运行在这一层。
 2. **WSL（Ubuntu）**：Windows 里的一个轻量 Linux 虚拟机。Docker 只能原生运行在 Linux 上，所以需要它。
 3. **Docker**：装在 Ubuntu 里的后台服务，负责下载、创建、启动和停止容器。
-4. **容器**：平台本体的 7 个程序和每个模块的前端、后端，一个程序一个容器，彼此隔离。
+4. **容器**：平台本体的 8 个程序和每个模块的前端、后端，一个程序一个容器，彼此隔离。
 
 在 Windows 浏览器里打开 `localhost:8080` 能访问到容器，是因为两次转发：WSL 把 Ubuntu 里监听的端口转给 Windows，Docker 再把 Ubuntu 的 8080 端口转给网关容器。
 
@@ -28,6 +28,7 @@ flowchart TB
             core["core 平台核心<br/>登录、校验、发令牌、用户与菜单权限<br/>/api/platform/"]
             installer["installer 安装器<br/>校验模块包、启动和卸载模块<br/>/api/platform/installer/"]
             iproxy["installer-proxy<br/>可写，只给安装器用"]
+            bproxy["build-proxy<br/>只放行模块镜像的构建，给有构建特权的模块用"]
             pg[("postgres 数据库<br/>用户、会话、菜单授权 · 卷 pgdata")]
             mods[("卷 modules-data<br/>已安装模块的清单和图标")]
         end
@@ -47,6 +48,7 @@ flowchart TB
     core -. "每 5 秒扫描" .-> mods
     installer --> mods
     installer --> iproxy
+    modules -. "只有声明了构建特权的模块后端" .-> bproxy
     iproxy -. "创建、删除容器" .-> modules
     notes == "对外接口 /api/contacts/ext/v1/<br/>内部网络直连" ==> contacts
 ```
@@ -60,7 +62,7 @@ flowchart TB
 | 概念 | 是什么 | 比喻 | 在本项目里 |
 | --- | --- | --- | --- |
 | 镜像（image） | 打包好的程序加上它运行所需的系统文件，只读 | 预制菜料包 | `postgres:17-alpine` 是直接下载的；`core`、`portal` 是用各自的 `Dockerfile` 现场构建的 |
-| 容器（container） | 镜像运行起来之后的一个实例 | 拆开料包做出来的菜 | `docker compose ps` 列出平台本体的 7 个，`docker ps` 还能看到 `mod-` 开头的模块容器 |
+| 容器（container） | 镜像运行起来之后的一个实例 | 拆开料包做出来的菜 | `docker compose ps` 列出平台本体的 8 个，`docker ps` 还能看到 `mod-` 开头的模块容器 |
 | Dockerfile | 说明怎样从源码构建镜像的脚本 | 菜谱 | `core/Dockerfile`：先用 Go 编译，再把编译结果放进一个很小的 alpine 系统 |
 | Compose | 用一个文件描述多个容器以及它们的关系，一条命令就能全部启动 | 整桌菜的菜单 | 根目录 `docker-compose.yml` 是平台本体；每个模块有自己的 `compose.yaml`，由安装器作为独立项目 `mod-<id>` 启动 |
 | 网络（network） | 容器之间的内部局域网，容器之间用服务名互相访问 | 厨房里的传菜口 | 在 `platform` 网络里，`core` 用 `postgres:5432` 就能连上数据库，`notes-backend` 用 `contacts-backend:8000` 就能连上另一个模块 |
@@ -70,7 +72,7 @@ flowchart TB
 
 ## 各个服务负责什么
 
-前 7 个是平台本体，定义在 `docker-compose.yml` 里；后面是模块，每个模块在自己的仓库里开发，容器定义在模块仓库的 `compose.yaml` 里，打成模块包后由安装器安装。
+前 8 个是平台本体，定义在 `docker-compose.yml` 里；后面是模块，每个模块在自己的仓库里开发，容器定义在模块仓库的 `compose.yaml` 里，打成模块包后由安装器安装。
 
 | 服务 | 是什么 | 职责 |
 | --- | --- | --- |
@@ -81,6 +83,7 @@ flowchart TB
 | `portal` | 门户（自己写的 React 代码，由 nginx 提供） | 登录页、应用列表、设置入口；管理员还能看到“应用管理”和“用户”两页 |
 | `installer` | 模块安装器（自己写的 Go 代码） | 校验上传的模块包，导入镜像，以独立的 Compose 项目启动模块，并把清单写进 `modules-data` 卷；也负责卸载。只有管理员能调用 |
 | `installer-proxy` | 安装器专用的 Docker 门卫（现成软件） | 开放创建、删除容器、镜像、网络、卷的权限，只接在安装器所在的内部网络上 |
+| `build-proxy` | 构建代理（自己写的 Go 代码） | 给声明了 `docker-build` 特权的模块（例如构建器）用的 Docker 门卫：逐个检查请求，只放行构建 `vb-` 开头的模块镜像，以及查看、打标签、导出、删除这些镜像和清理构建缓存；碰不到容器和平台自己的镜像。只接在内部网络 `platform-build` 上 |
 | `<id>-frontend` / `<id>-backend` | 模块（各自的仓库，技术栈自选） | 模块 `<id>` 的页面 `/apps/<id>/` 和接口 `/api/<id>/`；后端用 `core` 公开的公钥校验令牌，从而知道是谁在访问 |
 
 ## 一次完整访问的过程
@@ -114,14 +117,14 @@ flowchart TB
 
 不管是在门户“应用管理”页上传，还是在命令行运行 `npm run install:local` 或 `scripts/module install <模块包.zip>`，最后都由安装器完成，步骤相同：
 
-1. **打开模块包**：zip 里只能有 `module.yaml`、`compose.yaml`、`images.tar` 和图标。安装器校验清单（规范版本 `platform`、id、版本、服务、菜单、依赖），按白名单检查 `compose.yaml`（不允许端口映射、特权、宿主机网络、挂载宿主机目录、自己写标签等），并确认 `images.tar` 里的镜像正好是 `vb-<id>-<服务>:<版本>`，不能借机覆盖别的镜像。`requires` 里的模块必须已经装好，写了版本（如 `contacts>=0.2`）时版本也要满足；反过来，已经被依赖的模块不能装回不满足依赖的旧版本。
-2. **生成最终的 compose 文件**：在模块的 `compose.yaml` 上补上网络 `platform`、Traefik 路由标签（`/apps/<id>/` 和 `/api/<id>/`，排除 `/api/<id>/ext/`）和 `JWKS_URL`。路由由安装器按约定生成，模块自己写不了，也就抢不走门户或别的模块的网址。
+1. **打开模块包**：zip 里只能有 `module.yaml`、`compose.yaml`、`images.tar` 和图标。安装器校验清单（规范版本 `platform`、id、版本、服务、菜单、依赖），按白名单检查 `compose.yaml`（不允许端口映射、特权、宿主机网络、挂载宿主机目录、自己写标签等），并确认 `images.tar` 里的镜像正好是 `vb-<id>-<服务>:<版本>`，不能借机覆盖别的镜像。`requires` 里的模块必须已经装好，写了版本（如 `contacts>=0.2`）时版本也要满足；`optional` 里的模块可以没装，装了就要满足版本；反过来，已经被依赖的模块（可选依赖也算）不能装回不满足依赖的旧版本。清单里有 `privileges` 时，要管理员在页面上确认（命令行加 `--allow-privileges`）才继续。
+2. **生成最终的 compose 文件**：在模块的 `compose.yaml` 上补上网络 `platform`、Traefik 路由标签（`/apps/<id>/` 和 `/api/<id>/`，排除 `/api/<id>/ext/`）和 `JWKS_URL`。有 `docker-build` 特权的模块，后端再接上网络 `platform-build`，`DOCKER_HOST` 指向构建代理。路由由安装器按约定生成，模块自己写不了，也就抢不走门户或别的模块的网址。
 3. **导入镜像并启动**：`docker load`，然后以项目 `mod-<id>` 执行 `docker compose up -d`。网关通过标签自动接上路由，平台本体和其他模块不动。
 4. **等健康检查**：最多 60 秒，后端 `/api/<id>/health` 要返回 2xx，前端端口要能连上。
 5. **登记**：把清单和图标写进 `modules-data` 卷的 `<id>/` 目录。`core` 下一次扫描（最多 5 秒）就会认出它，门户里出现新卡片。
 6. **失败时**：新装的模块删除容器；升级则恢复旧版本。安装日志会显示在页面上或命令行里。
 
-卸载时先从 `modules-data` 卷里移走目录（门户里马上消失），再删除容器和镜像。数据卷默认保留，重新安装同一个模块后数据还在。被别的模块 `requires` 的模块不能先卸载。
+卸载时先从 `modules-data` 卷里移走目录（门户里马上消失），再删除容器和镜像。数据卷默认保留，重新安装同一个模块后数据还在。被别的模块 `requires` 的模块不能先卸载；只被 `optional` 的模块可以卸载，依赖它的模块自己处理它不在的情况。
 
 升级就是安装同一个 id 的新版本包，期间这个模块会中断几秒到十几秒，其他模块不受影响。
 

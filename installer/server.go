@@ -12,6 +12,7 @@ import (
 	"slices"
 
 	"github.com/Beane-Big/vibebooth/packages/manifest"
+	"github.com/Beane-Big/vibebooth/packages/modpkg"
 	"github.com/Beane-Big/vibebooth/packages/sdk-go/auth"
 )
 
@@ -53,6 +54,7 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 }
 
 // install 接收 multipart 表单里的 package 文件，先存成临时文件再安装。返回安装日志，失败时也返回日志。
+// 模块声明了特权时，表单里要有 allowPrivileges=true，否则返回 409 和需要的特权，由门户请管理员确认。
 func (s *server) install(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxPackageSize)
 	file, _, err := r.FormFile("package")
@@ -76,7 +78,8 @@ func (s *server) install(w http.ResponseWriter, r *http.Request) {
 
 	var log bytes.Buffer
 	// 关掉页面或断网时不能中断安装：docker 命令被杀掉后，模块会停在半装好的状态，回滚也跑不了。
-	m, err := s.installer.Install(context.WithoutCancel(r.Context()), tmp.Name(), &log)
+	allow := r.FormValue("allowPrivileges") == "true"
+	m, err := s.installer.Install(context.WithoutCancel(r.Context()), tmp.Name(), allow, &log)
 	if err != nil {
 		s.fail(w, err, log.String())
 		return
@@ -95,7 +98,12 @@ func (s *server) uninstall(w http.ResponseWriter, r *http.Request) {
 
 // fail 把模块包不合规范的错误原样告诉管理员；其他错误记日志，并把安装日志一起返回方便排查。
 func (s *server) fail(w http.ResponseWriter, err error, log string) {
-	var inv *invalidError
+	var priv *PrivilegeError
+	if errors.As(err, &priv) {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": priv.Error(), "privileges": priv.Privileges})
+		return
+	}
+	var inv *modpkg.InvalidError
 	if errors.As(err, &inv) {
 		writeError(w, http.StatusBadRequest, inv.Error(), log)
 		return
@@ -105,7 +113,11 @@ func (s *server) fail(w http.ResponseWriter, err error, log string) {
 }
 
 func installedView(m *manifest.Manifest) Installed {
-	return Installed{ID: m.ID, Name: m.Name, Description: m.Description, Version: m.Version, Requires: orEmpty(m.RequiredIDs()), RequiredBy: []string{}, Healthy: true}
+	return Installed{
+		ID: m.ID, Name: m.Name, Description: m.Description, Version: m.Version,
+		Requires: orEmpty(m.RequiredIDs()), Optional: orEmpty(depIDs(m.OptionalDeps)),
+		RequiredBy: []string{}, Privileges: orEmpty(m.Privileges), Healthy: true,
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

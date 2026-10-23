@@ -2,7 +2,7 @@
 # 管理已安装的模块。在仓库根目录或任意子目录运行都可以，要求平台已经用 docker compose up -d 启动。
 # 模块在各自的仓库里开发和打包（npm run pack），见 docs/module-spec.md。
 #
-#   scripts/module install <模块包.zip>     安装或升级
+#   scripts/module install <模块包.zip> [--allow-privileges]  安装或升级；模块声明了特权时要加 --allow-privileges 确认
 #   scripts/module uninstall <id> [--purge] 卸载；默认保留数据卷，--purge 连数据一起删除
 #   scripts/module list                    列出已安装的模块
 set -euo pipefail
@@ -10,7 +10,7 @@ set -euo pipefail
 die() { echo "错误: $*" >&2; exit 1; }
 
 # 模块包路径相对于运行命令的目录，切换到仓库根目录之前先转成绝对路径。
-if [ "${1:-}" = install ] && [ $# -eq 2 ]; then
+if [ "${1:-}" = install ] && [ $# -ge 2 ]; then
   [ -f "$2" ] || die "$2 不存在"
   zip=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
 fi
@@ -25,10 +25,11 @@ installer_container() {
 
 case "${1:-}" in
   install)
-    [ $# -eq 2 ] && [[ "$2" == *.zip ]] || die "用法: scripts/module install <模块包.zip>"
+    { [ $# -eq 2 ] || { [ $# -eq 3 ] && [ "$3" = --allow-privileges ]; }; } && [[ "$2" == *.zip ]] ||
+      die "用法: scripts/module install <模块包.zip> [--allow-privileges]"
     container=$(installer_container)
     docker cp "$zip" "$container:/tmp/package.zip" >/dev/null
-    docker exec "$container" installer install /tmp/package.zip
+    docker exec "$container" installer install /tmp/package.zip ${3:+"$3"}
     ;;
   uninstall) [ $# -ge 2 ] || die "用法: scripts/module uninstall <id> [--purge]"; shift; docker exec "$(installer_container)" installer uninstall "$@" ;;
   list)      docker exec "$(installer_container)" installer list ;;

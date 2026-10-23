@@ -12,7 +12,9 @@
 | `core/` | 平台核心（Go）：登录与会话、给网关做登录和菜单权限校验、签发模块令牌、用户管理、应用注册表 |
 | `portal/` | 门户前端（React + Vite）：登录页、应用列表、设置入口、应用管理、用户 |
 | `installer/` | 模块安装器（Go）：校验模块包、启动和卸载模块；也是模块打包用的命令行工具 |
+| `build-proxy/` | 构建代理（Go）：给声明了 `docker-build` 特权的模块用的 Docker 门卫，只放行 `vb-` 开头的模块镜像的构建和查看、打标签、导出、删除 |
 | `packages/manifest/` | 模块清单 `module.yaml` 的解析和校验，平台核心和安装器共用 |
+| `packages/modpkg/` | 模块包（软件包）的校验、生成和 compose 文件转换，安装器和构建器共用 |
 | `packages/sdk-go/` | 模块后端用的 Go SDK，目前提供令牌校验和菜单权限判断 |
 | `scripts/module` | 在命令行安装、卸载、列出模块 |
 | `docs/module-spec.md` | 模块开发规范 |

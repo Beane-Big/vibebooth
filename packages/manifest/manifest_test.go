@@ -23,28 +23,32 @@ func TestParseDefaults(t *testing.T) {
 
 func TestParseRejects(t *testing.T) {
 	cases := map[string]string{
-		"保留 id":    "id: core\nname: x\nversion: 0.1.0\nservices: {backend: {port: 80}}\n",
-		"大写 id":    "id: Demo\nname: x\nversion: 0.1.0\nservices: {backend: {port: 80}}\n",
-		"缺 name":   "id: demo\nversion: 0.1.0\nservices: {backend: {port: 80}}\n",
-		"版本格式":     "id: demo\nname: x\nversion: v1\nservices: {backend: {port: 80}}\n",
-		"没有服务":     "id: demo\nname: x\nversion: 0.1.0\n",
-		"未知服务":     "id: demo\nname: x\nversion: 0.1.0\nservices: {worker: {port: 80}}\n",
-		"端口":       "id: demo\nname: x\nversion: 0.1.0\nservices: {backend: {port: 0}}\n",
-		"未知字段":     base + "frontend: /apps/demo/\n",
-		"图标带路径":    base + "icon: ../x.svg\n",
-		"图标类型":     base + "icon: icon.js\n",
-		"依赖自己":     base + "requires: [demo]\n",
-		"依赖写法":     base + "requires: [people>0.2]\n",
-		"依赖版本格式":   base + "requires: [people>=v1]\n",
-		"规范版本太高":   base + "platform: 2\n",
-		"菜单在别处":    base + "  - {id: x, name: x, path: /apps/other/}\n",
-		"菜单带 ..":   base + "  - {id: x, name: x, path: /apps/demo/../other/}\n",
-		"菜单是外部网站":  base + "  - {id: x, name: x, path: https://example.com/}\n",
-		"菜单 id 重复": base + "  - {id: home, name: x, path: /apps/demo/x/}\n",
-		"菜单路径重复":   base + "  - {id: x, name: x, path: /apps/demo/}\n",
-		"菜单缺 name": base + "  - {id: x, path: /apps/demo/x/}\n",
-		"有前端没有菜单":  "id: demo\nname: x\nversion: 0.1.0\nservices: {frontend: {port: 80}}\n",
-		"有菜单没有前端":  "id: demo\nname: x\nversion: 0.1.0\nservices: {backend: {port: 80}}\nmenus: [{id: x, name: x, path: /apps/demo/}]\n",
+		"保留 id":       "id: core\nname: x\nversion: 0.1.0\nservices: {backend: {port: 80}}\n",
+		"大写 id":       "id: Demo\nname: x\nversion: 0.1.0\nservices: {backend: {port: 80}}\n",
+		"缺 name":      "id: demo\nversion: 0.1.0\nservices: {backend: {port: 80}}\n",
+		"版本格式":        "id: demo\nname: x\nversion: v1\nservices: {backend: {port: 80}}\n",
+		"没有服务":        "id: demo\nname: x\nversion: 0.1.0\n",
+		"未知服务":        "id: demo\nname: x\nversion: 0.1.0\nservices: {worker: {port: 80}}\n",
+		"端口":          "id: demo\nname: x\nversion: 0.1.0\nservices: {backend: {port: 0}}\n",
+		"未知字段":        base + "frontend: /apps/demo/\n",
+		"图标带路径":       base + "icon: ../x.svg\n",
+		"图标类型":        base + "icon: icon.js\n",
+		"依赖自己":        base + "requires: [demo]\n",
+		"依赖写法":        base + "requires: [people>0.2]\n",
+		"依赖版本格式":      base + "requires: [people>=v1]\n",
+		"规范版本太高":      base + "platform: 2\n",
+		"可选依赖写法":      base + "optional: [people>0.2]\n",
+		"依赖写了两遍":      base + "requires: [people]\noptional: [people>=0.2]\n",
+		"未知特权":        base + "privileges: [docker-run]\n",
+		"保留 id build": "id: build\nname: x\nversion: 0.1.0\nservices: {backend: {port: 80}}\n",
+		"菜单在别处":       base + "  - {id: x, name: x, path: /apps/other/}\n",
+		"菜单带 ..":      base + "  - {id: x, name: x, path: /apps/demo/../other/}\n",
+		"菜单是外部网站":     base + "  - {id: x, name: x, path: https://example.com/}\n",
+		"菜单 id 重复":    base + "  - {id: home, name: x, path: /apps/demo/x/}\n",
+		"菜单路径重复":      base + "  - {id: x, name: x, path: /apps/demo/}\n",
+		"菜单缺 name":    base + "  - {id: x, path: /apps/demo/x/}\n",
+		"有前端没有菜单":     "id: demo\nname: x\nversion: 0.1.0\nservices: {frontend: {port: 80}}\n",
+		"有菜单没有前端":     "id: demo\nname: x\nversion: 0.1.0\nservices: {backend: {port: 80}}\nmenus: [{id: x, name: x, path: /apps/demo/}]\n",
 	}
 	for name, yaml := range cases {
 		if _, err := Parse([]byte(yaml)); err == nil {
@@ -105,5 +109,18 @@ func TestRequires(t *testing.T) {
 	}
 	if !m.Deps[0].SatisfiedBy("0.0.1") {
 		t.Error("不写版本时任何版本都应满足")
+	}
+}
+
+func TestOptionalAndPrivileges(t *testing.T) {
+	m, err := Parse([]byte(base + "optional: [people>=0.2]\nprivileges: [docker-build]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Deps) != 0 || len(m.OptionalDeps) != 1 || m.OptionalDeps[0] != (Requirement{ID: "people", Min: "0.2.0"}) {
+		t.Errorf("Deps = %v，OptionalDeps = %v", m.Deps, m.OptionalDeps)
+	}
+	if !m.HasPrivilege(PrivilegeDockerBuild) {
+		t.Error("应声明 docker-build 特权")
 	}
 }

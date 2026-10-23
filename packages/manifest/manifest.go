@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -72,10 +73,22 @@ type Manifest struct {
 	// Requires 是本模块要调用的其他模块，写成 contacts 或 contacts>=0.2。没装或版本不够就不能安装，
 	// 被依赖的模块不能先卸载。解析结果在 Deps 里。
 	Requires []string `yaml:"requires"`
-	Menus    []Menu   `yaml:"menus"`
+	// Optional 是可选依赖，写法同 requires：没装也能安装，模块自己处理对方不在的情况；
+	// 装了就必须满足版本要求，否则对方的接口可能不存在。卸载对方不受影响。解析结果在 OptionalDeps 里。
+	Optional []string `yaml:"optional"`
+	// Privileges 是模块需要的平台特权，安装时要管理员单独确认，取值见 Privilege 常量。
+	Privileges []string `yaml:"privileges"`
+	Menus      []Menu   `yaml:"menus"`
 
-	Deps []Requirement `yaml:"-"`
+	Deps         []Requirement `yaml:"-"`
+	OptionalDeps []Requirement `yaml:"-"`
 }
+
+// PrivilegeDockerBuild 允许模块后端经过平台的构建代理在服务器上构建镜像。代理只放行名字以 vb- 开头的模块镜像，
+// 碰不到平台自己的镜像和容器，但能替换其他模块的镜像，所以安装前要管理员确认。
+const PrivilegeDockerBuild = "docker-build"
+
+var privileges = map[string]bool{PrivilegeDockerBuild: true}
 
 var (
 	idPattern      = regexp.MustCompile(`^[a-z][a-z0-9-]{1,30}$`)
@@ -86,7 +99,7 @@ var (
 	// 平台自己的路径前缀和服务名，模块不能用，否则会抢走平台的路由或在内部网络里重名。
 	reservedIDs = map[string]bool{
 		"platform": true, "core": true, "portal": true, "traefik": true,
-		"postgres": true, "socket": true, "installer": true,
+		"postgres": true, "socket": true, "installer": true, "build": true,
 	}
 	iconTypes = map[string]bool{".svg": true, ".png": true}
 )
@@ -143,17 +156,22 @@ func (m *Manifest) validate() error {
 			return fmt.Errorf("services.%s.port 必须在 1 到 65535 之间", name)
 		}
 	}
-	m.Deps = nil
-	for _, r := range m.Requires {
-		match := requirePattern.FindStringSubmatch(strings.ReplaceAll(r, " ", ""))
-		if match == nil || !ValidID(match[1]) || match[1] == m.ID {
-			return fmt.Errorf("requires 里的 %q 不合法，要写成其他模块的 id，例如 contacts 或 contacts>=0.2", r)
+	var err error
+	if m.Deps, err = m.parseDeps("requires", m.Requires); err != nil {
+		return err
+	}
+	if m.OptionalDeps, err = m.parseDeps("optional", m.Optional); err != nil {
+		return err
+	}
+	for _, d := range m.OptionalDeps {
+		if slices.Contains(m.RequiredIDs(), d.ID) {
+			return fmt.Errorf("%s 不能同时写在 requires 和 optional 里", d.ID)
 		}
-		min := match[2]
-		if strings.Count(min, ".") == 1 {
-			min += ".0"
+	}
+	for _, p := range m.Privileges {
+		if !privileges[p] {
+			return fmt.Errorf("privileges 里的 %q 不认识，目前只支持 %s", p, PrivilegeDockerBuild)
 		}
-		m.Deps = append(m.Deps, Requirement{ID: match[1], Min: min})
 	}
 	_, hasFrontend := m.Services[Frontend]
 	if hasFrontend && len(m.Menus) == 0 {
@@ -182,6 +200,26 @@ func (m *Manifest) validate() error {
 	}
 	return nil
 }
+
+// parseDeps 解析 requires 或 optional 的每一项，x.y 补成 x.y.0。
+func (m *Manifest) parseDeps(field string, list []string) ([]Requirement, error) {
+	var deps []Requirement
+	for _, r := range list {
+		match := requirePattern.FindStringSubmatch(strings.ReplaceAll(r, " ", ""))
+		if match == nil || !ValidID(match[1]) || match[1] == m.ID {
+			return nil, fmt.Errorf("%s 里的 %q 不合法，要写成其他模块的 id，例如 contacts 或 contacts>=0.2", field, r)
+		}
+		min := match[2]
+		if strings.Count(min, ".") == 1 {
+			min += ".0"
+		}
+		deps = append(deps, Requirement{ID: match[1], Min: min})
+	}
+	return deps, nil
+}
+
+// HasPrivilege 判断模块是否声明了某项特权。
+func (m *Manifest) HasPrivilege(p string) bool { return slices.Contains(m.Privileges, p) }
 
 // RequiredIDs 返回依赖的模块 id。
 func (m *Manifest) RequiredIDs() []string {

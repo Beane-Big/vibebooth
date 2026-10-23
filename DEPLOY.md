@@ -157,7 +157,7 @@ grep PASSWORD .env
    docker compose ps
    ```
 
-   正常情况下有 7 行（traefik、socket-proxy、postgres、core、portal、installer、installer-proxy），STATUS 都是 Up，postgres 那一行带 healthy。
+   正常情况下有 8 行（traefik、socket-proxy、postgres、core、portal、installer、installer-proxy、build-proxy），STATUS 都是 Up，postgres 那一行带 healthy。
 
 4. 安装模块。模块在各自的仓库里，打包脚本要用 Node.js，第一次先在 Ubuntu 里装上：
 

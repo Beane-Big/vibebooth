@@ -1,4 +1,7 @@
-package main
+// Package modpkg 打开、校验和生成模块包（软件包）。
+//
+// 安装器和构建器共用这一份规则：构建器认为合格的包，安装器一定能装。
+package modpkg
 
 import (
 	"archive/tar"
@@ -18,17 +21,17 @@ import (
 
 // 模块包是一个 zip，根目录下只能有这几个文件（加上清单里声明的图标）。
 const (
-	manifestFile = "module.yaml"
-	composeFile  = "compose.yaml"
-	imagesFile   = "images.tar"
+	ManifestFile = "module.yaml"
+	ComposeFile  = "compose.yaml"
+	ImagesFile   = "images.tar"
 )
 
-// invalidError 表示模块包不符合规范，HTTP 接口据此返回 400 而不是 500。
-type invalidError struct{ msg string }
+// InvalidError 表示模块包不符合规范，HTTP 接口据此返回 400 而不是 500。
+type InvalidError struct{ msg string }
 
-func (e *invalidError) Error() string { return e.msg }
+func (e *InvalidError) Error() string { return e.msg }
 
-func invalid(format string, args ...any) error { return &invalidError{fmt.Sprintf(format, args...)} }
+func Invalid(format string, args ...any) error { return &InvalidError{fmt.Sprintf(format, args...)} }
 
 // Package 是打开后的模块包。
 type Package struct {
@@ -49,7 +52,7 @@ func (p *Package) Images() (io.ReadCloser, error) { return p.images.Open() }
 func OpenPackage(path string) (*Package, error) {
 	zr, err := zip.OpenReader(path)
 	if err != nil {
-		return nil, invalid("不是有效的 zip 文件: %v", err)
+		return nil, Invalid("不是有效的 zip 文件: %v", err)
 	}
 	p := &Package{zip: zr}
 	if err := p.load(); err != nil {
@@ -65,41 +68,41 @@ func (p *Package) load() error {
 		files[f.Name] = f
 	}
 	var err error
-	if p.ManifestData, err = readSmall(files[manifestFile], 64<<10); err != nil {
-		return invalid("%s: %v", manifestFile, err)
+	if p.ManifestData, err = readSmall(files[ManifestFile], 64<<10); err != nil {
+		return Invalid("%s: %v", ManifestFile, err)
 	}
 	if p.Manifest, err = manifest.Parse(p.ManifestData); err != nil {
-		return invalid("%v", err)
+		return Invalid("%v", err)
 	}
 	m := p.Manifest
-	allowed := map[string]bool{manifestFile: true, composeFile: true, imagesFile: true}
+	allowed := map[string]bool{ManifestFile: true, ComposeFile: true, ImagesFile: true}
 	if m.Icon != "" {
 		allowed[m.Icon] = true
 		if p.Icon, err = readSmall(files[m.Icon], 256<<10); err != nil {
-			return invalid("图标 %s: %v", m.Icon, err)
+			return Invalid("图标 %s: %v", m.Icon, err)
 		}
 	}
 	for name := range files {
 		if !allowed[name] {
-			return invalid("模块包里不应有 %s，只能包含 module.yaml、compose.yaml、images.tar 和图标", name)
+			return Invalid("模块包里不应有 %s，只能包含 module.yaml、compose.yaml、images.tar 和图标", name)
 		}
 	}
-	if p.Compose, err = readSmall(files[composeFile], 64<<10); err != nil {
-		return invalid("%s: %v", composeFile, err)
+	if p.Compose, err = readSmall(files[ComposeFile], 64<<10); err != nil {
+		return Invalid("%s: %v", ComposeFile, err)
 	}
-	c, err := parseCompose(m, p.Compose)
+	c, err := ParseCompose(m, p.Compose)
 	if err != nil {
 		return err
 	}
-	if p.images = files[imagesFile]; p.images == nil {
-		return invalid("缺少 %s", imagesFile)
+	if p.images = files[ImagesFile]; p.images == nil {
+		return Invalid("缺少 %s", ImagesFile)
 	}
 	r, err := p.images.Open()
 	if err != nil {
-		return invalid("%s: %v", imagesFile, err)
+		return Invalid("%s: %v", ImagesFile, err)
 	}
 	defer r.Close()
-	return checkImageTags(r, c.images())
+	return checkImageTags(r, c.Images())
 }
 
 func readSmall(f *zip.File, limit int64) ([]byte, error) {
@@ -119,8 +122,8 @@ func readSmall(f *zip.File, limit int64) ([]byte, error) {
 
 // ---- compose.yaml ----
 
-// compose 只解析成通用结构：白名单之外的字段一律拒绝，生成最终文件时再补上网络和标签。
-type compose struct {
+// Compose 是校验过的 compose.yaml，只解析成通用结构：白名单之外的字段一律拒绝，生成最终文件时再补上网络和标签。
+type Compose struct {
 	m        *manifest.Manifest
 	services map[string]map[string]any
 	volumes  map[string]any
@@ -138,35 +141,41 @@ var (
 	restartPolicies    = map[string]bool{"no": true, "always": true, "unless-stopped": true, "on-failure": true}
 )
 
-// imagePrefix 是模块镜像名的前缀；legacyImagePrefix 是改名为 Vibebooth 之前用的前缀，只在清理旧镜像时用到。
+// BuildNetwork 是构建代理所在的内部网络，BuildProxyHost 是模块访问构建代理的地址，见平台的 docker-compose.yml。
 const (
-	imagePrefix       = "vb-"
-	legacyImagePrefix = "hp-"
+	BuildNetwork   = "platform-build"
+	BuildProxyHost = "tcp://build-proxy:2375"
 )
 
-// imageName 是服务必须使用的镜像名，例如 vb-notes-backend:0.2.0。安装器只导入这些名字的镜像，
+// ImagePrefix 是模块镜像名的前缀；LegacyImagePrefix 是改名为 Vibebooth 之前用的前缀，只在清理旧镜像时用到。
+const (
+	ImagePrefix       = "vb-"
+	LegacyImagePrefix = "hp-"
+)
+
+// ImageName 是服务必须使用的镜像名，例如 vb-notes-backend:0.2.0。安装器只导入这些名字的镜像，
 // 模块包不能借 docker load 覆盖平台或其他模块的镜像。
-func imageName(m *manifest.Manifest, service string) string {
-	return imagePrefix + service + ":" + m.Version
+func ImageName(m *manifest.Manifest, service string) string {
+	return ImagePrefix + service + ":" + m.Version
 }
 
-func parseCompose(m *manifest.Manifest, data []byte) (*compose, error) {
+func ParseCompose(m *manifest.Manifest, data []byte) (*Compose, error) {
 	var raw map[string]any
 	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, invalid("compose.yaml 格式错误: %v", err)
+		return nil, Invalid("compose.yaml 格式错误: %v", err)
 	}
-	c := &compose{m: m, services: map[string]map[string]any{}, volumes: map[string]any{}}
+	c := &Compose{m: m, services: map[string]map[string]any{}, volumes: map[string]any{}}
 	for key, v := range raw {
 		switch key {
 		case "services":
 			services, ok := v.(map[string]any)
 			if !ok {
-				return nil, invalid("compose.yaml: services 必须是映射")
+				return nil, Invalid("compose.yaml: services 必须是映射")
 			}
 			for name, sv := range services {
 				s, ok := sv.(map[string]any)
 				if !ok {
-					return nil, invalid("compose.yaml: 服务 %s 格式错误", name)
+					return nil, Invalid("compose.yaml: 服务 %s 格式错误", name)
 				}
 				c.services[name] = s
 			}
@@ -176,20 +185,20 @@ func parseCompose(m *manifest.Manifest, data []byte) (*compose, error) {
 			}
 			volumes, ok := v.(map[string]any)
 			if !ok {
-				return nil, invalid("compose.yaml: volumes 必须是映射")
+				return nil, Invalid("compose.yaml: volumes 必须是映射")
 			}
 			for name, opts := range volumes {
 				if !volumeNamePattern.MatchString(name) {
-					return nil, invalid("compose.yaml: 卷名 %q 不合法", name)
+					return nil, Invalid("compose.yaml: 卷名 %q 不合法", name)
 				}
 				// 只允许普通命名卷，不允许指定驱动、外部卷或自定义名字（否则可能挂到别的模块的卷）。
 				if o, ok := opts.(map[string]any); opts != nil && (!ok || len(o) > 0) {
-					return nil, invalid("compose.yaml: 卷 %s 不能带选项", name)
+					return nil, Invalid("compose.yaml: 卷 %s 不能带选项", name)
 				}
 				c.volumes[name] = nil
 			}
 		default:
-			return nil, invalid("compose.yaml 顶层只能有 services 和 volumes，不能有 %s", key)
+			return nil, Invalid("compose.yaml 顶层只能有 services 和 volumes，不能有 %s", key)
 		}
 	}
 	if err := c.validate(); err != nil {
@@ -198,25 +207,25 @@ func parseCompose(m *manifest.Manifest, data []byte) (*compose, error) {
 	return c, nil
 }
 
-func (c *compose) validate() error {
+func (c *Compose) validate() error {
 	m := c.m
 	for svc := range m.Services {
 		if _, ok := c.services[m.ContainerName(svc)]; !ok {
-			return invalid("module.yaml 声明了 %s，compose.yaml 里必须有服务 %s", svc, m.ContainerName(svc))
+			return Invalid("module.yaml 声明了 %s，compose.yaml 里必须有服务 %s", svc, m.ContainerName(svc))
 		}
 	}
 	for name, s := range c.services {
 		suffix, ok := strings.CutPrefix(name, m.ID+"-")
 		if !ok || !serviceNamePattern.MatchString(suffix) {
-			return invalid("服务名 %s 必须是 %s-<小写字母或数字>", name, m.ID)
+			return Invalid("服务名 %s 必须是 %s-<小写字母或数字>", name, m.ID)
 		}
 		for key := range s {
 			if !allowedServiceKeys[key] {
-				return invalid("服务 %s 不允许使用 %s", name, key)
+				return Invalid("服务 %s 不允许使用 %s", name, key)
 			}
 		}
-		if img, _ := s["image"].(string); img != imageName(m, name) {
-			return invalid("服务 %s 的 image 必须是 %s", name, imageName(m, name))
+		if img, _ := s["image"].(string); img != ImageName(m, name) {
+			return Invalid("服务 %s 的 image 必须是 %s", name, ImageName(m, name))
 		}
 		if err := checkEnv(name, s["environment"]); err != nil {
 			return err
@@ -229,7 +238,7 @@ func (c *compose) validate() error {
 		}
 		if r, ok := s["restart"]; ok {
 			if r, _ := r.(string); !restartPolicies[r] {
-				return invalid("服务 %s 的 restart 不合法", name)
+				return Invalid("服务 %s 的 restart 不合法", name)
 			}
 		}
 	}
@@ -244,49 +253,49 @@ func checkEnv(service string, v any) error {
 	case map[string]any:
 		for k, val := range e {
 			if val == nil {
-				return invalid("服务 %s 的环境变量 %s 必须写明取值", service, k)
+				return Invalid("服务 %s 的环境变量 %s 必须写明取值", service, k)
 			}
 		}
 	case []any:
 		for _, item := range e {
 			if s, _ := item.(string); !strings.Contains(s, "=") {
-				return invalid("服务 %s 的环境变量 %v 必须写成 名字=取值", service, item)
+				return Invalid("服务 %s 的环境变量 %v 必须写成 名字=取值", service, item)
 			}
 		}
 	default:
-		return invalid("服务 %s 的 environment 格式错误", service)
+		return Invalid("服务 %s 的 environment 格式错误", service)
 	}
 	return nil
 }
 
-func (c *compose) checkVolumes(service string, v any) error {
+func (c *Compose) checkVolumes(service string, v any) error {
 	if v == nil {
 		return nil
 	}
 	list, ok := v.([]any)
 	if !ok {
-		return invalid("服务 %s 的 volumes 必须是列表", service)
+		return Invalid("服务 %s 的 volumes 必须是列表", service)
 	}
 	for _, item := range list {
 		s, ok := item.(string)
 		if !ok {
-			return invalid("服务 %s 的 volumes 只支持“卷名:容器内路径”的写法", service)
+			return Invalid("服务 %s 的 volumes 只支持“卷名:容器内路径”的写法", service)
 		}
 		parts := strings.Split(s, ":")
 		if len(parts) < 2 || len(parts) > 3 || (len(parts) == 3 && parts[2] != "ro" && parts[2] != "rw") {
-			return invalid("服务 %s 的卷 %q 格式错误", service, s)
+			return Invalid("服务 %s 的卷 %q 格式错误", service, s)
 		}
 		if _, ok := c.volumes[parts[0]]; !ok {
-			return invalid("服务 %s 只能挂载本模块 volumes 里声明的卷，%q 不是", service, parts[0])
+			return Invalid("服务 %s 只能挂载本模块 volumes 里声明的卷，%q 不是", service, parts[0])
 		}
 		if !strings.HasPrefix(parts[1], "/") {
-			return invalid("服务 %s 的卷 %q 容器内路径必须是绝对路径", service, s)
+			return Invalid("服务 %s 的卷 %q 容器内路径必须是绝对路径", service, s)
 		}
 	}
 	return nil
 }
 
-func (c *compose) checkDependsOn(service string, v any) error {
+func (c *Compose) checkDependsOn(service string, v any) error {
 	var names []string
 	switch d := v.(type) {
 	case nil:
@@ -300,11 +309,11 @@ func (c *compose) checkDependsOn(service string, v any) error {
 			names = append(names, n)
 		}
 	default:
-		return invalid("服务 %s 的 depends_on 格式错误", service)
+		return Invalid("服务 %s 的 depends_on 格式错误", service)
 	}
 	for _, n := range names {
 		if _, ok := c.services[n]; !ok {
-			return invalid("服务 %s 只能依赖本模块的服务，%q 不是", service, n)
+			return Invalid("服务 %s 只能依赖本模块的服务，%q 不是", service, n)
 		}
 	}
 	return nil
@@ -314,7 +323,7 @@ func checkNoDollar(v any, path string) error {
 	switch t := v.(type) {
 	case string:
 		if strings.Contains(t, "$") {
-			return invalid("compose.yaml 的 %s 里不能出现 $", path)
+			return Invalid("compose.yaml 的 %s 里不能出现 $", path)
 		}
 	case map[string]any:
 		for k, item := range t {
@@ -338,10 +347,10 @@ func checkNoDollar(v any, path string) error {
 	return nil
 }
 
-func (c *compose) images() []string {
+func (c *Compose) Images() []string {
 	var list []string
 	for name := range c.services {
-		list = append(list, imageName(c.m, name))
+		list = append(list, ImageName(c.m, name))
 	}
 	sort.Strings(list)
 	return list
@@ -349,7 +358,7 @@ func (c *compose) images() []string {
 
 // Render 生成真正交给 docker compose 的文件：接入共享网络 platform，按约定补上网关路由标签和公钥地址。
 // 网关路由由安装器生成，模块自己写不了，也就抢不走门户或别的模块的网址。
-func (c *compose) Render() ([]byte, error) {
+func (c *Compose) Render() ([]byte, error) {
 	m := c.m
 	services := map[string]any{}
 	for name, s := range c.services {
@@ -362,6 +371,11 @@ func (c *compose) Render() ([]byte, error) {
 		}
 		out["networks"] = []string{"platform"}
 		out["environment"] = withEnv(out["environment"], "JWKS_URL", "http://core:8080/api/platform/.well-known/jwks.json")
+		// 有构建特权的模块，后端额外接上构建代理所在的内部网络。DOCKER_HOST 由平台决定，模块写了也会被覆盖。
+		if name == m.ContainerName(manifest.Backend) && m.HasPrivilege(manifest.PrivilegeDockerBuild) {
+			out["networks"] = []string{"platform", BuildNetwork}
+			out["environment"] = setEnv(out["environment"], "DOCKER_HOST", BuildProxyHost)
+		}
 		labels := []string{"home-platform.module=" + m.ID}
 		switch name {
 		case m.ContainerName(manifest.Frontend):
@@ -375,9 +389,12 @@ func (c *compose) Render() ([]byte, error) {
 		services[name] = out
 	}
 	doc := map[string]any{
-		"name":     projectName(m.ID),
+		"name":     ProjectName(m.ID),
 		"services": services,
 		"networks": map[string]any{"platform": map[string]any{"external": true, "name": "platform"}},
+	}
+	if m.HasPrivilege(manifest.PrivilegeDockerBuild) {
+		doc["networks"].(map[string]any)[BuildNetwork] = map[string]any{"external": true, "name": BuildNetwork}
 	}
 	if len(c.volumes) > 0 {
 		doc["volumes"] = c.volumes
@@ -414,7 +431,27 @@ func withEnv(env any, key, value string) any {
 	}
 }
 
-func projectName(id string) string { return "mod-" + id }
+// setEnv 设置一个环境变量，覆盖模块自己写的值。
+func setEnv(env any, key, value string) any {
+	switch e := env.(type) {
+	case map[string]any:
+		e[key] = value
+		return e
+	case []any:
+		kept := []any{}
+		for _, item := range e {
+			if s, _ := item.(string); !strings.HasPrefix(s, key+"=") {
+				kept = append(kept, item)
+			}
+		}
+		return append(kept, key+"="+value)
+	default:
+		return map[string]any{key: value}
+	}
+}
+
+// ProjectName 是模块的 Compose 项目名，例如 mod-notes。
+func ProjectName(id string) string { return "mod-" + id }
 
 // ---- images.tar ----
 
@@ -424,10 +461,10 @@ func checkImageTags(r io.Reader, want []string) error {
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
-			return invalid("%s 里没有 manifest.json，请用 docker save 导出", imagesFile)
+			return Invalid("%s 里没有 manifest.json，请用 docker save 导出", ImagesFile)
 		}
 		if err != nil {
-			return invalid("%s 读取失败: %v", imagesFile, err)
+			return Invalid("%s 读取失败: %v", ImagesFile, err)
 		}
 		if h.Name != "manifest.json" {
 			continue
@@ -436,7 +473,7 @@ func checkImageTags(r io.Reader, want []string) error {
 			RepoTags []string `json:"RepoTags"`
 		}
 		if err := json.NewDecoder(io.LimitReader(tr, 1<<20)).Decode(&entries); err != nil {
-			return invalid("%s 的 manifest.json 格式错误: %v", imagesFile, err)
+			return Invalid("%s 的 manifest.json 格式错误: %v", ImagesFile, err)
 		}
 		var got []string
 		for _, e := range entries {
@@ -446,7 +483,7 @@ func checkImageTags(r io.Reader, want []string) error {
 		}
 		sort.Strings(got)
 		if !slices.Equal(got, want) {
-			return invalid("%s 里的镜像必须正好是 %s，实际是 %s", imagesFile, strings.Join(want, "、"), strings.Join(got, "、"))
+			return Invalid("%s 里的镜像必须正好是 %s，实际是 %s", ImagesFile, strings.Join(want, "、"), strings.Join(got, "、"))
 		}
 		return nil
 	}

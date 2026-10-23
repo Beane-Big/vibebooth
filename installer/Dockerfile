@@ -1,7 +1,8 @@
-# 构建上下文是仓库根目录（见 docker-compose.yml），以便引用 packages/manifest 和 packages/sdk-go。
+# 构建上下文是仓库根目录（见 docker-compose.yml），以便引用 packages/manifest、packages/modpkg 和 packages/sdk-go。
 FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY packages/manifest ./packages/manifest
+COPY packages/modpkg ./packages/modpkg
 COPY packages/sdk-go ./packages/sdk-go
 COPY installer ./installer
 WORKDIR /src/installer
