@@ -1,5 +1,7 @@
 # Vibebooth 部署文档（Windows + WSL）
 
+> 部署到国内的云服务器上，见 [DEPLOY-SERVER.md](DEPLOY-SERVER.md)。
+
 整个流程分 6 步，顺利的话 1 小时内能在浏览器里打开 `http://localhost:8080` 并登录。
 
 1. 装 WSL（Windows 里的 Ubuntu）

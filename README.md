@@ -1,6 +1,6 @@
 # Vibebooth
 
-一个给 vibe coding 作品用的自托管平台，在自己的电脑上运行：登录一次门户，就能打开各个独立的应用模块。设计说明见[架构设计文档](https://claude.ai/code/artifact/41500730-289a-40bb-9a1a-9f922d44d355)。部署步骤见 [DEPLOY.md](DEPLOY.md)，架构原理见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+一个给 vibe coding 作品用的自托管平台，在自己的电脑上运行：登录一次门户，就能打开各个独立的应用模块。设计说明见[架构设计文档](https://claude.ai/code/artifact/41500730-289a-40bb-9a1a-9f922d44d355)。部署步骤见 [DEPLOY.md](DEPLOY.md)（自己的电脑）和 [DEPLOY-SERVER.md](DEPLOY-SERVER.md)（国内云服务器），架构原理见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 平台本体包括网关、登录、门户、模块安装器和按人的菜单权限；模块在各自的仓库里开发、打包，在门户“应用管理”页上传安装，不用重启平台。新模块用脚手架 [create-vibebooth](https://github.com/Beane-Big/create-vibebooth) 生成。
 
