@@ -1,38 +1,14 @@
-/* 与模块模板共用同一套颜色变量，后续抽到 packages/ui。 */
-:root {
-  --bg: #f5f6f8;
-  --surface: #ffffff;
-  --text: #1d2129;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --accent: #2f6fde;
-  --danger: #d93025;
-  --radius: 12px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15171c;
-    --surface: #1f2228;
-    --text: #e8eaed;
-    --muted: #9aa0a6;
-    --border: #2e3239;
-    --accent: #6b9cf5;
-    --danger: #f28b82;
-  }
-}
-
+/* 组件样式由 Ant Design 提供，这里只放全局和少量布局样式。颜色变量由 theme.tsx 按当前外观写到 :root 上。 */
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg, #f5f5f7);
 }
 
-.muted { color: var(--muted); font-size: 14px; }
-.error { color: var(--danger); font-size: 14px; margin: 0; }
+@media (prefers-color-scheme: dark) {
+  body { background: var(--bg, #161618); }
+}
 
 .center {
   min-height: 100vh;
@@ -42,175 +18,42 @@ body {
   padding: 16px;
 }
 
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+/* 内容区限宽居中，手机上两边留 16px。 */
+.content { width: 100%; max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+
+.topbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; box-shadow: var(--shadow); }
+.brand { font-weight: 600; font-size: 16px; color: var(--text); white-space: nowrap; }
+/* 菜单占满中间，放不下时 Ant Design 会把多出的收进“更多”。 */
+.topbar .ant-menu { flex: 1; min-width: 0; border-bottom: 0; background: transparent; }
+.topbar .ant-menu-item-selected { font-weight: 600; }
+/* Fluent 的选中短线是圆头的，左右各缩进一点。 */
+.topbar .ant-menu-horizontal > .ant-menu-item::after { border-radius: 2px; inset-inline: 12px !important; }
+.topbar .ant-menu-horizontal > .ant-menu-item-selected::after { border-bottom-color: var(--accent) !important; }
+/* 按钮文字加粗是 Fluent 的做法，链接按钮和顶栏的用户名保持常规字重。 */
+.ant-btn-link, .topbar .ant-btn-text { font-weight: 400; }
+
+/* Fluent 的卡片：没有边框，靠轻阴影和底色区分；标题下不加分隔线。 */
+.ant-card { border: 0 !important; box-shadow: var(--shadow); }
+.ant-card-head { border-bottom: 0 !important; min-height: 48px; }
+.ant-card-head + .ant-card-body { padding-top: 4px; }
+
+/* Fluent 的输入框：底边颜色更深，聚焦时底边变成 2px 品牌色。 */
+.ant-input-outlined, .ant-input-affix-wrapper.ant-input-outlined { border-bottom-color: var(--input-bottom); }
+.ant-input-outlined:focus, .ant-input-outlined:focus-within, .ant-input-affix-wrapper.ant-input-outlined:focus-within {
+  box-shadow: inset 0 -2px 0 var(--accent);
+  border-bottom-color: var(--accent);
 }
 
-.login {
-  width: 100%;
-  max-width: 360px;
-  padding: 28px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.login h1 { margin: 0 0 8px; font-size: 22px; text-align: center; }
-.login label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
-
-/* 16px 字号避免 iOS Safari 聚焦输入框时自动放大页面。 */
-input {
-  font-size: 16px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--text);
-}
-
-button {
-  font-size: 16px;
-  padding: 11px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-}
-
-button:disabled { opacity: 0.6; }
-
-button.link {
-  background: none;
-  color: var(--accent);
-  padding: 4px 0;
-  font-size: 14px;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-
-.title { font-weight: 600; }
-.spacer { flex: 1; }
-
-.content { max-width: 1080px; margin: 0 auto; padding: 24px 16px; }
-
-/* 手机一列，平板两到三列，电脑最多四列。 */
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
-}
-
-.app {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px;
-  color: inherit;
-  text-decoration: none;
-  transition: border-color 0.15s;
-}
-
-.app:hover { border-color: var(--accent); }
-
-.icon { width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0; }
-
-.icon.placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent);
-  color: #fff;
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.app-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.app-name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
-
-.badge {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--danger);
-  border: 1px solid var(--danger);
-  border-radius: 4px;
-  padding: 0 4px;
-}
-
-.tabs { display: flex; gap: 4px; }
-
-.tab {
-  padding: 4px 10px;
-  border-radius: 8px;
-  color: var(--muted);
-  font-size: 14px;
-  text-decoration: none;
-}
-
-.tab.active { background: var(--bg); color: var(--text); font-weight: 600; }
-
-/* 应用管理页和用户页 */
-.stack { display: flex; flex-direction: column; gap: 16px; }
-.stack-sm { display: flex; flex-direction: column; gap: 10px; }
-.section { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.section h2 { margin: 0; font-size: 17px; }
-.section h3 { margin: 8px 0 0; font-size: 15px; }
-.section label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
-.section label.checkbox { flex-direction: row; align-items: center; gap: 8px; }
-.success { color: var(--accent); font-size: 14px; margin: 0; }
-.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.row input:not([type="checkbox"]) { flex: 1; min-width: 180px; }
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
-}
-
-button.secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 8px 14px; font-size: 14px; }
-button.danger { background: var(--danger); padding: 8px 14px; font-size: 14px; }
-button.plain { background: none; color: inherit; padding: 0; text-align: left; font-size: inherit; }
-
-.list { list-style: none; margin: 0; padding: 0; }
-
-.list-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 12px 0;
-  border-top: 1px solid var(--border);
-}
-
-.list-item:first-child { border-top: 0; }
-.list-item.selected .app-name { color: var(--accent); }
-.list-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
-
-.tag {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0 4px;
-}
-
-.menu-group { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid var(--border); }
+/* 应用卡片：图标在左，名称和说明在右。 */
+.app-card { display: flex; align-items: center; gap: 14px; }
+.app-icon { width: 48px; height: 48px; border-radius: 12px; flex: none; object-fit: cover; }
+.app-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.app-text .ant-typography { margin: 0; }
 
 pre.log {
-  margin: 8px 0 0;
+  margin: 0;
   padding: 12px;
-  max-height: 320px;
+  max-height: 360px;
   overflow: auto;
   background: var(--bg);
   border-radius: 8px;
@@ -218,8 +61,3 @@ pre.log {
   white-space: pre-wrap;
   word-break: break-all;
 }
-
-code { font-size: 13px; }
-
-/* 手机上标签较多时允许换行 */
-.topbar { flex-wrap: wrap; }
