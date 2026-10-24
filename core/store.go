@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -231,19 +232,26 @@ func (s *Store) DeleteSession(ctx context.Context, tokenHash []byte) error {
 	return err
 }
 
-// UserBySession 返回会话对应的用户，会话不存在或已过期时返回 nil。
+// UserBySession 返回会话对应的用户，会话不存在或已过期时返回 nil。会话在用时按 renewedExpiry 续期。
 func (s *Store) UserBySession(ctx context.Context, tokenHash []byte) (*User, error) {
 	var u User
+	var created, expires time.Time
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, u.username, u.display_name, u.roles
+		SELECT u.id, u.username, u.display_name, u.roles, s.created_at, s.expires_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled`, tokenHash).
-		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Roles)
+		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Roles, &created, &expires)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if next, ok := renewedExpiry(time.Now(), created, expires); ok {
+		// 续期失败不影响这次请求，下次校验会再试。
+		if _, err := s.pool.Exec(ctx, `UPDATE sessions SET expires_at = $2 WHERE token_hash = $1`, tokenHash, next); err != nil {
+			slog.Warn("会话续期失败", "err", err)
+		}
 	}
 	return &u, nil
 }

@@ -42,3 +42,25 @@ func TestLoginLimiter(t *testing.T) {
 		t.Fatal("should be allowed after reset")
 	}
 }
+
+func TestRenewedExpiry(t *testing.T) {
+	login := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+	cases := []struct {
+		name         string
+		now, expires time.Time
+		want         time.Time
+		renew        bool
+	}{
+		{"剩余时间还多，不续期", login.Add(day), login.Add(sessionIdle), login.Add(sessionIdle), false},
+		{"剩余不到一半，续到 7 天后", login.Add(5 * day), login.Add(sessionIdle), login.Add(5*day + sessionIdle), true},
+		{"快到 30 天，只续到登录后 30 天", login.Add(28 * day), login.Add(29 * day), login.Add(sessionMaxAge), true},
+		{"已经续到 30 天上限，不再写库", login.Add(29 * day), login.Add(sessionMaxAge), login.Add(sessionMaxAge), false},
+	}
+	for _, c := range cases {
+		got, renew := renewedExpiry(c.now, login, c.expires)
+		if !got.Equal(c.want) || renew != c.renew {
+			t.Errorf("%s: got %v %v, want %v %v", c.name, got, renew, c.want, c.renew)
+		}
+	}
+}
