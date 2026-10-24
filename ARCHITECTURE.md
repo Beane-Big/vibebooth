@@ -91,7 +91,7 @@ flowchart TB
 以"打开网页 → 登录 → 点开 notes 应用"为例。每一步的请求都先到 Traefik，再由它按网址分发：
 
 1. **打开 `localhost:8080`**：网址不以 `/api/` 开头，Traefik 把请求转给 `portal`，浏览器拿到门户页面。页面再请求 `/api/platform/me`，向 `core` 询问当前用户是谁；如果还没登录，就显示登录页。
-2. **登录**：页面把用户名和密码发到 `/api/platform/auth/login`。`core` 到 `postgres` 里核对密码，核对通过后在数据库里记一条会话，并给浏览器发一个 Cookie（`hp_session`，30 天有效）。之后浏览器的每次请求都会自动带上这个 Cookie。
+2. **登录**：页面把用户名和密码发到 `/api/platform/auth/login`。`core` 到 `postgres` 里核对密码，核对通过后在数据库里记一条会话，并给浏览器发一个 Cookie（`hp_session`）。会话 7 天不用就过期，在用会自动续期，但从登录算起最长 30 天。之后浏览器的每次请求都会自动带上这个 Cookie。
 3. **显示应用列表**：门户请求 `/api/platform/apps`。`core` 每 5 秒扫描一次已安装模块的清单，这时只挑出这个人至少有一个菜单的模块，在内部网络里直接调用各模块的健康检查接口，然后把应用列表连同各模块是否健康一起返回。
 4. **点开 notes（`/apps/notes/`）**：这条路由挂了登录校验。Traefik 先把请求头（包括 Cookie）发给 `core` 的 `/api/platform/auth/verify`，`core` 检查：是否已登录、这个模块是否存在、这个人有没有这个模块的菜单；如果访问的是某个菜单的页面（例如 `/apps/notes/settings/`），还要有那个菜单。
     - 都通过：返回"放行"，并附上一个 5 分钟有效、只能用于 notes 模块的令牌（JWT），令牌里写着这个人在本模块有哪些菜单。Traefik 把令牌放进请求头，再转给 `notes-frontend`。

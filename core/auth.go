@@ -26,7 +26,9 @@ import (
 
 const (
 	sessionCookie = "hp_session"
-	sessionTTL    = 30 * 24 * time.Hour
+	// 会话 7 天不用就过期，在用就自动续期；但从登录算起最长 30 天，到期必须重新登录。
+	sessionIdle   = 7 * 24 * time.Hour
+	sessionMaxAge = 30 * 24 * time.Hour
 	tokenTTL      = 5 * time.Minute
 	tokenIssuer   = "home-platform"
 )
@@ -72,16 +74,17 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		internalError(w, err)
 		return
 	}
-	expires := time.Now().Add(sessionTTL)
-	if err := s.store.CreateSession(r.Context(), hashToken(token), user.ID, expires); err != nil {
+	now := time.Now()
+	if err := s.store.CreateSession(r.Context(), hashToken(token), user.ID, now.Add(sessionIdle)); err != nil {
 		internalError(w, err)
 		return
 	}
+	// Cookie 按最长期限保留，7 天不用就过期由数据库里的会话判断。
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    base64.RawURLEncoding.EncodeToString(token),
 		Path:     "/",
-		Expires:  expires,
+		Expires:  now.Add(sessionMaxAge),
 		HttpOnly: true,
 		Secure:   s.cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
@@ -143,6 +146,19 @@ func (s *Server) requireRole(role string, next func(http.ResponseWriter, *http.R
 		}
 		next(w, r, user)
 	})
+}
+
+// renewedExpiry 算出在用的会话该续到什么时候：剩余时间不到一半时延长到 idle 之后，
+// 但不超过登录后 maxAge。不需要续期时返回 false，免得网关每次校验都写数据库。
+func renewedExpiry(now, created, expires time.Time) (time.Time, bool) {
+	if expires.Sub(now) >= sessionIdle/2 {
+		return expires, false
+	}
+	next := now.Add(sessionIdle)
+	if limit := created.Add(sessionMaxAge); next.After(limit) {
+		next = limit
+	}
+	return next, next.After(expires)
 }
 
 func (s *Server) cleanupSessions(ctx context.Context) {
