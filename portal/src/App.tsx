@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Alert, Spin } from "antd";
 import { api, ApiError, isAdmin, type App as AppInfo, type User } from "./api";
 import Layout, { type Tab } from "./components/Layout";
 import Login from "./pages/Login";
@@ -28,7 +29,12 @@ export default function App() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="center muted">加载中…</div>;
+  if (loading)
+    return (
+      <div className="center">
+        <Spin />
+      </div>
+    );
 
   if (!user) {
     return <Login onLogin={(u) => {
@@ -60,7 +66,7 @@ function Portal({ user, onLogout }: { user: User; onLogout: () => void }) {
 
   return (
     <Layout user={user} active={active} showSettings={!!apps?.some((app) => app.settingsUrl)} onLogout={onLogout}>
-      {error && <p className="error">{error}</p>}
+      {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
       {active === "modules" && <Modules />}
       {active === "users" && <Users me={user} />}
       {(active === "apps" || active === "settings") && apps && <Home apps={apps} isSettings={active === "settings"} />}

@@ -1,36 +1,63 @@
+import { Card, Col, Empty, Row, Tag, Typography } from "antd";
 import type { App } from "../api";
 
 // 应用页列出能打开的应用；设置页只汇总各应用自己的设置页入口，设置内容由应用自己实现。
 export default function Home({ apps, isSettings }: { apps: App[]; isSettings: boolean }) {
   const shown = isSettings ? apps.filter((app) => app.settingsUrl) : apps;
 
+  if (shown.length === 0) {
+    return <Empty description={isSettings ? "还没有可设置的组件。" : "还没有可用的应用。"} />;
+  }
   return (
-    <>
-      {shown.length === 0 && (
-        <p className="muted">{isSettings ? "还没有可设置的组件。" : "还没有可用的应用。"}</p>
-      )}
-      <div className="grid">
-        {shown.map((app) => (
-          <a key={app.id} className="card app" href={isSettings ? app.settingsUrl : app.url}>
-            {app.icon ? (
-              <img className="icon" src={app.icon} alt="" />
-            ) : (
-              <span className="icon placeholder">{app.name.slice(0, 1)}</span>
-            )}
-            <span className="app-text">
-              <span className="app-name">
-                {app.name}
-                {!app.healthy && <span className="badge">不可用</span>}
-              </span>
-              {isSettings ? (
-                <span className="muted">{app.name}的设置</span>
-              ) : (
-                app.description && <span className="muted">{app.description}</span>
-              )}
-            </span>
+    <Row gutter={[16, 16]}>
+      {shown.map((app) => (
+        <Col key={app.id} xs={24} sm={12} lg={8} xxl={6}>
+          <a href={isSettings ? app.settingsUrl : app.url}>
+            <Card hoverable size="small" styles={{ body: { padding: 16 } }}>
+              <div className="app-card">
+                {app.icon ? (
+                  <img className="app-icon" src={app.icon} alt="" />
+                ) : (
+                  <AppPlaceholder name={app.name} />
+                )}
+                <div className="app-text">
+                  <Typography.Text strong ellipsis>
+                    {app.name}
+                    {!app.healthy && (
+                      <Tag color="error" style={{ marginInlineStart: 8 }}>
+                        不可用
+                      </Tag>
+                    )}
+                  </Typography.Text>
+                  <Typography.Text type="secondary" ellipsis>
+                    {isSettings ? `${app.name}的设置` : app.description || " "}
+                  </Typography.Text>
+                </div>
+              </div>
+            </Card>
           </a>
-        ))}
-      </div>
-    </>
+        </Col>
+      ))}
+    </Row>
+  );
+}
+
+// 应用没有图标时用名称的第一个字。
+function AppPlaceholder({ name }: { name: string }) {
+  return (
+    <span
+      className="app-icon"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--bg)",
+        color: "var(--accent)",
+        fontSize: 20,
+        fontWeight: 600,
+      }}
+    >
+      {name.slice(0, 1)}
+    </span>
   );
 }
