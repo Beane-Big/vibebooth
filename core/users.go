@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 )
 
-// ---- 用户管理（只有管理员能用，门户“用户”页调用）----
+// ---- 用户管理（只有管理员能用，门户“用户”应用调用）----
 
 var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]{2,32}$`)
 
@@ -20,6 +20,8 @@ type userInput struct {
 	Password    string `json:"password"`
 	Admin       bool   `json:"admin"`
 	Disabled    bool   `json:"disabled"`
+	// PersonID 只在新建账号时用：同时关联到这个人员。
+	PersonID *int64 `json:"personId"`
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
@@ -61,9 +63,13 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request, _ *Use
 	case len(in.Password) < 8:
 		writeError(w, http.StatusBadRequest, "密码至少 8 位")
 	default:
-		u, err := s.store.CreateUser(r.Context(), in.Username, in.DisplayName, in.Password, in.Admin)
+		u, err := s.store.CreateUser(r.Context(), in.Username, in.DisplayName, in.Password, in.Admin, in.PersonID)
 		if errors.Is(err, errUsernameTaken) {
 			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		if errors.Is(err, errPersonNotFound) {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if err != nil {
@@ -131,6 +137,30 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request, _ *Us
 		return
 	}
 	if err := s.store.SetPassword(r.Context(), target.ID, in.Password); err != nil {
+		internalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSetUserPerson 把已有账号关联到人员，personId 为 null 时解除关联。账号已经关联了别人时直接改过来。
+func (s *Server) handleSetUserPerson(w http.ResponseWriter, r *http.Request, _ *User) {
+	target := s.targetUser(w, r)
+	if target == nil {
+		return
+	}
+	var in struct {
+		PersonID *int64 `json:"personId"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	err := s.store.SetUserPerson(r.Context(), target.ID, in.PersonID)
+	if errors.Is(err, errPersonNotFound) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
 		internalError(w, err)
 		return
 	}

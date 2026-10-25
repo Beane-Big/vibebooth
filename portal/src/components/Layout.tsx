@@ -1,13 +1,13 @@
 import { cloneElement, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { Avatar, Button, Dropdown, Grid, Layout as AntLayout, Menu, Segmented, Tooltip, Typography, theme } from "antd";
-import { AppstoreOutlined, HomeOutlined, LogoutOutlined, SettingOutlined, TeamOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, HomeOutlined, LogoutOutlined, SettingOutlined } from "@ant-design/icons";
 import { api, isAdmin, type User } from "../api";
 import { useThemeMode, type ThemeMode } from "../theme";
 
 export type Tab = "apps" | "settings" | "modules" | "users";
 
-// 门户各页面共用的顶栏，children 放在顶栏下面。顶栏只放回到应用页的首页图标，设置、应用管理、用户收在点头像弹出的菜单里，
-// “应用管理”和“用户”只对管理员显示。页面由 onNavigate 在门户内切换；按住 Ctrl / Cmd 或用中键点击时照常在新标签页打开。
+// 门户各页面共用的顶栏，children 放在顶栏下面。顶栏只放回到应用页的首页图标，设置、应用管理收在点头像弹出的菜单里，
+// “应用管理”只对管理员显示。“用户”是平台自带的应用，从应用页打开。页面由 onNavigate 在门户内切换；按住 Ctrl / Cmd 或用中键点击时照常在新标签页打开。
 export default function Layout({
   user,
   active,
@@ -37,7 +37,6 @@ export default function Layout({
     { id: "apps", label: "应用", href: "/", shown: true },
     { id: "settings", label: "设置", href: "/settings", icon: <SettingOutlined />, shown: showSettings || active === "settings" },
     { id: "modules", label: "应用管理", href: "/admin/modules", icon: <AppstoreOutlined />, shown: isAdmin(user) },
-    { id: "users", label: "用户", href: "/admin/users", icon: <TeamOutlined />, shown: isAdmin(user) },
   ];
   const link = (p: (typeof pages)[number], content: ReactNode = p.label) => (
     <a

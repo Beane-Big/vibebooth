@@ -4,7 +4,19 @@ export type User = {
   displayName: string;
   roles: string[];
   disabled: boolean;
+  // 账号属于哪个人员，没有关联时为 null。一个人员可以有多个账号。
+  personId: number | null;
 };
+
+// 人员：家庭成员等。照片是压缩后的 JPEG（data URL），没有时为空。
+export type Person = {
+  id: number;
+  name: string;
+  note: string;
+  photo: string;
+};
+
+export type PersonInput = Pick<Person, "name" | "note" | "photo">;
 
 export const isAdmin = (user: User) => user.roles.includes("admin");
 
@@ -58,6 +70,8 @@ export type UserInput = {
   password?: string;
   admin: boolean;
   disabled?: boolean;
+  // 只在新建账号时用：同时关联到这个人员。
+  personId?: number;
 };
 
 export class ApiError extends Error {
@@ -113,7 +127,15 @@ export const api = {
   uninstallModule: (id: string, purge: boolean) =>
     request<{ log: string }>(`/api/platform/installer/modules/${id}?purge=${purge}`, { method: "DELETE" }),
 
-  // 用户与权限（只有管理员能调用）
+  // 人员、账号与权限（只有管理员能调用）
+  persons: () => request<Person[]>("/api/platform/persons"),
+  createPerson: (input: PersonInput) =>
+    request<Person>("/api/platform/persons", { method: "POST", body: JSON.stringify(input) }),
+  updatePerson: (id: number, input: PersonInput) =>
+    request<Person>(`/api/platform/persons/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  deletePerson: (id: number) => request<void>(`/api/platform/persons/${id}`, { method: "DELETE" }),
+  // personId 为 null 表示解除关联。
+  setUserPerson: (id: number, personId: number | null) => put(`/api/platform/users/${id}/person`, { personId }),
   users: () => request<User[]>("/api/platform/users"),
   createUser: (input: UserInput) =>
     request<User>("/api/platform/users", { method: "POST", body: JSON.stringify(input) }),

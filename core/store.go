@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -22,6 +23,8 @@ type User struct {
 	Roles       []string `json:"roles"`
 	// Disabled 的账号不能登录，已有的会话也立即失效。
 	Disabled bool `json:"disabled"`
+	// PersonID 是这个账号属于哪个人员，没有关联时为 nil。一个人员可以有多个账号。
+	PersonID *int64 `json:"personId"`
 }
 
 func (u *User) IsAdmin() bool { return hasAnyRole(u.Roles, []string{"admin"}) }
@@ -51,6 +54,16 @@ CREATE TABLE IF NOT EXISTS menu_grants (
 	allowed   BOOLEAN NOT NULL,
 	PRIMARY KEY (user_id, module_id, menu_id)
 );
+-- 人员：家庭成员等，其他模块只保存人员 id。账号通过 users.person_id 关联到人员，删除人员时账号保留、只解除关联。
+CREATE TABLE IF NOT EXISTS persons (
+	id         BIGSERIAL PRIMARY KEY,
+	name       TEXT NOT NULL,
+	note       TEXT NOT NULL DEFAULT '',
+	photo      TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS person_id BIGINT REFERENCES persons(id) ON DELETE SET NULL;
 `
 
 func (s *Store) Migrate(ctx context.Context) error {
@@ -81,7 +94,7 @@ func (s *Store) EnsureAdmin(ctx context.Context, username, password string) erro
 	if len(password) < 8 {
 		return errors.New("首次启动需要在 .env 中设置至少 8 位的 ADMIN_PASSWORD")
 	}
-	_, err := s.CreateUser(ctx, username, username, password, true)
+	_, err := s.CreateUser(ctx, username, username, password, true, nil)
 	return err
 }
 
@@ -96,38 +109,51 @@ func rolesFor(admin bool) []string {
 	return []string{"user"}
 }
 
-func (s *Store) CreateUser(ctx context.Context, username, displayName, password string, admin bool) (*User, error) {
+// CreateUser 新建账号；personID 不为 nil 时同时关联到这个人员，人员不存在时返回 errPersonNotFound。
+func (s *Store) CreateUser(ctx context.Context, username, displayName, password string, admin bool, personID *int64) (*User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}
-	u := &User{Username: username, DisplayName: displayName, Roles: rolesFor(admin)}
+	u := &User{Username: username, DisplayName: displayName, Roles: rolesFor(admin), PersonID: personID}
 	err = s.pool.QueryRow(ctx,
-		`INSERT INTO users (username, display_name, password_hash, roles) VALUES ($1, $2, $3, $4)
+		`INSERT INTO users (username, display_name, password_hash, roles, person_id) VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT (username) DO NOTHING RETURNING id`,
-		username, displayName, string(hash), u.Roles).Scan(&u.ID)
+		username, displayName, string(hash), u.Roles, personID).Scan(&u.ID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, errUsernameTaken
+	}
+	if isForeignKeyViolation(err) {
+		return nil, errPersonNotFound
 	}
 	return u, err
 }
 
+// SetUserPerson 把账号关联到人员，personID 为 nil 时解除关联。
+func (s *Store) SetUserPerson(ctx context.Context, id int64, personID *int64) error {
+	_, err := s.pool.Exec(ctx, `UPDATE users SET person_id = $2 WHERE id = $1`, id, personID)
+	if isForeignKeyViolation(err) {
+		return errPersonNotFound
+	}
+	return err
+}
+
 func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, username, display_name, roles, disabled FROM users ORDER BY id`)
+	rows, err := s.pool.Query(ctx, `SELECT id, username, display_name, roles, disabled, person_id FROM users ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (User, error) {
 		var u User
-		err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Roles, &u.Disabled)
+		err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Roles, &u.Disabled, &u.PersonID)
 		return u, err
 	})
 }
 
 func (s *Store) UserByID(ctx context.Context, id int64) (*User, error) {
 	var u User
-	err := s.pool.QueryRow(ctx, `SELECT id, username, display_name, roles, disabled FROM users WHERE id = $1`, id).
-		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Roles, &u.Disabled)
+	err := s.pool.QueryRow(ctx, `SELECT id, username, display_name, roles, disabled, person_id FROM users WHERE id = $1`, id).
+		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Roles, &u.Disabled, &u.PersonID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -156,6 +182,92 @@ func (s *Store) SetPassword(ctx context.Context, id int64, password string) erro
 	}
 	_, err = s.pool.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, id)
 	return err
+}
+
+// ---- 人员 ----
+
+// Person 是一个人员。照片是压缩后的 JPEG（data URL），没有时为空。
+type Person struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Note      string    `json:"note"`
+	Photo     string    `json:"photo"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+var errPersonNotFound = errors.New("人员不存在")
+
+const personColumns = `id, name, note, photo, created_at, updated_at`
+
+func scanPerson(row pgx.Row) (*Person, error) {
+	var p Person
+	err := row.Scan(&p.ID, &p.Name, &p.Note, &p.Photo, &p.CreatedAt, &p.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, errPersonNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (s *Store) ListPersons(ctx context.Context) ([]Person, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+personColumns+` FROM persons ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Person, error) {
+		p, err := scanPerson(row)
+		if err != nil {
+			return Person{}, err
+		}
+		return *p, nil
+	})
+}
+
+func (s *Store) PersonByID(ctx context.Context, id int64) (*Person, error) {
+	return scanPerson(s.pool.QueryRow(ctx, `SELECT `+personColumns+` FROM persons WHERE id = $1`, id))
+}
+
+// PersonByUser 返回账号关联的人员，账号不存在或没有关联时返回 errPersonNotFound。
+func (s *Store) PersonByUser(ctx context.Context, userID int64) (*Person, error) {
+	return scanPerson(s.pool.QueryRow(ctx,
+		`SELECT p.id, p.name, p.note, p.photo, p.created_at, p.updated_at
+		 FROM users u JOIN persons p ON p.id = u.person_id WHERE u.id = $1`, userID))
+}
+
+func (s *Store) CreatePerson(ctx context.Context, name, note, photo string) (*Person, error) {
+	return scanPerson(s.pool.QueryRow(ctx,
+		`INSERT INTO persons (name, note, photo) VALUES ($1, $2, $3) RETURNING `+personColumns, name, note, photo))
+}
+
+func (s *Store) UpdatePerson(ctx context.Context, id int64, name, note, photo string) (*Person, error) {
+	return scanPerson(s.pool.QueryRow(ctx,
+		`UPDATE persons SET name = $2, note = $3, photo = $4, updated_at = now() WHERE id = $1 RETURNING `+personColumns,
+		id, name, note, photo))
+}
+
+func (s *Store) UpdatePersonPhoto(ctx context.Context, id int64, photo string) (*Person, error) {
+	return scanPerson(s.pool.QueryRow(ctx,
+		`UPDATE persons SET photo = $2, updated_at = now() WHERE id = $1 RETURNING `+personColumns, id, photo))
+}
+
+// DeletePerson 删除人员；他的账号保留，只是不再关联人员（外键 ON DELETE SET NULL）。
+func (s *Store) DeletePerson(ctx context.Context, id int64) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM persons WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errPersonNotFound
+	}
+	return nil
+}
+
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
 // ---- 菜单授权 ----
@@ -203,8 +315,8 @@ func (s *Store) CheckPassword(ctx context.Context, username, password string) (*
 	var u User
 	var hash string
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, username, display_name, roles, password_hash FROM users WHERE username = $1 AND NOT disabled`, username).
-		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Roles, &hash)
+		`SELECT id, username, display_name, roles, person_id, password_hash FROM users WHERE username = $1 AND NOT disabled`, username).
+		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Roles, &u.PersonID, &hash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 用户不存在时也做一次比较，避免通过响应时间判断用户名是否存在。
 		bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
@@ -237,10 +349,10 @@ func (s *Store) UserBySession(ctx context.Context, tokenHash []byte) (*User, err
 	var u User
 	var created, expires time.Time
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, u.username, u.display_name, u.roles, s.created_at, s.expires_at
+		SELECT u.id, u.username, u.display_name, u.roles, u.person_id, s.created_at, s.expires_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled`, tokenHash).
-		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Roles, &created, &expires)
+		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Roles, &u.PersonID, &created, &expires)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

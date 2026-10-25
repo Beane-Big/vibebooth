@@ -32,5 +32,6 @@
 - 不写登录代码。后端用 SDK `github.com/Beane-Big/vibebooth/packages/sdk-go/auth` 校验网关注入的令牌（`go.mod` 里按版本引用，例如 `v0.1.0`，对应平台仓库的标签 `packages/sdk-go/v0.1.0`），不自己解析请求头里的用户信息；其他语言要按同样的规则用 JWKS 公钥验签（RS256，`iss` 是 `home-platform`，`aud` 是模块 id）。
 - 接口权限用令牌里的菜单判断（Go 里是 `auth.UserFrom(ctx).HasMenu("<菜单 id>")`），不要用角色判断。
 - 跨模块只调用对方 `/api/<id>/ext/v1/` 下的对外接口，不 import 其他模块的代码，也不读别人的数据。对外接口的契约写在 `contracts/openapi.yaml`，不兼容的改动新开 v2。
+- 人员（家庭成员等）由平台保存，不要在模块里另建人员表：用平台的对外接口 `http://core:8080/api/platform/ext/v1/` 读取人员名单、替人员换头像，模块只保存人员 id；要知道当前登录的是哪个人，用令牌里的 `sub`（账号 id）查 `users/{id}/person`。契约见平台仓库的 `contracts/openapi.yaml`。
 - 前端沿用脚手架生成的 `styles.css` 里的样式变量；共享 UI 组件包做出来后优先用它。页面要适配手机和平板。
 - 门户在自己的标签页里以内嵌页（iframe）打开应用，按住 Ctrl / Cmd 点击时在浏览器新标签页打开，两种都要能用。不要设置禁止被嵌入的响应头（`X-Frame-Options`、CSP 的 `frame-ancestors`）。应用里不放回门户的链接，回门户用门户的标签栏；应用内部页面之间的返回由应用自己实现。
