@@ -68,7 +68,7 @@ services:
         condition: service_healthy
     labels:
       - traefik.enable=true
-      - traefik.http.routers.core.rule=PathPrefix(`/api/platform/`)
+      - traefik.http.routers.core.rule=PathPrefix(`/api/platform/`) && !PathPrefix(`/api/platform/ext/`)
       - traefik.http.services.core.loadbalancer.server.port=8080
       # 所有模块路由都引用这个中间件：先问平台核心是否已登录、能否访问该模块。
       - traefik.http.middlewares.platform-auth.forwardauth.address=http://core:8080/api/platform/auth/verify

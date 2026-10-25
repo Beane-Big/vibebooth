@@ -109,9 +109,20 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/platform/users", s.requireRole("admin", s.handleCreateUser))
 	mux.HandleFunc("PUT /api/platform/users/{id}", s.requireRole("admin", s.handleUpdateUser))
 	mux.HandleFunc("PUT /api/platform/users/{id}/password", s.requireRole("admin", s.handleSetPassword))
+	mux.HandleFunc("PUT /api/platform/users/{id}/person", s.requireRole("admin", s.handleSetUserPerson))
 	mux.HandleFunc("GET /api/platform/users/{id}/menus", s.requireRole("admin", s.handleUserMenus))
 	mux.HandleFunc("PUT /api/platform/users/{id}/menus", s.requireRole("admin", s.handleSetUserMenu))
 	mux.HandleFunc("POST /api/platform/registry/reload", s.requireRole("admin", s.handleReload))
+	mux.HandleFunc("GET /api/platform/persons", s.requireRole("admin", s.handleListPersons))
+	mux.HandleFunc("POST /api/platform/persons", s.requireRole("admin", s.handleCreatePerson))
+	mux.HandleFunc("PUT /api/platform/persons/{id}", s.requireRole("admin", s.handleUpdatePerson))
+	mux.HandleFunc("DELETE /api/platform/persons/{id}", s.requireRole("admin", s.handleDeletePerson))
+	// 对外接口：给模块后端在内部网络里直接调用（http://core:8080），网关不转发 /api/platform/ext/，浏览器访问不到。
+	// 和模块的对外接口一样目前没有服务令牌，只返回模块需要的字段（不含备注）。契约见 contracts/openapi.yaml。
+	mux.HandleFunc("GET /api/platform/ext/v1/persons", s.handleExtPersons)
+	mux.HandleFunc("GET /api/platform/ext/v1/persons/{id}", s.handleExtPerson)
+	mux.HandleFunc("PUT /api/platform/ext/v1/persons/{id}/photo", s.handleExtSetPhoto)
+	mux.HandleFunc("GET /api/platform/ext/v1/users/{id}/person", s.handleExtUserPerson)
 	return mux
 }
 

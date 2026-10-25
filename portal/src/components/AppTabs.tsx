@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Tabs, Tooltip } from "antd";
 import { ExportOutlined } from "@ant-design/icons";
+import { isBuiltinURL } from "../builtin";
 
 // 在门户里打开的应用：每个应用一个标签页，内容是同一个网站下的内嵌页，登录状态天然共享。
+// 平台自带的应用（见 builtin.tsx）也占一个标签，内容由门户直接渲染，不放在内嵌页里。
 // 打开的标签记在 sessionStorage 里，刷新页面后恢复；关掉浏览器标签页就清空。
 
 export type AppTab = { url: string; title: string };
@@ -22,7 +24,10 @@ function load(): Saved {
   try {
     const v = JSON.parse(sessionStorage.getItem(storageKey) ?? "null");
     const tabs: AppTab[] = Array.isArray(v?.tabs)
-      ? v.tabs.filter((t: AppTab) => typeof t?.url === "string" && t.url.startsWith("/apps/") && typeof t.title === "string")
+      ? v.tabs.filter(
+          (t: AppTab) =>
+            typeof t?.url === "string" && (t.url.startsWith("/apps/") || isBuiltinURL(t.url)) && typeof t.title === "string",
+        )
       : [];
     const active = tabs.some((t) => t.url === v?.active) ? v.active : PORTAL_TAB;
     return { tabs, active };
@@ -123,8 +128,14 @@ export function AppTabBar({ state, portalTitle }: { state: AppTabsState; portalT
   );
 }
 
-// AppFrames 放所有打开的应用。切换标签只是隐藏和显示，应用里填了一半的内容不会丢。
-export function AppFrames({ state, onEmbeddedPortal }: { state: AppTabsState; onEmbeddedPortal: (tab: AppTab, url: string) => void }) {
+// AppFrames 放所有打开的模块应用（平台自带的应用由门户自己渲染）。切换标签只是隐藏和显示，应用里填了一半的内容不会丢。
+export function AppFrames({
+  state,
+  onEmbeddedPortal,
+}: {
+  state: AppTabsState;
+  onEmbeddedPortal: (tab: AppTab, url: string, frame: HTMLIFrameElement) => void;
+}) {
   const frames = useRef(new Map<string, HTMLIFrameElement>());
   const latest = useRef(onEmbeddedPortal);
   latest.current = onEmbeddedPortal;
@@ -135,16 +146,17 @@ export function AppFrames({ state, onEmbeddedPortal }: { state: AppTabsState; on
       const tab = state.tabs.find((t) => frames.current.get(t.url) === frame);
       if (!tab) return;
       e.preventDefault();
-      latest.current(tab, url);
+      latest.current(tab, url, frame as HTMLIFrameElement);
     }
     window.addEventListener(EMBEDDED_EVENT, onEmbedded);
     return () => window.removeEventListener(EMBEDDED_EVENT, onEmbedded);
   }, [state.tabs]);
 
-  if (state.tabs.length === 0) return null;
+  const tabs = state.tabs.filter((t) => !isBuiltinURL(t.url));
+  if (tabs.length === 0) return null;
   return (
-    <div className="app-frames" style={state.active === PORTAL_TAB ? { display: "none" } : undefined}>
-      {state.tabs.map((t) => (
+    <div className="app-frames" style={!tabs.some((t) => t.url === state.active) ? { display: "none" } : undefined}>
+      {tabs.map((t) => (
         <iframe
           key={t.url}
           ref={(el) => {

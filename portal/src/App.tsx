@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Spin } from "antd";
 import { api, ApiError, isAdmin, type App as AppInfo, type User } from "./api";
+import { builtinApps, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, useAppTabs, type AppTab } from "./components/AppTabs";
 import Layout, { type Tab } from "./components/Layout";
 import Login from "./pages/Login";
@@ -91,14 +92,22 @@ function Portal({ user, onLogout }: { user: User; onLogout: () => void }) {
   }
 
   // 应用的标签页里加载到了门户自己：登录过期时整页去登录，登录后回到门户并恢复标签；
-  // 其他情况是应用里的“返回”链接，关掉这个标签，打开对应的门户页面。
-  function onEmbeddedPortal(tab: AppTab, url: string) {
+  // 指向平台自带应用（例如家庭优化大师的“管理人员”）时，应用退回原来的页面，另开自带应用的标签；
+  // 其他情况关掉这个标签，打开对应的门户页面。
+  function onEmbeddedPortal(tab: AppTab, url: string, frame: HTMLIFrameElement) {
     if (url.startsWith("/login")) {
       location.href = "/login";
       return;
     }
+    const path = url.split("?")[0];
+    const builtin = builtinApps.find((app) => app.url === path);
+    if (builtin) {
+      frame.contentWindow?.history.back();
+      tabs.open({ url: builtin.url, title: builtin.name });
+      return;
+    }
     tabs.close(tab.url);
-    navigate(url.split("?")[0]);
+    navigate(path);
   }
 
   return (
@@ -115,9 +124,21 @@ function Portal({ user, onLogout }: { user: User; onLogout: () => void }) {
         {active === "modules" && <Modules />}
         {active === "users" && <Users me={user} />}
         {(active === "apps" || active === "settings") && apps && (
-          <Home apps={apps} isSettings={active === "settings"} onOpen={tabs.open} />
+          <Home
+            apps={apps}
+            builtins={builtinApps.filter((app) => !app.adminOnly || isAdmin(user))}
+            isSettings={active === "settings"}
+            onOpen={tabs.open}
+          />
         )}
       </div>
+      {tabs.tabs
+        .filter((t) => isBuiltinURL(t.url))
+        .map((t) => (
+          <div key={t.url} className="content" style={t.url !== tabs.active ? { display: "none" } : undefined}>
+            {t.url === "/admin/users" && isAdmin(user) && <Users me={user} />}
+          </div>
+        ))}
       <AppFrames state={tabs} onEmbeddedPortal={onEmbeddedPortal} />
     </Layout>
   );

@@ -1,0 +1,80 @@
+openapi: 3.1.0
+info:
+  title: 平台对外接口
+  version: 1.0.0
+  description: |
+    给模块后端在内部网络里调用，基础地址 http://core:8080。
+    网关不转发 /api/platform/ext/，浏览器访问不到。目前不需要令牌。
+    人员由管理员在门户的“用户”应用里维护；模块只保存人员 id，需要姓名和照片时调用这里。
+paths:
+  /api/platform/ext/v1/persons:
+    get:
+      summary: 列出全部人员
+      responses:
+        "200":
+          description: 人员列表，按 id 升序
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Person" }
+  /api/platform/ext/v1/persons/{id}:
+    get:
+      summary: 查询一个人员
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: 人员信息
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Person" }
+        "404":
+          description: 人员不存在
+  /api/platform/ext/v1/persons/{id}/photo:
+    put:
+      summary: 修改一个人员的头像（只改照片，不改其他信息）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo: { type: string, description: JPEG 的 data URL，不超过 300 KB；空字符串表示去掉照片 }
+      responses:
+        "200":
+          description: 修改后的人员信息
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Person" }
+        "400":
+          description: 照片格式不对或太大
+        "404":
+          description: 人员不存在
+  /api/platform/ext/v1/users/{id}/person:
+    get:
+      summary: 查询一个账号属于哪个人员，用来知道当前登录的是谁
+      description: id 是账号 id，也就是模块令牌里的 sub。一个账号最多属于一个人员。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: 账号所属的人员
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Person" }
+        "404":
+          description: 账号不存在，或者没有关联人员
+components:
+  schemas:
+    Person:
+      type: object
+      required: [id, name, photo]
+      properties:
+        id: { type: integer, description: 人员 id，模块只保存它 }
+        name: { type: string, description: 姓名 }
+        photo: { type: string, description: 头像，JPEG 的 data URL；没有时为空字符串 }
