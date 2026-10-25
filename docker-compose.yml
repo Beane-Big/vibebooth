@@ -105,8 +105,10 @@ services:
     depends_on: [installer-proxy]
     labels:
       - traefik.enable=true
-      # 比 core 的 /api/platform/ 更长，Traefik 会优先匹配这一条。
+      # Traefik 默认按规则字符串的长度排优先级，core 的规则带了排除 ext 的条件后比这条长，
+      # 所以这里显式调高优先级，保证 /api/platform/installer/ 交给安装器。
       - traefik.http.routers.installer.rule=PathPrefix(`/api/platform/installer/`)
+      - traefik.http.routers.installer.priority=100
       - traefik.http.routers.installer.middlewares=platform-admin@docker
       - traefik.http.services.installer.loadbalancer.server.port=8000
 
