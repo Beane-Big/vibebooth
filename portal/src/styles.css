@@ -50,6 +50,13 @@ body {
 .app-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .app-text .ant-typography { margin: 0; }
 
+/* 应用标签栏和内嵌页：标签栏贴在顶栏下面，内嵌页占满剩下的高度。 */
+.app-tabbar { position: sticky; top: 56px; z-index: 9; padding: 6px 16px 0; background: var(--surface); box-shadow: var(--shadow); }
+.app-tabbar .ant-tabs-nav { margin: 0; }
+.app-tabbar .ant-tabs-nav::before { border-bottom: 0; }
+.app-frames { flex: 1; position: relative; }
+.app-frames iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
+
 pre.log {
   margin: 0;
   padding: 12px;
