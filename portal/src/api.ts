@@ -152,7 +152,9 @@ export const api = {
   createUser: (input: UserInput) =>
     request<User>("/api/platform/users", { method: "POST", body: JSON.stringify(input) }),
   updateUser: (id: number, input: UserInput) => put(`/api/platform/users/${id}`, input),
-  setPassword: (id: number, password: string) => put(`/api/platform/users/${id}/password`, { password }),
+  // adminPassword 是当前管理员自己的密码，重置别人的密码前要再确认一次。
+  setPassword: (id: number, password: string, adminPassword: string) =>
+    put(`/api/platform/users/${id}/password`, { password, adminPassword }),
   userMenus: (id: number) => request<UserMenus>(`/api/platform/users/${id}/menus`),
   // allowed 为 null 表示恢复默认值。
   setUserMenu: (id: number, module: string, menu: string, allowed: boolean | null) =>

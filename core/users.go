@@ -19,8 +19,10 @@ type userInput struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"displayName"`
 	Password    string `json:"password"`
-	Admin       bool   `json:"admin"`
-	Disabled    bool   `json:"disabled"`
+	// AdminPassword 只在重置密码时用：操作的管理员要再输入一次自己的密码。
+	AdminPassword string `json:"adminPassword"`
+	Admin         bool   `json:"admin"`
+	Disabled      bool   `json:"disabled"`
 	// PersonID 只在新建账号时用：同时关联到这个人员。
 	PersonID *int64 `json:"personId"`
 }
@@ -124,7 +126,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, me *Us
 	}
 }
 
-func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request, _ *User) {
+// handleSetPassword 重置别人的密码，要管理员再输入一次自己的密码，防止离开时被人用已登录的页面改掉密码。
+// 输错和登录失败一样计入限流，不能用这里猜管理员密码。
+func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request, me *User) {
 	target := s.targetUser(w, r)
 	if target == nil {
 		return
@@ -135,6 +139,21 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request, _ *Us
 	}
 	if len(in.Password) < 8 {
 		writeError(w, http.StatusBadRequest, "密码至少 8 位")
+		return
+	}
+	ip := clientIP(r)
+	if !s.limiter.Allow(ip) {
+		writeError(w, http.StatusTooManyRequests, "密码输错次数过多，请稍后再试")
+		return
+	}
+	ok, err := s.store.CheckPassword(r.Context(), me.Username, in.AdminPassword)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	if ok == nil {
+		s.limiter.Fail(ip)
+		writeError(w, http.StatusForbidden, "管理员密码不对")
 		return
 	}
 	if err := s.store.SetPassword(r.Context(), target.ID, in.Password); err != nil {

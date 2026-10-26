@@ -556,7 +556,20 @@ function AccountDetail({ user, persons, me, onSaved }: { user: User; persons: Pe
   );
 }
 
-type CreateForm = { username: string; displayName?: string; password: string; admin: boolean };
+type CreateForm = { username: string; displayName?: string; password: string; confirm: string; admin: boolean };
+
+// 设置密码时要输入两次：passwordRules 校验长度，confirmRules 校验和 password 字段一致。
+const passwordRules = [
+  { required: true, message: "请输入密码" },
+  { min: 8, message: "密码至少 8 位" },
+];
+const confirmRules = [
+  { required: true, message: "请再输入一次密码" },
+  ({ getFieldValue }: { getFieldValue: (name: string) => unknown }) => ({
+    validator: (_: unknown, value: string) =>
+      !value || value === getFieldValue("password") ? Promise.resolve() : Promise.reject(new Error("两次输入的密码不一样")),
+  }),
+];
 
 // AddAccount 给成员开通新账号或关联一个没关联成员的账号。还没有账号时直接摊开说明和两个按钮。
 function AddAccount({
@@ -577,7 +590,8 @@ function AddAccount({
 
   async function create(values: CreateForm) {
     try {
-      const u = await api.createUser({ ...values, displayName: values.displayName || person.name, personId: person.id });
+      const { confirm: _, ...input } = values;
+      const u = await api.createUser({ ...input, displayName: values.displayName || person.name, personId: person.id });
       message.success("账号已开通");
       form.resetFields();
       setAdding(null);
@@ -616,18 +630,23 @@ function AddAccount({
       {adding === "create" && (
         <Form form={form} layout="vertical" requiredMark={false} initialValues={{ admin: false }} onFinish={create} style={{ marginTop: 16 }}>
           <Row gutter={16}>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={12}>
               <Form.Item label="用户名（登录用）" name="username" rules={[{ required: true, message: "请输入用户名" }]}>
                 <Input autoCapitalize="none" />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={12}>
               <Form.Item label="显示名称" name="displayName">
                 <Input placeholder={`不填则用“${person.name}”`} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
-              <Form.Item label="初始密码（至少 8 位）" name="password" rules={[{ required: true, message: "请输入初始密码" }]}>
+            <Col xs={24} md={12}>
+              <Form.Item label="初始密码（至少 8 位）" name="password" rules={passwordRules}>
+                <Input.Password autoComplete="new-password" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item label="确认密码" name="confirm" dependencies={["password"]} rules={confirmRules}>
                 <Input.Password autoComplete="new-password" />
               </Form.Item>
             </Col>
@@ -680,7 +699,7 @@ function AccountSettings({ user, me, onSaved, link }: { user: User; me: User; on
   const [displayName, setDisplayName] = useState(user.displayName);
   const [admin, setAdmin] = useState(isAdmin(user));
   const [disabled, setDisabled] = useState(user.disabled);
-  const [password, setPassword] = useState("");
+  const [passwordForm] = Form.useForm<{ password: string; confirm: string; adminPassword: string }>();
 
   async function act(action: () => Promise<void>, success: string) {
     try {
@@ -747,21 +766,34 @@ function AccountSettings({ user, me, onSaved, link }: { user: User; me: User; on
       <div className="section">
         <Typography.Text strong>重置密码</Typography.Text>
         <Form
-          onFinish={() =>
-            act(() => api.setPassword(user.id, password), "密码已重置，他需要用新密码重新登录").then((ok) => ok && setPassword(""))
+          form={passwordForm}
+          layout="vertical"
+          requiredMark={false}
+          onFinish={({ password, adminPassword }) =>
+            act(() => api.setPassword(user.id, password, adminPassword), "密码已重置，他需要用新密码重新登录").then(
+              (ok) => ok && passwordForm.resetFields(),
+            )
           }
           style={{ marginTop: 8 }}
         >
-          <Space.Compact style={{ width: "100%", maxWidth: 420 }}>
-            <Input.Password
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="新密码，至少 8 位"
-              autoComplete="new-password"
-              required
-            />
-            <Button htmlType="submit">重置</Button>
-          </Space.Compact>
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item name="password" rules={passwordRules}>
+                <Input.Password placeholder="新密码，至少 8 位" autoComplete="new-password" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="confirm" dependencies={["password"]} rules={confirmRules}>
+                <Input.Password placeholder="再输入一次" autoComplete="new-password" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="adminPassword" rules={[{ required: true, message: "请输入你自己的密码" }]}>
+                <Input.Password placeholder={`你的密码（${me.username}）`} autoComplete="current-password" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Button htmlType="submit">重置密码</Button>
         </Form>
       </div>
 
