@@ -53,6 +53,33 @@ func TestMenusFor(t *testing.T) {
 	}
 }
 
+func TestAppAllowed(t *testing.T) {
+	m := testModule(t)
+	user := &User{Roles: []string{"user"}}
+	admin := &User{Roles: []string{"admin", "user"}}
+	off := grants{Apps: map[string]bool{"demo": false, "platform": false}}
+	if appAllowed(user, m, grants{}) != true || appAllowed(user, platformModule, grants{}) != true {
+		t.Error("默认应该能用有默认菜单的应用和平台")
+	}
+	if appAllowed(user, m, off) || menusFor(user, m, off) != nil || permsFor(user, m, off) != nil {
+		t.Error("关掉应用后菜单和功能权限都不应生效")
+	}
+	if appAllowed(user, platformModule, off) || permsFor(user, platformModule, off) != nil {
+		t.Error("关掉平台后平台权限都不应生效")
+	}
+	if !appAllowed(admin, m, off) || !appAllowed(admin, platformModule, off) {
+		t.Error("管理员总能用")
+	}
+	noMenus := grants{Menus: grantMap{"demo": {"home": false}}, Perms: grantMap{"demo": {"score": false}}}
+	if appAllowed(user, m, noMenus) {
+		t.Error("没有单独设置时，一个菜单都没有就不能用")
+	}
+	noMenus.Apps = map[string]bool{"demo": true}
+	if !appAllowed(user, m, noMenus) {
+		t.Error("单独打开后应该能用")
+	}
+}
+
 func TestPlatformPerms(t *testing.T) {
 	user := &User{Roles: []string{"user"}}
 	if got := permsFor(user, platformModule, grants{}); !slices.Equal(got, []string{permSettings}) {

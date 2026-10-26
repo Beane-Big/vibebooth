@@ -21,7 +21,8 @@ export type PersonInput = Pick<Person, "name" | "note" | "photo">;
 export const isAdmin = (user: User) => user.roles.includes("admin");
 
 // 当前登录的人：登录和 /me 接口在账号信息之外还带上平台自己的功能权限（管理员总有全部）。
-export type Me = User & { perms: string[] };
+// platform 为 false 表示不能用门户：门户只显示“没有权限”，他只能直接打开自己能用的应用。
+export type Me = User & { perms: string[]; platform: boolean };
 
 // 平台自己的功能权限，和 core/menus.go 里的 platformModule 一致。
 export type PlatformPerm = "settings" | "modules";
@@ -66,10 +67,13 @@ export type Grant = {
   allowed: boolean;
 };
 
-// 平台排在第一组（id 为 platform）。menus 里只有能单独设置的菜单，跟着功能权限走的菜单不列出。
+// 平台排在第一组（id 为 platform）。access 是能不能用整个应用，关掉后 perms 和 menus 都不生效。
+// menus 里只有能单独设置的菜单，跟着功能权限走的菜单不列出。
+export type AppGrant = { id: string; name: string; icon?: string; access: Grant; perms: Grant[]; menus: Grant[] };
+
 export type UserMenus = {
   admin: boolean;
-  modules: { id: string; name: string; perms: Grant[]; menus: Grant[] }[];
+  modules: AppGrant[];
 };
 
 export type UserInput = {
@@ -153,6 +157,8 @@ export const api = {
   // allowed 为 null 表示恢复默认值。
   setUserMenu: (id: number, module: string, menu: string, allowed: boolean | null) =>
     put(`/api/platform/users/${id}/menus`, { module, menu, allowed }),
+  setUserApp: (id: number, module: string, allowed: boolean | null) =>
+    put(`/api/platform/users/${id}/apps`, { module, allowed }),
   setUserPerm: (id: number, module: string, perm: string, allowed: boolean | null) =>
     put(`/api/platform/users/${id}/perms`, { module, perm, allowed }),
 };

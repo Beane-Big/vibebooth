@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Spin } from "antd";
+import { Alert, Button, Result, Spin } from "antd";
 import { api, ApiError, type App as AppInfo, type Me } from "./api";
 import { builtinAliases, builtinAppsFor, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
@@ -34,10 +34,24 @@ export default function App() {
     return <Login onLogin={(u) => {
       setUser(u);
       const next = new URLSearchParams(location.search).get("next");
-      // 只允许跳回本站路径，防止被利用跳到外部网站。
+      // 只允许跳回本站路径，防止被利用跳到外部网站。没有门户权限的人跳回门户也只会看到“没有权限”。
       if (next && next.startsWith("/") && !next.startsWith("//")) location.href = next;
       else history.replaceState(null, "", "/");
     }} />;
+  }
+
+  // 不能用门户的人（例如只给了一个应用的平板）打开门户时直接拒绝，不自动跳转；他只能直接打开自己能用的应用。
+  if (!user.platform) {
+    return (
+      <div className="center">
+        <Result
+          status="403"
+          title="没有使用门户的权限"
+          subTitle="这个账号只能直接打开管理员给他开通的应用。"
+          extra={<Button onClick={() => api.logout().finally(() => setUser(null))}>退出登录</Button>}
+        />
+      </div>
+    );
   }
 
   if (location.pathname === "/login") history.replaceState(null, "", "/");

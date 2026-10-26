@@ -62,6 +62,13 @@ CREATE TABLE IF NOT EXISTS perm_grants (
 	allowed   BOOLEAN NOT NULL,
 	PRIMARY KEY (user_id, module_id, perm_id)
 );
+-- 按人授权整个应用：关掉后这个应用对他隐藏，菜单和功能权限都不生效。module_id 为 platform 时是门户本身。
+CREATE TABLE IF NOT EXISTS app_grants (
+	user_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	module_id TEXT NOT NULL,
+	allowed   BOOLEAN NOT NULL,
+	PRIMARY KEY (user_id, module_id)
+);
 -- 人员：家庭成员等，其他模块只保存人员 id。账号通过 users.person_id 关联到人员，删除人员时账号保留、只解除关联。
 CREATE TABLE IF NOT EXISTS persons (
 	id         BIGSERIAL PRIMARY KEY,
@@ -283,8 +290,9 @@ func isForeignKeyViolation(err error) bool {
 // grantMap 是一个人的单独设置：模块 id → 菜单或功能权限 id → 是否允许。
 type grantMap map[string]map[string]bool
 
-// grants 是一个人对菜单和功能权限的全部单独设置。
+// grants 是一个人对应用、菜单和功能权限的全部单独设置。Apps 是模块 id → 能不能用整个应用。
 type grants struct {
+	Apps  map[string]bool
 	Menus grantMap
 	Perms grantMap
 }
@@ -298,7 +306,21 @@ func (s *Store) Grants(ctx context.Context, userID int64) (grants, error) {
 	if err != nil {
 		return grants{}, err
 	}
-	return grants{Menus: menus, Perms: perms}, nil
+	apps := map[string]bool{}
+	rows, err := s.pool.Query(ctx, `SELECT module_id, allowed FROM app_grants WHERE user_id = $1`, userID)
+	if err != nil {
+		return grants{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var module string
+		var allowed bool
+		if err := rows.Scan(&module, &allowed); err != nil {
+			return grants{}, err
+		}
+		apps[module] = allowed
+	}
+	return grants{Apps: apps, Menus: menus, Perms: perms}, rows.Err()
 }
 
 func (s *Store) grantMap(ctx context.Context, query string, userID int64) (grantMap, error) {
@@ -333,6 +355,19 @@ func (s *Store) SetGrant(ctx context.Context, userID int64, module, menu string,
 		INSERT INTO menu_grants (user_id, module_id, menu_id, allowed) VALUES ($1, $2, $3, $4)
 		ON CONFLICT (user_id, module_id, menu_id) DO UPDATE SET allowed = EXCLUDED.allowed`,
 		userID, module, menu, *allowed)
+	return err
+}
+
+// SetAppGrant 单独允许或禁止一个人使用整个应用；allowed 为 nil 表示恢复默认值。
+func (s *Store) SetAppGrant(ctx context.Context, userID int64, module string, allowed *bool) error {
+	if allowed == nil {
+		_, err := s.pool.Exec(ctx, `DELETE FROM app_grants WHERE user_id = $1 AND module_id = $2`, userID, module)
+		return err
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO app_grants (user_id, module_id, allowed) VALUES ($1, $2, $3)
+		ON CONFLICT (user_id, module_id) DO UPDATE SET allowed = EXCLUDED.allowed`,
+		userID, module, *allowed)
 	return err
 }
 

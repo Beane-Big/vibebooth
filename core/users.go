@@ -181,16 +181,19 @@ type grantView struct {
 	Allowed  bool  `json:"allowed"`
 }
 
-// moduleGrantView 里的 Menus 只有能单独设置的菜单：写了 requires 的菜单跟着功能权限走，不在这里列出。
+// moduleGrantView 是一个应用对某个人的授权：Access 是能不能用整个应用，关掉后 Perms 和 Menus 都不生效。
+// Menus 里只有能单独设置的菜单：写了 requires 的菜单跟着功能权限走，不在这里列出。
 type moduleGrantView struct {
-	ID    string      `json:"id"`
-	Name  string      `json:"name"`
-	Perms []grantView `json:"perms"`
-	Menus []grantView `json:"menus"`
+	ID     string      `json:"id"`
+	Name   string      `json:"name"`
+	Icon   string      `json:"icon,omitempty"`
+	Access grantView   `json:"access"`
+	Perms  []grantView `json:"perms"`
+	Menus  []grantView `json:"menus"`
 }
 
-// handleUserMenus 列出平台和所有已安装模块的功能权限和菜单，以及这个人对每一项的默认值、单独设置和最终结果。
-// 平台排在第一组。
+// handleUserMenus 列出平台和所有已安装应用，以及这个人对每个应用、每项功能权限和每个菜单的默认值、单独设置和最终结果。
+// 平台排在第一组。功能权限和菜单显示的是应用打开时的结果，应用关掉时门户把它们收起来。
 func (s *Server) handleUserMenus(w http.ResponseWriter, r *http.Request, _ *User) {
 	target := s.targetUser(w, r)
 	if target == nil {
@@ -203,22 +206,32 @@ func (s *Server) handleUserMenus(w http.ResponseWriter, r *http.Request, _ *User
 	}
 	modules := []moduleGrantView{}
 	for _, m := range append([]*Module{platformModule}, s.registry.List()...) {
+		if m != platformModule && len(m.Menus) == 0 {
+			continue // 只有后端的模块不在门户里出现，也就没有可设置的
+		}
 		view := moduleGrantView{ID: m.ID, Name: m.Name, Perms: []grantView{}, Menus: []grantView{}}
-		perms := permsFor(target, m, g)
+		if m.Icon != "" {
+			view.Icon = "/api/platform/apps/" + m.ID + "/icon"
+		}
+		menus := grantedMenus(target, m, g)
+		view.Access = grantView{ID: m.ID, Name: m.Name, Allowed: appAllowed(target, m, g),
+			Default: target.IsAdmin() || m == platformModule || len(menus) > 0}
+		if o, ok := g.Apps[m.ID]; ok {
+			view.Access.Override = &o
+		}
+		perms := grantedPerms(target, m, g)
 		for _, p := range m.Permissions {
 			view.Perms = append(view.Perms, grantFor(target, p.ID, p.Name, p.Description, p.Default,
 				g.Perms[m.ID], slices.Contains(perms, p.ID)))
 		}
-		allowed := menuIDs(menusFor(target, m, g))
+		allowed := menuIDs(menus)
 		for _, menu := range m.Menus {
 			if menu.Requires == "" {
 				view.Menus = append(view.Menus, grantFor(target, menu.ID, menu.Name, "", menu.Default,
 					g.Menus[m.ID], slices.Contains(allowed, menu.ID)))
 			}
 		}
-		if len(view.Perms)+len(view.Menus) > 0 {
-			modules = append(modules, view)
-		}
+		modules = append(modules, view)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"admin": target.IsAdmin(), "modules": modules})
 }
@@ -230,6 +243,38 @@ func grantFor(user *User, id, name, description string, roles []string, override
 		v.Override = &o
 	}
 	return v
+}
+
+// moduleByID 按 id 找已安装的模块，platform 是平台自己。
+func (s *Server) moduleByID(id string) (*Module, bool) {
+	if id == platformModule.ID {
+		return platformModule, true
+	}
+	return s.registry.Get(id)
+}
+
+// handleSetUserApp 单独允许或禁止一个人使用整个应用，module 为 platform 时是门户本身。
+func (s *Server) handleSetUserApp(w http.ResponseWriter, r *http.Request, _ *User) {
+	target := s.targetUser(w, r)
+	if target == nil {
+		return
+	}
+	var in struct {
+		Module  string `json:"module"`
+		Allowed *bool  `json:"allowed"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if _, ok := s.moduleByID(in.Module); !ok {
+		writeError(w, http.StatusBadRequest, "应用不存在")
+		return
+	}
+	if err := s.store.SetAppGrant(r.Context(), target.ID, in.Module, in.Allowed); err != nil {
+		internalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleSetUserMenu(w http.ResponseWriter, r *http.Request, _ *User) {
@@ -271,10 +316,7 @@ func (s *Server) handleSetUserPerm(w http.ResponseWriter, r *http.Request, _ *Us
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	m, ok := s.registry.Get(in.Module)
-	if in.Module == platformModule.ID {
-		m, ok = platformModule, true
-	}
+	m, ok := s.moduleByID(in.Module)
 	if !ok || m.PermissionByID(in.Perm) == nil {
 		writeError(w, http.StatusBadRequest, "模块或功能权限不存在")
 		return

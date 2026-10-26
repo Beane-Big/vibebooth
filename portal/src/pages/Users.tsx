@@ -1,39 +1,52 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Alert,
+  App as AntApp,
   Avatar,
   Button,
   Card,
   Checkbox,
   Col,
-  Divider,
+  Collapse,
+  Empty,
   Flex,
   Form,
+  Grid,
   Input,
-  List,
+  Modal,
   Popconfirm,
   Row,
+  Segmented,
   Select,
   Space,
+  Switch,
+  Tabs,
   Tag,
   Typography,
 } from "antd";
-import { api, isAdmin, type Grant, type Person, type PersonInput, type User, type UserMenus } from "../api";
+import { AppstoreOutlined, ArrowLeftOutlined, HomeOutlined, PlusOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
+import { api, isAdmin, type AppGrant, type Grant, type Person, type PersonInput, type User, type UserMenus } from "../api";
 import { resizePhoto } from "../photo";
 
-// 选中的是一个人员，还是一个账号。
+// 选中的是一个成员，还是一个没关联成员的账号。
 type Selection = { kind: "person"; id: number } | { kind: "user"; id: number };
 
-// 账号详情里的一项授权是功能权限还是菜单，两者分开存。
-type GrantKind = "perm" | "menu";
+// 一项授权是整个应用、功能权限还是菜单，三者分开存。
+type GrantKind = "app" | "perm" | "menu";
 
-// 用户应用：维护人员（家庭成员等），给人员开通账号或关联已有账号，并管理每个账号的密码、停用和权限。
-// 一个账号最多属于一个人员，一个人员可以有多个账号。宽屏上左边是列表、右边是选中项的详情；窄屏上详情排在列表下面。
+// 应用超过这个数时，权限页签上出现搜索和“只看已开通”。
+const MANY_APPS = 6;
+
+// 用户应用：左边是成员列表（家庭成员，加上没关联成员的账号），右边是选中项的页签：资料、账号、权限。
+// 一个账号最多属于一个成员，一个成员可以有多个账号，权限挂在账号上。窄屏上先看列表，点进去看详情。
 export default function Users({ me }: { me: User }) {
   const [persons, setPersons] = useState<Person[] | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Selection | null>(null);
+  const [query, setQuery] = useState("");
+  const [adding, setAdding] = useState(false);
+  const wide = !!Grid.useBreakpoint().lg;
 
   function load() {
     Promise.all([api.persons(), api.users()])
@@ -45,109 +58,174 @@ export default function Users({ me }: { me: User }) {
   }
   useEffect(load, []);
 
-  const isSelected = (s: Selection) => selected?.kind === s.kind && selected.id === s.id;
-  const toggle = (s: Selection) => setSelected(isSelected(s) ? null : s);
   const accountsOf = (personId: number) => users?.filter((u) => u.personId === personId) ?? [];
   const unlinked = users?.filter((u) => u.personId === null) ?? [];
+  const q = query.trim().toLowerCase();
+  const match = (...texts: string[]) => !q || texts.some((t) => t.toLowerCase().includes(q));
+  const shownPersons = (persons ?? []).filter((p) =>
+    match(p.name, p.note, ...accountsOf(p.id).flatMap((u) => [u.username, u.displayName])),
+  );
+  const shownUnlinked = unlinked.filter((u) => match(u.username, u.displayName));
+  const isSelected = (s: Selection) => selected?.kind === s.kind && selected.id === s.id;
   const currentPerson = selected?.kind === "person" ? persons?.find((p) => p.id === selected.id) : undefined;
   const currentUser = selected?.kind === "user" ? users?.find((u) => u.id === selected.id) : undefined;
-  const itemStyle = (s: Selection) => ({
-    cursor: "pointer",
-    paddingInline: 20,
-    background: isSelected(s) ? "var(--bg)" : undefined,
-  });
-  const nameColor = (s: Selection) => (isSelected(s) ? "var(--accent)" : undefined);
+
+  const list = (
+    <Card
+      title="成员"
+      extra={
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setAdding(true)}>
+          添加
+        </Button>
+      }
+      styles={{ body: { padding: "0 0 8px" } }}
+    >
+      <div style={{ padding: "0 16px 8px" }}>
+        <Input
+          allowClear
+          prefix={<SearchOutlined />}
+          placeholder="搜索姓名或用户名"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+      {error && <Alert type="error" message={error} showIcon style={{ margin: "0 16px 8px" }} />}
+      {persons && shownPersons.length === 0 && shownUnlinked.length === 0 && (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={q ? "没有找到" : "还没有成员，点“添加”开始。"} />
+      )}
+      {shownPersons.map((p) => {
+        const s: Selection = { kind: "person", id: p.id };
+        const accounts = accountsOf(p.id);
+        return (
+          <MemberRow
+            key={`p${p.id}`}
+            avatar={<PersonAvatar person={p} />}
+            title={p.name}
+            subtitle={accounts.length > 0 ? accounts.map((u) => u.username).join("、") : "没有账号"}
+            tags={accountTags(accounts)}
+            active={isSelected(s)}
+            onClick={() => setSelected(s)}
+          />
+        );
+      })}
+      {shownUnlinked.length > 0 && (
+        <Typography.Text type="secondary" className="member-group">
+          未关联成员的账号
+        </Typography.Text>
+      )}
+      {shownUnlinked.map((u) => {
+        const s: Selection = { kind: "user", id: u.id };
+        return (
+          <MemberRow
+            key={`u${u.id}`}
+            avatar={<Avatar size={40} icon={<UserOutlined />} />}
+            title={u.displayName}
+            subtitle={u.username}
+            tags={accountTags([u])}
+            active={isSelected(s)}
+            onClick={() => setSelected(s)}
+          />
+        );
+      })}
+    </Card>
+  );
+
+  const detail = currentPerson ? (
+    <PersonDetail
+      key={`p${currentPerson.id}`}
+      person={currentPerson}
+      accounts={accountsOf(currentPerson.id)}
+      unlinked={unlinked}
+      me={me}
+      onSaved={load}
+      onDeleted={() => {
+        setSelected(null);
+        load();
+      }}
+    />
+  ) : currentUser && persons ? (
+    <AccountDetail key={`u${currentUser.id}`} user={currentUser} persons={persons} me={me} onSaved={load} />
+  ) : (
+    <Card>
+      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择一个成员，查看他的资料、账号和权限。" />
+    </Card>
+  );
 
   return (
-    <Flex vertical gap={16}>
-      <Card title="添加人员">
+    <>
+      {wide ? (
+        <Row gutter={16} align="top">
+          <Col span={8}>{list}</Col>
+          <Col span={16}>{detail}</Col>
+        </Row>
+      ) : selected ? (
+        <Flex vertical gap={12}>
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => setSelected(null)} style={{ alignSelf: "flex-start" }}>
+            成员
+          </Button>
+          {detail}
+        </Flex>
+      ) : (
+        list
+      )}
+      <Modal title="添加成员" open={adding} footer={null} onCancel={() => setAdding(false)} destroyOnHidden>
         <PersonForm
           submitText="添加"
           onSubmit={async (input) => {
             const p = await api.createPerson(input);
+            setAdding(false);
             load();
             setSelected({ kind: "person", id: p.id });
           }}
         />
-      </Card>
-      <Row gutter={[16, 16]} align="top">
-        <Col xs={24} lg={9}>
-          <Flex vertical gap={16}>
-            <Card title="人员" styles={{ body: { padding: "4px 0" } }}>
-              {error && <Alert type="error" message={error} showIcon style={{ margin: 16 }} />}
-              <List
-                loading={persons === null && !error}
-                locale={{ emptyText: "还没有人员，先在上面添加。" }}
-                dataSource={persons ?? []}
-                renderItem={(p) => {
-                  const s: Selection = { kind: "person", id: p.id };
-                  const count = accountsOf(p.id).length;
-                  return (
-                    <List.Item onClick={() => toggle(s)} style={itemStyle(s)}>
-                      <Space size={12}>
-                        <PersonAvatar person={p} />
-                        <Flex vertical gap={2}>
-                          <Typography.Text strong style={{ color: nameColor(s) }}>
-                            {p.name}
-                          </Typography.Text>
-                          <Typography.Text type="secondary">{count > 0 ? `${count} 个账号` : "没有账号"}</Typography.Text>
-                        </Flex>
-                      </Space>
-                    </List.Item>
-                  );
-                }}
-              />
-            </Card>
-            {unlinked.length > 0 && (
-              <Card title="未关联人员的账号" styles={{ body: { padding: "4px 0" } }}>
-                <List
-                  dataSource={unlinked}
-                  renderItem={(u) => {
-                    const s: Selection = { kind: "user", id: u.id };
-                    return (
-                      <List.Item onClick={() => toggle(s)} style={itemStyle(s)}>
-                        <AccountText user={u} color={nameColor(s)} />
-                      </List.Item>
-                    );
-                  }}
-                />
-              </Card>
-            )}
-          </Flex>
-        </Col>
-        <Col xs={24} lg={15}>
-          {currentPerson ? (
-            <PersonDetail
-              key={currentPerson.id}
-              person={currentPerson}
-              accounts={accountsOf(currentPerson.id)}
-              unlinked={unlinked}
-              onSelectUser={(id) => setSelected({ kind: "user", id })}
-              onSaved={load}
-              onDeleted={() => {
-                setSelected(null);
-                load();
-              }}
-            />
-          ) : currentUser && persons ? (
-            <UserDetail
-              key={currentUser.id}
-              user={currentUser}
-              persons={persons}
-              isMe={currentUser.id === me.id}
-              onBack={currentUser.personId !== null ? () => setSelected({ kind: "person", id: currentUser.personId! }) : undefined}
-              onSaved={load}
-            />
-          ) : (
-            <Card>
-              <Typography.Text type="secondary">选择一个人员，查看和修改他的信息与账号；选择一个账号，修改密码和菜单权限。</Typography.Text>
-            </Card>
-          )}
-        </Col>
-      </Row>
-    </Flex>
+      </Modal>
+    </>
   );
 }
+
+// accountTags 是列表里的小标记：有管理员账号、有停用的账号。
+function accountTags(accounts: User[]) {
+  return (
+    <>
+      {accounts.some(isAdmin) && <Tag color="blue">管理员</Tag>}
+      {accounts.some((u) => u.disabled) && <Tag color="error">已停用</Tag>}
+    </>
+  );
+}
+
+function MemberRow({
+  avatar,
+  title,
+  subtitle,
+  tags,
+  active,
+  onClick,
+}: {
+  avatar: ReactNode;
+  title: string;
+  subtitle: string;
+  tags: ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className={`member-row${active ? " active" : ""}`} onClick={onClick} role="button" tabIndex={0}>
+      {avatar}
+      <Flex vertical gap={2} style={{ minWidth: 0, flex: 1 }}>
+        <Flex gap={6} align="center" wrap>
+          <Typography.Text strong style={{ color: active ? "var(--accent)" : undefined }}>
+            {title}
+          </Typography.Text>
+          {tags}
+        </Flex>
+        <Typography.Text type="secondary" ellipsis>
+          {subtitle}
+        </Typography.Text>
+      </Flex>
+    </div>
+  );
+}
+
 
 function PersonAvatar({ person, size = 40 }: { person: Pick<Person, "name" | "photo">; size?: number }) {
   return person.photo ? (
@@ -159,21 +237,6 @@ function PersonAvatar({ person, size = 40 }: { person: Pick<Person, "name" | "ph
   );
 }
 
-// AccountText 是列表里的一个账号：显示名称、管理员和停用标记，下面是用户名。
-function AccountText({ user, color }: { user: User; color?: string }) {
-  return (
-    <Flex vertical gap={2}>
-      <Space size={8} wrap>
-        <Typography.Text strong style={{ color }}>
-          {user.displayName}
-        </Typography.Text>
-        {isAdmin(user) && <Tag color="blue">管理员</Tag>}
-        {user.disabled && <Tag color="error">已停用</Tag>}
-      </Space>
-      <Typography.Text type="secondary">{user.username}</Typography.Text>
-    </Flex>
-  );
-}
 
 // PersonForm 填写人员的姓名、备注和照片；点头像选择照片，会自动裁成正方形。新增和修改共用。
 function PersonForm({
@@ -261,148 +324,297 @@ function PersonForm({
   );
 }
 
-type CreateForm = { username: string; displayName?: string; password: string; admin: boolean };
+
+// DetailCard 是右边的详情：头部是头像和名字，下面是页签。
+function DetailCard({
+  avatar,
+  title,
+  subtitle,
+  extra,
+  tab,
+  onTab,
+  items,
+}: {
+  avatar: ReactNode;
+  title: string;
+  subtitle: ReactNode;
+  extra?: ReactNode;
+  tab: string;
+  onTab: (key: string) => void;
+  items: { key: string; label: string; children: ReactNode }[];
+}) {
+  return (
+    <Card>
+      <Flex gap={16} align="center">
+        {avatar}
+        <Flex vertical gap={2} style={{ flex: 1, minWidth: 0 }}>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {title}
+          </Typography.Title>
+          <Typography.Text type="secondary">{subtitle}</Typography.Text>
+        </Flex>
+        {extra}
+      </Flex>
+      <Tabs activeKey={tab} onChange={onTab} items={items} style={{ marginTop: 8 }} />
+    </Card>
+  );
+}
 
 function PersonDetail({
   person,
   accounts,
   unlinked,
-  onSelectUser,
+  me,
   onSaved,
   onDeleted,
 }: {
   person: Person;
   accounts: User[];
   unlinked: User[];
-  onSelectUser: (id: number) => void;
+  me: User;
   onSaved: () => void;
   onDeleted: () => void;
 }) {
-  const [adding, setAdding] = useState<"create" | "link" | null>(null);
-  const [linkId, setLinkId] = useState<number | null>(null);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [form] = Form.useForm<CreateForm>();
-
-  async function act(action: () => Promise<unknown>, success: string) {
-    setMessage(null);
-    try {
-      await action();
-      setMessage({ ok: true, text: success });
-      setAdding(null);
-      onSaved();
-      return true;
-    } catch (err) {
-      setMessage({ ok: false, text: err instanceof Error ? err.message : "操作失败" });
-      return false;
-    }
-  }
+  const { message } = AntApp.useApp();
+  const [tab, setTab] = useState("profile");
+  const [accountId, setAccountId] = useState<number | undefined>(accounts[0]?.id);
+  const account = accounts.find((u) => u.id === accountId) ?? accounts[0];
 
   async function remove() {
     try {
       await api.deletePerson(person.id);
       onDeleted();
     } catch (err) {
-      setMessage({ ok: false, text: err instanceof Error ? err.message : "删除失败" });
+      message.error(err instanceof Error ? err.message : "删除失败");
     }
   }
 
-  async function createAccount(values: CreateForm) {
-    const ok = await act(
-      () => api.createUser({ ...values, displayName: values.displayName || person.name, personId: person.id }),
-      "账号已开通",
-    );
-    if (ok) form.resetFields();
-  }
+  // 一个成员有多个账号时，账号和权限页签顶部用分段按钮切换。
+  const picker = accounts.length > 1 && (
+    <Segmented
+      value={account?.id}
+      onChange={(v) => setAccountId(v as number)}
+      options={accounts.map((u) => ({ value: u.id, label: u.username }))}
+      style={{ marginBottom: 16 }}
+    />
+  );
 
   return (
-    <Card
+    <DetailCard
+      avatar={<PersonAvatar person={person} size={56} />}
       title={person.name}
+      subtitle={
+        <Space size={6} wrap>
+          {person.note && <span>{person.note}</span>}
+          <span>{accounts.length > 0 ? `${accounts.length} 个账号` : "没有账号"}</span>
+          {accountTags(accounts)}
+        </Space>
+      }
       extra={
         <Popconfirm
           title={`删除「${person.name}」？`}
-          description="其他应用里此人的数据（如分数）将不再显示；他的账号会保留，只是不再关联人员。"
+          description="其他应用里此人的数据（如分数）将不再显示；他的账号会保留，只是不再关联成员。"
           okText="删除"
           okButtonProps={{ danger: true }}
           cancelText="取消"
           onConfirm={remove}
         >
-          <Button type="link" danger>
-            删除人员
+          <Button type="text" danger>
+            删除
           </Button>
         </Popconfirm>
       }
-    >
-      {message && (
-        <Alert
-          type={message.ok ? "success" : "error"}
-          message={message.text}
-          showIcon
-          closable
-          onClose={() => setMessage(null)}
-          style={{ marginBottom: 16 }}
-        />
+      tab={tab}
+      onTab={setTab}
+      items={[
+        {
+          key: "profile",
+          label: "资料",
+          children: (
+            <PersonForm
+              initial={person}
+              submitText="保存"
+              onSubmit={async (input) => {
+                await api.updatePerson(person.id, input);
+                message.success("已保存");
+                onSaved();
+              }}
+            />
+          ),
+        },
+        {
+          key: "account",
+          label: "账号",
+          children: (
+            <>
+              {picker}
+              {account && (
+                <AccountSettings
+                  key={account.id}
+                  user={account}
+                  me={me}
+                  onSaved={onSaved}
+                  link={
+                    <Popconfirm
+                      title={`解除账号 ${account.username} 和「${person.name}」的关联？`}
+                      description="账号本身不会删除，会出现在“未关联成员的账号”里。"
+                      okText="解除"
+                      cancelText="取消"
+                      onConfirm={() =>
+                        api
+                          .setUserPerson(account.id, null)
+                          .then(() => {
+                            message.success("已解除关联");
+                            onSaved();
+                          })
+                          .catch((err) => message.error(err.message))
+                      }
+                    >
+                      <Button danger>解除关联</Button>
+                    </Popconfirm>
+                  }
+                />
+              )}
+              <AddAccount
+                person={person}
+                unlinked={unlinked}
+                first={accounts.length === 0}
+                onAdded={(id) => {
+                  setAccountId(id);
+                  onSaved();
+                }}
+              />
+            </>
+          ),
+        },
+        {
+          key: "perms",
+          label: "权限",
+          children: account ? (
+            <>
+              {picker}
+              <AppPermissions key={account.id} user={account} />
+            </>
+          ) : (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有账号，开通账号后才能设置权限。">
+              <Button onClick={() => setTab("account")}>去开通账号</Button>
+            </Empty>
+          ),
+        },
+      ]}
+    />
+  );
+}
+
+// AccountDetail 是没关联成员的账号：可以把它关联到一个成员。
+function AccountDetail({ user, persons, me, onSaved }: { user: User; persons: Person[]; me: User; onSaved: () => void }) {
+  const { message } = AntApp.useApp();
+  const [tab, setTab] = useState("account");
+  return (
+    <DetailCard
+      avatar={<Avatar size={56} icon={<UserOutlined />} />}
+      title={user.displayName}
+      subtitle={
+        <Space size={6} wrap>
+          <span>{user.username}</span>
+          {accountTags([user])}
+        </Space>
+      }
+      tab={tab}
+      onTab={setTab}
+      items={[
+        {
+          key: "account",
+          label: "账号",
+          children: (
+            <AccountSettings
+              user={user}
+              me={me}
+              onSaved={onSaved}
+              link={
+                <Select
+                  placeholder="关联到成员"
+                  style={{ minWidth: 160 }}
+                  onChange={(id: number) =>
+                    api
+                      .setUserPerson(user.id, id)
+                      .then(() => {
+                        message.success("已关联");
+                        onSaved();
+                      })
+                      .catch((err) => message.error(err.message))
+                  }
+                  options={persons.map((p) => ({ value: p.id, label: p.name }))}
+                />
+              }
+            />
+          ),
+        },
+        { key: "perms", label: "权限", children: <AppPermissions user={user} /> },
+      ]}
+    />
+  );
+}
+
+type CreateForm = { username: string; displayName?: string; password: string; admin: boolean };
+
+// AddAccount 给成员开通新账号或关联一个没关联成员的账号。还没有账号时直接摊开说明和两个按钮。
+function AddAccount({
+  person,
+  unlinked,
+  first,
+  onAdded,
+}: {
+  person: Person;
+  unlinked: User[];
+  first: boolean;
+  onAdded: (id: number) => void;
+}) {
+  const { message } = AntApp.useApp();
+  const [adding, setAdding] = useState<"create" | "link" | null>(null);
+  const [linkId, setLinkId] = useState<number | null>(null);
+  const [form] = Form.useForm<CreateForm>();
+
+  async function create(values: CreateForm) {
+    try {
+      const u = await api.createUser({ ...values, displayName: values.displayName || person.name, personId: person.id });
+      message.success("账号已开通");
+      form.resetFields();
+      setAdding(null);
+      onAdded(u.id);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "开通失败");
+    }
+  }
+
+  async function link() {
+    try {
+      await api.setUserPerson(linkId!, person.id);
+      message.success("已关联");
+      setAdding(null);
+      onAdded(linkId!);
+      setLinkId(null);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "关联失败");
+    }
+  }
+
+  return (
+    <div className={first ? undefined : "section"}>
+      {first && (
+        <Typography.Paragraph type="secondary">
+          还没有账号。开通后他就能登录平台，其他应用也能知道登录的是他。
+        </Typography.Paragraph>
       )}
-
-      <PersonForm
-        initial={person}
-        submitText="保存"
-        onSubmit={async (input) => {
-          await api.updatePerson(person.id, input);
-          setMessage({ ok: true, text: "已保存" });
-          onSaved();
-        }}
-      />
-
-      <Divider />
-
-      <Typography.Title level={5} style={{ marginTop: 0 }}>
-        账号
-      </Typography.Title>
-      {accounts.length === 0 ? (
-        <Typography.Text type="secondary">还没有账号，开通后他就能登录平台，其他应用也能知道登录的是他。</Typography.Text>
-      ) : (
-        <List
-          size="small"
-          dataSource={accounts}
-          renderItem={(u) => (
-            <List.Item
-              actions={[
-                <Button key="open" type="link" size="small" onClick={() => onSelectUser(u.id)}>
-                  密码与权限
-                </Button>,
-                <Popconfirm
-                  key="unlink"
-                  title={`解除账号 ${u.username} 和「${person.name}」的关联？`}
-                  description="账号本身不会删除。"
-                  okText="解除"
-                  cancelText="取消"
-                  onConfirm={() => act(() => api.setUserPerson(u.id, null), "已解除关联")}
-                >
-                  <Button type="link" size="small" danger>
-                    解除关联
-                  </Button>
-                </Popconfirm>,
-              ]}
-            >
-              <AccountText user={u} />
-            </List.Item>
-          )}
-        />
-      )}
-      <Space style={{ marginTop: 12 }} wrap>
-        <Button onClick={() => setAdding(adding === "create" ? null : "create")}>开通账号</Button>
+      <Space wrap>
+        <Button icon={<PlusOutlined />} type={first ? "primary" : "default"} onClick={() => setAdding(adding === "create" ? null : "create")}>
+          {first ? "开通账号" : "再开通一个账号"}
+        </Button>
         <Button onClick={() => setAdding(adding === "link" ? null : "link")}>关联已有账号</Button>
       </Space>
 
       {adding === "create" && (
-        <Form
-          form={form}
-          layout="vertical"
-          requiredMark={false}
-          initialValues={{ admin: false }}
-          onFinish={createAccount}
-          style={{ marginTop: 16 }}
-        >
+        <Form form={form} layout="vertical" requiredMark={false} initialValues={{ admin: false }} onFinish={create} style={{ marginTop: 16 }}>
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item label="用户名（登录用）" name="username" rules={[{ required: true, message: "请输入用户名" }]}>
@@ -421,7 +633,7 @@ function PersonDetail({
             </Col>
           </Row>
           <Form.Item name="admin" valuePropName="checked">
-            <Checkbox>管理员（拥有全部菜单，能管理应用和用户）</Checkbox>
+            <Checkbox>管理员（拥有全部权限，能管理应用和用户）</Checkbox>
           </Form.Item>
           <Space>
             <Button type="primary" htmlType="submit">
@@ -435,7 +647,7 @@ function PersonDetail({
       {adding === "link" && (
         <Flex gap={8} wrap style={{ marginTop: 16 }}>
           {unlinked.length === 0 ? (
-            <Typography.Text type="secondary">所有账号都已经关联了人员。</Typography.Text>
+            <Typography.Text type="secondary">所有账号都已经关联了成员。</Typography.Text>
           ) : (
             <>
               <Select
@@ -448,11 +660,7 @@ function PersonDetail({
                   label: u.displayName === u.username ? u.username : `${u.username}（${u.displayName}）`,
                 }))}
               />
-              <Button
-                type="primary"
-                disabled={linkId === null}
-                onClick={() => act(() => api.setUserPerson(linkId!, person.id), "已关联").then((ok) => ok && setLinkId(null))}
-              >
+              <Button type="primary" disabled={linkId === null} onClick={link}>
                 关联
               </Button>
             </>
@@ -460,149 +668,91 @@ function PersonDetail({
           <Button onClick={() => setAdding(null)}>取消</Button>
         </Flex>
       )}
-    </Card>
+    </div>
   );
 }
 
-function UserDetail({
-  user,
-  persons,
-  isMe,
-  onBack,
-  onSaved,
-}: {
-  user: User;
-  persons: Person[];
-  isMe: boolean;
-  onBack?: () => void;
-  onSaved: () => void;
-}) {
+// AccountSettings 是一个账号的显示名称、管理员、停用和重置密码；link 是关联或解除关联成员的操作。
+// 开关和权限页签一样拨动即保存，显示名称要点“保存”。
+function AccountSettings({ user, me, onSaved, link }: { user: User; me: User; onSaved: () => void; link: ReactNode }) {
+  const { message } = AntApp.useApp();
+  const isMe = user.id === me.id;
   const [displayName, setDisplayName] = useState(user.displayName);
   const [admin, setAdmin] = useState(isAdmin(user));
   const [disabled, setDisabled] = useState(user.disabled);
   const [password, setPassword] = useState("");
-  const [menus, setMenus] = useState<UserMenus | null>(null);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-
-  function loadMenus() {
-    api
-      .userMenus(user.id)
-      .then(setMenus)
-      .catch((err) => setMessage({ ok: false, text: err.message }));
-  }
-  useEffect(loadMenus, [user.id]);
 
   async function act(action: () => Promise<void>, success: string) {
-    setMessage(null);
     try {
       await action();
-      setMessage({ ok: true, text: success });
+      message.success(success);
       onSaved();
-      loadMenus();
+      return true;
     } catch (err) {
-      setMessage({ ok: false, text: err instanceof Error ? err.message : "操作失败" });
+      message.error(err instanceof Error ? err.message : "操作失败");
+      return false;
     }
   }
 
-  function save() {
-    act(() => api.updateUser(user.id, { displayName, admin, disabled }), "已保存");
+  // 拨动开关立即保存，显示名称用已保存的值；失败时开关退回原样。
+  async function toggle(next: { admin: boolean; disabled: boolean }, success: string) {
+    const prev = { admin, disabled };
+    setAdmin(next.admin);
+    setDisabled(next.disabled);
+    if (!(await act(() => api.updateUser(user.id, { displayName: user.displayName, ...next }), success))) {
+      setAdmin(prev.admin);
+      setDisabled(prev.disabled);
+    }
   }
-
-  function resetPassword() {
-    act(() => api.setPassword(user.id, password), "密码已重置，该用户需要用新密码重新登录").then(() => setPassword(""));
-  }
-
-  // 功能权限和菜单分开存。allowed 为 null 表示恢复默认。
-  const setGrant = (kind: GrantKind, module: string, id: string, allowed: boolean | null) =>
-    kind === "perm" ? api.setUserPerm(user.id, module, id, allowed) : api.setUserMenu(user.id, module, id, allowed);
-
-  // 勾选结果和默认值相同时直接恢复默认，数据库里只留和默认不同的设置。
-  function toggle(kind: GrantKind, module: string, grant: Grant) {
-    const next = !grant.allowed;
-    act(() => setGrant(kind, module, grant.id, next === grant.default ? null : next), "权限已更新");
-  }
-
-  const renderGrant = (kind: GrantKind, module: string, grant: Grant) => (
-    <Space key={`${kind}:${grant.id}`} size={12} wrap>
-      <Checkbox checked={grant.allowed} disabled={menus?.admin} onChange={() => toggle(kind, module, grant)}>
-        {grant.name}
-      </Checkbox>
-      {grant.description && <Typography.Text type="secondary">{grant.description}</Typography.Text>}
-      {!menus?.admin &&
-        (grant.override === null ? (
-          <Tag>默认</Tag>
-        ) : (
-          <Button
-            type="link"
-            size="small"
-            style={{ padding: 0 }}
-            onClick={() => act(() => setGrant(kind, module, grant.id, null), "已恢复默认")}
-          >
-            恢复默认（{grant.default ? "有" : "无"}）
-          </Button>
-        ))}
-    </Space>
-  );
 
   return (
-    <Card
-      title={user.displayName}
-      extra={
-        onBack && (
-          <Button type="link" onClick={onBack}>
-            返回人员
-          </Button>
-        )
-      }
-    >
-      {message && (
-        <Alert
-          type={message.ok ? "success" : "error"}
-          message={message.text}
-          showIcon
-          closable
-          onClose={() => setMessage(null)}
-          style={{ marginBottom: 16 }}
-        />
-      )}
-
-      <Form layout="vertical" onFinish={save}>
-        <Form.Item label="显示名称" required>
-          <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
-        </Form.Item>
-        <Flex vertical gap={8} style={{ marginBottom: 16 }}>
-          <Checkbox checked={admin} onChange={(e) => setAdmin(e.target.checked)} disabled={isMe}>
-            管理员
-          </Checkbox>
-          <Checkbox checked={disabled} onChange={(e) => setDisabled(e.target.checked)} disabled={isMe}>
-            停用（不能登录，已登录的设备立即退出）
-          </Checkbox>
-          {isMe && <Typography.Text type="secondary">不能取消自己的管理员，也不能停用自己。</Typography.Text>}
-        </Flex>
-        <Button type="primary" htmlType="submit">
-          保存
-        </Button>
+    <Flex vertical gap={0}>
+      <Form layout="vertical" requiredMark={false} onFinish={() => act(() => api.updateUser(user.id, { displayName, admin, disabled }), "显示名称已保存")}>
+        <Row gutter={16}>
+          <Col xs={24} md={12}>
+            <Form.Item label="用户名">
+              <Input value={user.username} disabled />
+            </Form.Item>
+          </Col>
+          <Col xs={24} md={12}>
+            <Form.Item label="显示名称" required>
+              <Space.Compact style={{ width: "100%" }}>
+                <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
+                <Button type="primary" htmlType="submit" disabled={displayName.trim() === user.displayName}>
+                  保存
+                </Button>
+              </Space.Compact>
+            </Form.Item>
+          </Col>
+        </Row>
       </Form>
-
-      <Divider />
-
-      <Form.Item label="所属人员" style={{ marginBottom: 0 }}>
-        <Select
-          value={user.personId}
-          allowClear
-          placeholder="不关联人员"
-          onChange={(v: number | undefined) =>
-            act(() => api.setUserPerson(user.id, v ?? null), v ? "已关联人员" : "已解除关联")
-          }
-          options={persons.map((p) => ({ value: p.id, label: p.name }))}
+      <Flex vertical gap={10}>
+        <SwitchRow
+          title="管理员"
+          description="拥有全部权限，能管理应用和用户"
+          checked={admin}
+          disabled={isMe}
+          onChange={(v) => toggle({ admin: v, disabled }, v ? "已设为管理员" : "已取消管理员")}
         />
-      </Form.Item>
+        <SwitchRow
+          title="停用"
+          description="不能登录，已登录的设备立即退出"
+          checked={disabled}
+          disabled={isMe}
+          onChange={(v) => toggle({ admin, disabled: v }, v ? "账号已停用" : "账号已启用")}
+        />
+        {isMe && <Typography.Text type="secondary">不能取消自己的管理员，也不能停用自己。</Typography.Text>}
+      </Flex>
 
-      <Divider />
-
-      <Form layout="vertical" onFinish={resetPassword}>
-        <Form.Item label="重置密码" style={{ marginBottom: 0 }}>
-          <Space.Compact style={{ width: "100%" }}>
+      <div className="section">
+        <Typography.Text strong>重置密码</Typography.Text>
+        <Form
+          onFinish={() =>
+            act(() => api.setPassword(user.id, password), "密码已重置，他需要用新密码重新登录").then((ok) => ok && setPassword(""))
+          }
+          style={{ marginTop: 8 }}
+        >
+          <Space.Compact style={{ width: "100%", maxWidth: 420 }}>
             <Input.Password
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -610,34 +760,192 @@ function UserDetail({
               autoComplete="new-password"
               required
             />
-            <Button htmlType="submit">重置密码</Button>
+            <Button htmlType="submit">重置</Button>
           </Space.Compact>
-        </Form.Item>
-      </Form>
+        </Form>
+      </div>
 
-      <Divider />
+      <div className="section">
+        <Typography.Text strong>所属成员</Typography.Text>
+        <div style={{ marginTop: 8 }}>{link}</div>
+      </div>
+    </Flex>
+  );
+}
 
-      <Typography.Title level={5} style={{ marginTop: 0 }}>
-        权限
-      </Typography.Title>
-      <Typography.Text type="secondary">
-        {menus?.admin
-          ? "管理员拥有全部权限。"
-          : "功能权限决定能做什么，页面决定能打开哪些页面。“用户”应用只给管理员。"}
-      </Typography.Text>
-      <Flex vertical gap={16} style={{ marginTop: 12 }}>
-        {menus?.modules.map((m) => (
-          <div key={m.id}>
-            <Typography.Text strong>{m.name}</Typography.Text>
-            <Flex vertical gap={6} style={{ marginTop: 6 }}>
-              {m.perms.length > 0 && m.menus.length > 0 && <Typography.Text type="secondary">功能权限</Typography.Text>}
-              {m.perms.map((p) => renderGrant("perm", m.id, p))}
-              {m.perms.length > 0 && m.menus.length > 0 && <Typography.Text type="secondary">页面</Typography.Text>}
-              {m.menus.map((menu) => renderGrant("menu", m.id, menu))}
-            </Flex>
-          </div>
-        ))}
+// SwitchRow 是一行开关：左边是名称和说明，右边是开关。账号设置和权限都用它。
+function SwitchRow({
+  title,
+  description,
+  checked,
+  disabled,
+  onChange,
+  extra,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+  extra?: ReactNode;
+}) {
+  return (
+    <Flex align="center" gap={12} className="switch-row">
+      <Flex vertical style={{ flex: 1, minWidth: 0 }}>
+        <Typography.Text>{title}</Typography.Text>
+        {description && (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {description}
+          </Typography.Text>
+        )}
       </Flex>
-    </Card>
+      {extra}
+      <Switch checked={checked} disabled={disabled} onChange={onChange} />
+    </Flex>
+  );
+}
+
+// AppPermissions 是一个账号的权限：每个应用一张可折叠的卡片，标题行的开关决定能不能用整个应用，
+// 展开后是功能权限和页面。平台排在第一张。应用多时可以搜索、只看已开通的。
+function AppPermissions({ user }: { user: User }) {
+  const { message } = AntApp.useApp();
+  const [data, setData] = useState<UserMenus | null>(null);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [onlyOn, setOnlyOn] = useState(false);
+
+  function load() {
+    api
+      .userMenus(user.id)
+      .then(setData)
+      .catch((err) => setError(err.message));
+  }
+  useEffect(load, [user.id]);
+
+  // 结果和默认值相同时直接恢复默认，数据库里只留和默认不同的设置。allowed 为 null 表示恢复默认。
+  async function set(kind: GrantKind, module: string, id: string, allowed: boolean | null) {
+    try {
+      if (kind === "app") await api.setUserApp(user.id, module, allowed);
+      else if (kind === "perm") await api.setUserPerm(user.id, module, id, allowed);
+      else await api.setUserMenu(user.id, module, id, allowed);
+      load();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "操作失败");
+    }
+  }
+  const toggle = (kind: GrantKind, module: string, g: Grant) =>
+    set(kind, module, g.id, !g.allowed === g.default ? null : !g.allowed);
+
+  if (error) return <Alert type="error" message={error} showIcon />;
+  if (!data) return <Card loading bordered={false} />;
+
+  const admin = data.admin;
+  const q = query.trim().toLowerCase();
+  const shown = data.modules.filter((m) => (!onlyOn || m.access.allowed) && (!q || m.name.toLowerCase().includes(q)));
+  // 单独设置过的显示“恢复默认”，管理员的权限不能改。
+  const reset = (kind: GrantKind, module: string, g: Grant) =>
+    !admin &&
+    g.override !== null && (
+      <Button type="link" size="small" onClick={() => set(kind, module, g.id, null)}>
+        恢复默认
+      </Button>
+    );
+  const rows = (kind: GrantKind, m: AppGrant, list: Grant[]) =>
+    list.map((g) => (
+      <SwitchRow
+        key={`${kind}:${g.id}`}
+        title={g.name}
+        description={g.description}
+        checked={g.allowed}
+        disabled={admin || !m.access.allowed}
+        onChange={() => toggle(kind, m.id, g)}
+        extra={reset(kind, m.id, g)}
+      />
+    ));
+
+  return (
+    <Flex vertical gap={12}>
+      <Typography.Text type="secondary">
+        {admin
+          ? "管理员拥有全部权限，不能单独修改。"
+          : "关掉一个应用，它就对这个账号隐藏，改网址也打不开。关掉“平台”后，他打不开门户，只能直接打开自己能用的应用。"}
+      </Typography.Text>
+      {data.modules.length > MANY_APPS && (
+        <Flex gap={8} wrap>
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="搜索应用"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            style={{ flex: 1, minWidth: 180 }}
+          />
+          <Segmented
+            value={onlyOn ? "on" : "all"}
+            onChange={(v) => setOnlyOn(v === "on")}
+            options={[
+              { value: "all", label: "全部" },
+              { value: "on", label: "已开通" },
+            ]}
+          />
+        </Flex>
+      )}
+      <Collapse
+        className="app-grants"
+        bordered={false}
+        expandIconPosition="end"
+        items={shown.map((m) => {
+          const items = [...m.perms, ...m.menus];
+          const on = items.filter((g) => g.allowed).length;
+          return {
+            key: m.id,
+            label: (
+              <Flex gap={12} align="center">
+                {m.icon ? (
+                  <img src={m.icon} alt="" className="app-grant-icon" />
+                ) : (
+                  <Avatar
+                    shape="square"
+                    size={32}
+                    icon={m.id === "platform" ? <HomeOutlined /> : <AppstoreOutlined />}
+                    className="app-grant-icon"
+                    style={m.id === "platform" ? { background: "var(--accent)" } : undefined}
+                  />
+                )}
+                <Flex vertical style={{ minWidth: 0 }}>
+                  <Typography.Text strong>{m.name}</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {!m.access.allowed ? "未开通" : items.length > 0 ? `已开通 · ${on}/${items.length} 项权限` : "已开通"}
+                  </Typography.Text>
+                </Flex>
+              </Flex>
+            ),
+            extra: (
+              <Space size={4} onClick={(e) => e.stopPropagation()}>
+                {reset("app", m.id, m.access)}
+                <Switch checked={m.access.allowed} disabled={admin} onChange={() => toggle("app", m.id, m.access)} />
+              </Space>
+            ),
+            children:
+              items.length === 0 ? (
+                <Typography.Text type="secondary">这个应用没有可单独设置的权限，开通后就能使用全部功能。</Typography.Text>
+              ) : (
+                <Flex vertical>
+                  {!m.access.allowed && (
+                    <Typography.Text type="secondary" style={{ marginBottom: 8 }}>
+                      应用未开通，下面的设置在开通后才生效。
+                    </Typography.Text>
+                  )}
+                  {m.perms.length > 0 && m.menus.length > 0 && <Typography.Text type="secondary" className="grant-group">功能</Typography.Text>}
+                  {rows("perm", m, m.perms)}
+                  {m.perms.length > 0 && m.menus.length > 0 && <Typography.Text type="secondary" className="grant-group">页面</Typography.Text>}
+                  {rows("menu", m, m.menus)}
+                </Flex>
+              ),
+          };
+        })}
+      />
+      {shown.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到应用" />}
+    </Flex>
   );
 }
