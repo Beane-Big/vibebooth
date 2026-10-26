@@ -24,8 +24,36 @@ const (
 	permModules  = "modules"
 )
 
-// permsFor 返回一个人在某个模块里有的功能权限：有单独设置的按设置，没有的按清单里的默认角色。管理员拥有全部权限。
+// permsFor 返回一个人在某个模块里有的功能权限。不能用这个应用时一项都没有。
 func permsFor(user *User, m *Module, g grants) []string {
+	if !appAllowed(user, m, g) {
+		return nil
+	}
+	return grantedPerms(user, m, g)
+}
+
+// menusFor 返回一个人在某个模块里能用的菜单。不能用这个应用时一个都没有，门户里看不到，网关也不放行。
+func menusFor(user *User, m *Module, g grants) []manifest.Menu {
+	if !appAllowed(user, m, g) {
+		return nil
+	}
+	return grantedMenus(user, m, g)
+}
+
+// appAllowed 判断一个人能不能用整个应用：有单独设置的按设置；没有的，平台默认都能用，模块按菜单的默认值和
+// 单独设置至少有一个菜单才能用（和以前一样）。管理员总能用，避免把自己锁在外面。
+func appAllowed(user *User, m *Module, g grants) bool {
+	if user.IsAdmin() {
+		return true
+	}
+	if allowed, set := g.Apps[m.ID]; set {
+		return allowed
+	}
+	return m == platformModule || len(grantedMenus(user, m, g)) > 0
+}
+
+// grantedPerms 按单独设置和清单里的默认角色算出功能权限，不看应用开关。管理员拥有全部权限。
+func grantedPerms(user *User, m *Module, g grants) []string {
 	var perms []string
 	for _, p := range m.Permissions {
 		allowed, set := g.Perms[m.ID][p.ID]
@@ -36,10 +64,9 @@ func permsFor(user *User, m *Module, g grants) []string {
 	return perms
 }
 
-// menusFor 返回一个人在某个模块里能用的菜单。管理员拥有全部菜单，避免把自己锁在设置页外面。
-// 一个菜单都没有，就看不到也打不开这个模块。
-func menusFor(user *User, m *Module, g grants) []manifest.Menu {
-	perms := permsFor(user, m, g)
+// grantedMenus 按单独设置和清单里的默认角色算出菜单，不看应用开关。管理员拥有全部菜单。
+func grantedMenus(user *User, m *Module, g grants) []manifest.Menu {
+	perms := grantedPerms(user, m, g)
 	var menus []manifest.Menu
 	for _, menu := range m.Menus {
 		if user.IsAdmin() || menuAllowed(user, m.ID, menu, g, perms) {

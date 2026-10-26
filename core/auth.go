@@ -116,6 +116,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user *User) {
 }
 
 // writeMe 返回当前用户，附上平台自己的功能权限，门户据此显示“设置”和“应用管理”。登录接口也返回同样的内容。
+// Platform 为 false 表示不能用门户，门户只显示“没有权限”，他只能直接打开自己能用的应用。
 func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user *User) {
 	g, err := s.store.Grants(r.Context(), user.ID)
 	if err != nil {
@@ -128,8 +129,9 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user *User) {
 	}
 	writeJSON(w, http.StatusOK, struct {
 		*User
-		Perms []string `json:"perms"`
-	}{user, perms})
+		Perms    []string `json:"perms"`
+		Platform bool     `json:"platform"`
+	}{user, perms, appAllowed(user, platformModule, g)})
 }
 
 func (s *Server) currentUser(r *http.Request) (*User, error) {
@@ -159,6 +161,22 @@ func (s *Server) requireRole(role string, next func(http.ResponseWriter, *http.R
 	return s.requireUser(func(w http.ResponseWriter, r *http.Request, user *User) {
 		if !hasAnyRole(user.Roles, []string{role}) {
 			writeError(w, http.StatusForbidden, "没有权限")
+			return
+		}
+		next(w, r, user)
+	})
+}
+
+// requirePlatform 只放行能用平台（门户）的人，管理员总能通过。
+func (s *Server) requirePlatform(next func(http.ResponseWriter, *http.Request, *User)) http.HandlerFunc {
+	return s.requireUser(func(w http.ResponseWriter, r *http.Request, user *User) {
+		g, err := s.store.Grants(r.Context(), user.ID)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		if !appAllowed(user, platformModule, g) {
+			writeError(w, http.StatusForbidden, "没有使用平台的权限")
 			return
 		}
 		next(w, r, user)

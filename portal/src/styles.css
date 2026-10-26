@@ -68,3 +68,20 @@ pre.log {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* 用户应用：成员列表的一行，选中时用主题色的淡底色标出。 */
+.member-row { display: flex; align-items: center; gap: 12px; margin: 0 8px; padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background 0.15s; }
+.member-row:hover { background: var(--bg); }
+.member-row.active { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.member-group { display: block; padding: 12px 20px 4px; font-size: 12px; }
+/* 详情页签里分隔各段内容。 */
+.section { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
+.switch-row { padding: 10px 0; }
+.switch-row + .switch-row { border-top: 1px solid var(--border); }
+/* 权限：每个应用一张卡片，展开后是功能权限和页面。 */
+.app-grants { background: transparent; }
+.app-grants > .ant-collapse-item { margin-bottom: 8px; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; background: var(--surface); overflow: hidden; }
+.app-grants > .ant-collapse-item > .ant-collapse-header { align-items: center !important; }
+.app-grants .ant-collapse-content-box { padding-top: 0 !important; }
+.app-grant-icon { width: 32px; height: 32px; border-radius: 8px; flex: none; object-fit: cover; }
+.grant-group { display: block; margin-top: 8px; font-size: 12px; }
