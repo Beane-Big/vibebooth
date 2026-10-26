@@ -23,20 +23,21 @@ type server struct {
 	installer *Installer
 }
 
-// routes 的接口都在 /api/platform/installer/ 下。网关先请平台核心确认是管理员（platform-admin 中间件），
-// 这里再用公钥验签并检查 admin 角色，不只信任网关。
+// routes 的接口都在 /api/platform/installer/ 下。网关先请平台核心确认有“应用管理”权限（platform-admin 中间件），
+// 这里再用公钥验签并检查令牌里的权限，不只信任网关。
 func (s *server) routes(verifier *auth.Verifier) http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/platform/installer/modules", s.list)
 	api.HandleFunc("POST /api/platform/installer/modules", s.install)
 	api.HandleFunc("DELETE /api/platform/installer/modules/{id}", s.uninstall)
-	return verifier.Middleware(requireAdmin(api))
+	return verifier.Middleware(requireModulesPerm(api))
 }
 
-func requireAdmin(next http.Handler) http.Handler {
+// requireModulesPerm 只放行有平台“应用管理”权限的令牌。旧平台核心签发的令牌没有 perms，只认 admin 角色。
+func requireModulesPerm(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if user := auth.UserFrom(r.Context()); user == nil || !slices.Contains(user.Roles, "admin") {
-			writeError(w, http.StatusForbidden, "只有管理员能管理应用", "")
+		if user := auth.UserFrom(r.Context()); user == nil || !(user.Has("modules") || slices.Contains(user.Roles, "admin")) {
+			writeError(w, http.StatusForbidden, "没有应用管理权限", "")
 			return
 		}
 		next.ServeHTTP(w, r)

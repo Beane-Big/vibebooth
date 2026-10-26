@@ -38,9 +38,25 @@ type Menu struct {
 	Path string `yaml:"path" json:"path"`
 	// Default 是默认拥有这个菜单的角色，不填为 [user]。管理员可以对单个人勾选或取消，覆盖默认值。
 	Default []string `yaml:"default" json:"-"`
+	// Requires 是打开这个页面还要有的功能权限（permissions 里的 id）。写了它，菜单就跟着这个权限开关，
+	// 不再单独按人设置，管理员只用勾功能权限。
+	Requires string `yaml:"requires" json:"requires,omitempty"`
 	// Settings 已不再使用：模块的设置入口由模块自己放在页面上。保留这个字段，旧清单照样能装。
 	Settings bool `yaml:"settings" json:"-"`
 }
+
+// Permission 是模块的一项功能权限，例如“记分”“修改设置”。它不对应网址，网关不拦，
+// 由模块后端用令牌里的 perms 校验，前端据此决定按钮显不显示。平台只按人存“有没有”，不理解它的含义。
+type Permission struct {
+	ID          string `yaml:"id" json:"id"`
+	Name        string `yaml:"name" json:"name"`
+	Description string `yaml:"description" json:"description,omitempty"`
+	// Default 是默认拥有这项权限的角色，不填为 [user]。管理员可以对单个人勾选或取消，覆盖默认值。
+	Default []string `yaml:"default" json:"-"`
+}
+
+// DefaultMenu 是没写 menus 时平台补上的首页菜单 id。
+const DefaultMenu = "home"
 
 // Requirement 是 requires 里的一项：依赖的模块 id 和要求的最低版本（为空表示任何版本都行）。
 type Requirement struct {
@@ -78,7 +94,10 @@ type Manifest struct {
 	Optional []string `yaml:"optional"`
 	// Privileges 是模块需要的平台特权，安装时要管理员单独确认，取值见 Privilege 常量。
 	Privileges []string `yaml:"privileges"`
-	Menus      []Menu   `yaml:"menus"`
+	// Menus 是模块的页面，可以不写：有前端时平台补一个所有人可见的首页菜单 home。
+	Menus []Menu `yaml:"menus"`
+	// Permissions 是模块的功能权限，可以不写，不需要分权的模块就没有。
+	Permissions []Permission `yaml:"permissions"`
 
 	Deps         []Requirement `yaml:"-"`
 	OptionalDeps []Requirement `yaml:"-"`
@@ -173,9 +192,23 @@ func (m *Manifest) validate() error {
 			return fmt.Errorf("privileges 里的 %q 不认识，目前只支持 %s", p, PrivilegeDockerBuild)
 		}
 	}
+	perms := map[string]bool{}
+	for i := range m.Permissions {
+		p := &m.Permissions[i]
+		if !menuIDPattern.MatchString(p.ID) || perms[p.ID] {
+			return fmt.Errorf("功能权限 id %q 不合法或重复", p.ID)
+		}
+		if p.Name == "" {
+			return fmt.Errorf("功能权限 %s 缺少 name", p.ID)
+		}
+		if len(p.Default) == 0 {
+			p.Default = []string{"user"}
+		}
+		perms[p.ID] = true
+	}
 	_, hasFrontend := m.Services[Frontend]
 	if hasFrontend && len(m.Menus) == 0 {
-		return errors.New("有 frontend 时至少要声明一个菜单（menus）")
+		m.Menus = []Menu{{ID: DefaultMenu, Name: m.Name, Path: m.FrontendPath()}}
 	}
 	ids, paths := map[string]bool{}, map[string]bool{}
 	for i := range m.Menus {
@@ -192,6 +225,9 @@ func (m *Manifest) validate() error {
 		// 菜单必须在模块自己的前端路径下，防止清单把入口指向别的模块或外部网站。
 		if !strings.HasPrefix(menu.Path, m.FrontendPath()) || strings.Contains(menu.Path, "..") || paths[menu.Path] {
 			return fmt.Errorf("菜单 %s 的 path 必须以 %s 开头且不能重复", menu.ID, m.FrontendPath())
+		}
+		if menu.Requires != "" && !perms[menu.Requires] {
+			return fmt.Errorf("菜单 %s 的 requires 必须是 permissions 里的 id", menu.ID)
 		}
 		if len(menu.Default) == 0 {
 			menu.Default = []string{"user"}
@@ -266,6 +302,16 @@ func (m *Manifest) MenuByID(id string) *Menu {
 	for i := range m.Menus {
 		if m.Menus[i].ID == id {
 			return &m.Menus[i]
+		}
+	}
+	return nil
+}
+
+// PermissionByID 按 id 找功能权限，找不到时返回 nil。
+func (m *Manifest) PermissionByID(id string) *Permission {
+	for i := range m.Permissions {
+		if m.Permissions[i].ID == id {
+			return &m.Permissions[i]
 		}
 	}
 	return nil

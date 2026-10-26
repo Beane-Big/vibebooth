@@ -20,6 +20,14 @@ export type PersonInput = Pick<Person, "name" | "note" | "photo">;
 
 export const isAdmin = (user: User) => user.roles.includes("admin");
 
+// 当前登录的人：登录和 /me 接口在账号信息之外还带上平台自己的功能权限（管理员总有全部）。
+export type Me = User & { perms: string[] };
+
+// 平台自己的功能权限，和 core/menus.go 里的 platformModule 一致。
+export type PlatformPerm = "settings" | "modules";
+
+export const hasPerm = (me: Me, perm: PlatformPerm) => me.perms.includes(perm);
+
 export type App = {
   id: string;
   name: string;
@@ -48,19 +56,20 @@ export const privilegeInfo: Record<string, string> = {
   "docker-build": "在服务器上构建镜像。它碰不到平台自己的程序，但能替换其他应用的镜像，只安装你信任的模块。",
 };
 
-// 用户页：某个人对每个菜单的默认值、单独设置和最终结果。override 为 null 表示跟随默认。
-export type MenuGrant = {
+// 用户页：某个人对一项功能权限或一个菜单的默认值、单独设置和最终结果。override 为 null 表示跟随默认。
+export type Grant = {
   id: string;
   name: string;
-  path: string;
+  description?: string;
   default: boolean;
   override: boolean | null;
   allowed: boolean;
 };
 
+// 平台排在第一组（id 为 platform）。menus 里只有能单独设置的菜单，跟着功能权限走的菜单不列出。
 export type UserMenus = {
   admin: boolean;
-  modules: { id: string; name: string; menus: MenuGrant[] }[];
+  modules: { id: string; name: string; perms: Grant[]; menus: Grant[] }[];
 };
 
 export type UserInput = {
@@ -103,16 +112,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const put = (path: string, body: unknown) => request<void>(path, { method: "PUT", body: JSON.stringify(body) });
 
 export const api = {
-  me: () => request<User>("/api/platform/me"),
+  me: () => request<Me>("/api/platform/me"),
   apps: () => request<App[]>("/api/platform/apps"),
   login: (username: string, password: string) =>
-    request<User>("/api/platform/auth/login", {
+    request<Me>("/api/platform/auth/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<void>("/api/platform/auth/logout", { method: "POST" }),
 
-  // 应用管理（只有管理员能调用）
+  // 应用管理（要有平台的“应用管理”权限）
   modules: () => request<InstalledModule[]>("/api/platform/installer/modules"),
   installModule: (file: File, allowPrivileges = false) => {
     const form = new FormData();
@@ -144,4 +153,6 @@ export const api = {
   // allowed 为 null 表示恢复默认值。
   setUserMenu: (id: number, module: string, menu: string, allowed: boolean | null) =>
     put(`/api/platform/users/${id}/menus`, { module, menu, allowed }),
+  setUserPerm: (id: number, module: string, perm: string, allowed: boolean | null) =>
+    put(`/api/platform/users/${id}/perms`, { module, perm, allowed }),
 };

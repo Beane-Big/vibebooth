@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Spin } from "antd";
-import { api, ApiError, isAdmin, type App as AppInfo, type User } from "./api";
-import { builtinAliases, builtinApps, isBuiltinURL } from "./builtin";
+import { api, ApiError, type App as AppInfo, type Me } from "./api";
+import { builtinAliases, builtinAppsFor, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
@@ -10,7 +10,7 @@ import Settings from "./pages/Settings";
 import Users from "./pages/Users";
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -54,14 +54,13 @@ export default function App() {
 
 // 门户只有首页一个页面，其余都在标签里：模块应用放在内嵌页，平台自带的应用（用户、设置）由门户直接渲染。
 // 直接访问自带应用的网址（例如按住 Ctrl 点卡片）时打开它的标签，地址栏回到首页；旧网址 /admin/modules 打开“设置”。
-function Portal({ user, onLogout }: { user: User; onLogout: () => void }) {
+function Portal({ user, onLogout }: { user: Me; onLogout: () => void }) {
   const [apps, setApps] = useState<AppInfo[] | null>(null);
   const [error, setError] = useState("");
   const tabs = useAppTabs();
   // 每个标签被刷新的次数：平台自带的应用用它作 key 重新挂载，首页变了就重新取应用列表。
   const [reloads, setReloads] = useState<Record<string, number>>({});
-  // 管理类的自带应用只给管理员；其他人输入网址也只会看到首页，接口本身也会拒绝。
-  const builtins = builtinApps.filter((app) => !app.adminOnly || isAdmin(user));
+  const builtins = builtinAppsFor(user);
   const findBuiltin = (path: string) => builtins.find((app) => app.url === (builtinAliases[path] ?? path));
 
   useEffect(() => {

@@ -30,6 +30,9 @@ type User struct {
 	Roles []string `json:"roles"`
 	// Menus 是这个人在本模块里有权限的菜单 id，由管理员在门户“用户”页按人设置。
 	Menus []string `json:"menus"`
+	// Perms 是这个人在本模块里有的功能权限 id（module.yaml 的 permissions），同样在“用户”页按人设置。
+	// 旧平台签发的令牌里没有这个字段。
+	Perms []string `json:"perms"`
 }
 
 // HasMenu 判断当前用户有没有某个菜单的权限。模块后端用它检查接口权限，例如只有有“设置”菜单的人能清零。
@@ -37,10 +40,17 @@ func (u *User) HasMenu(id string) bool {
 	return slices.Contains(u.Menus, id)
 }
 
+// Has 判断当前用户有没有某项功能权限，例如 Has("score") 才能加分。模块声明了 permissions 时优先用它，
+// 而不是 HasMenu：功能权限不依赖页面怎么划分。
+func (u *User) Has(perm string) bool {
+	return slices.Contains(u.Perms, perm)
+}
+
 type claims struct {
 	Name  string   `json:"name"`
 	Roles []string `json:"roles"`
 	Menus []string `json:"menus"`
+	Perms []string `json:"perms"`
 	jwt.RegisteredClaims
 }
 
@@ -85,7 +95,7 @@ func (v *Verifier) Verify(ctx context.Context, authorization string) (*User, err
 	if err != nil {
 		return nil, err
 	}
-	return &User{ID: c.Subject, Name: c.Name, Roles: c.Roles, Menus: c.Menus}, nil
+	return &User{ID: c.Subject, Name: c.Name, Roles: c.Roles, Menus: c.Menus, Perms: c.Perms}, nil
 }
 
 // Middleware 拦截未通过校验的请求；通过后可用 UserFrom 取当前用户。

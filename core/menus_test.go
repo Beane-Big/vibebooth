@@ -11,7 +11,9 @@ func testModule(t *testing.T) *Module {
 	t.Helper()
 	m, err := manifest.Parse([]byte("id: demo\nname: 演示\nversion: 0.1.0\nservices: {frontend: {port: 80}}\nmenus:\n" +
 		"  - {id: home, name: 首页, path: /apps/demo/}\n" +
-		"  - {id: settings, name: 设置, path: /apps/demo/settings/, default: [admin], settings: true}\n"))
+		"  - {id: settings, name: 设置, path: /apps/demo/settings/, default: [admin], settings: true}\n" +
+		"  - {id: board, name: 记分板, path: /apps/demo/board/, requires: score}\n" +
+		"permissions:\n  - {id: score, name: 记分}\n  - {id: reset, name: 清零, default: [admin]}\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,21 +26,41 @@ func TestMenusFor(t *testing.T) {
 	admin := &User{Roles: []string{"admin", "user"}}
 	no, yes := false, true
 	cases := []struct {
-		name string
-		user *User
-		g    grants
-		want []string
+		name  string
+		user  *User
+		g     grants
+		menus []string
+		perms []string
 	}{
-		{"普通用户按默认值", user, grants{}, []string{"home"}},
-		{"单独允许设置", user, grants{"demo": {"settings": yes}}, []string{"home", "settings"}},
-		{"单独禁止首页", user, grants{"demo": {"home": no}}, nil},
-		{"别的模块的设置不影响", user, grants{"other": {"settings": yes}}, []string{"home"}},
-		{"管理员总有全部菜单", admin, grants{"demo": {"settings": no, "home": no}}, []string{"home", "settings"}},
+		{"普通用户按默认值", user, grants{}, []string{"home", "board"}, []string{"score"}},
+		{"单独允许设置", user, grants{Menus: grantMap{"demo": {"settings": yes}}}, []string{"home", "settings", "board"}, []string{"score"}},
+		{"单独禁止首页", user, grants{Menus: grantMap{"demo": {"home": no}}}, []string{"board"}, []string{"score"}},
+		{"别的模块的设置不影响", user, grants{Menus: grantMap{"other": {"settings": yes}}}, []string{"home", "board"}, []string{"score"}},
+		{"去掉功能权限，跟着它的菜单也没了", user, grants{Perms: grantMap{"demo": {"score": no}}}, []string{"home"}, nil},
+		{"菜单跟着权限走，不看菜单的单独设置", user, grants{Menus: grantMap{"demo": {"board": yes}}, Perms: grantMap{"demo": {"score": no}}}, []string{"home"}, nil},
+		{"单独给清零", user, grants{Perms: grantMap{"demo": {"reset": yes}}}, []string{"home", "board"}, []string{"score", "reset"}},
+		{"管理员总有全部", admin, grants{Menus: grantMap{"demo": {"settings": no, "home": no}}, Perms: grantMap{"demo": {"score": no}}},
+			[]string{"home", "settings", "board"}, []string{"score", "reset"}},
 	}
+	same := func(a, b []string) bool { return slices.Equal(a, b) || (len(a) == 0 && len(b) == 0) }
 	for _, c := range cases {
-		if got := menuIDs(menusFor(c.user, m, c.g)); !slices.Equal(got, c.want) && !(len(got) == 0 && len(c.want) == 0) {
-			t.Errorf("%s: menus = %v, want %v", c.name, got, c.want)
+		if got := menuIDs(menusFor(c.user, m, c.g)); !same(got, c.menus) {
+			t.Errorf("%s: menus = %v, want %v", c.name, got, c.menus)
 		}
+		if got := permsFor(c.user, m, c.g); !same(got, c.perms) {
+			t.Errorf("%s: perms = %v, want %v", c.name, got, c.perms)
+		}
+	}
+}
+
+func TestPlatformPerms(t *testing.T) {
+	user := &User{Roles: []string{"user"}}
+	if got := permsFor(user, platformModule, grants{}); !slices.Equal(got, []string{permSettings}) {
+		t.Errorf("普通用户默认只有设置，实际 %v", got)
+	}
+	g := grants{Perms: grantMap{"platform": {permModules: true}}}
+	if got := permsFor(user, platformModule, g); !slices.Equal(got, []string{permSettings, permModules}) {
+		t.Errorf("单独给了应用管理，实际 %v", got)
 	}
 }
 

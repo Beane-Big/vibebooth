@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -167,25 +168,29 @@ func (s *Server) handleSetUserPerson(w http.ResponseWriter, r *http.Request, _ *
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ---- 按人授权菜单 ----
+// ---- 按人授权菜单和功能权限 ----
 
-type menuGrantView struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Path string `json:"path"`
-	// Default 是按清单里的默认角色这个人有没有这个菜单；Override 是单独设置，nil 表示跟随默认。
+// grantView 是一个菜单或一项功能权限对某个人的授权状态。
+type grantView struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Default 是按清单里的默认角色这个人有没有；Override 是单独设置，nil 表示跟随默认。
 	Default  bool  `json:"default"`
 	Override *bool `json:"override"`
 	Allowed  bool  `json:"allowed"`
 }
 
+// moduleGrantView 里的 Menus 只有能单独设置的菜单：写了 requires 的菜单跟着功能权限走，不在这里列出。
 type moduleGrantView struct {
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Menus []menuGrantView `json:"menus"`
+	ID    string      `json:"id"`
+	Name  string      `json:"name"`
+	Perms []grantView `json:"perms"`
+	Menus []grantView `json:"menus"`
 }
 
-// handleUserMenus 列出所有已安装模块的菜单，以及这个人对每个菜单的默认值、单独设置和最终结果。
+// handleUserMenus 列出平台和所有已安装模块的功能权限和菜单，以及这个人对每一项的默认值、单独设置和最终结果。
+// 平台排在第一组。
 func (s *Server) handleUserMenus(w http.ResponseWriter, r *http.Request, _ *User) {
 	target := s.targetUser(w, r)
 	if target == nil {
@@ -197,26 +202,34 @@ func (s *Server) handleUserMenus(w http.ResponseWriter, r *http.Request, _ *User
 		return
 	}
 	modules := []moduleGrantView{}
-	for _, m := range s.registry.List() {
-		if len(m.Menus) == 0 {
-			continue
+	for _, m := range append([]*Module{platformModule}, s.registry.List()...) {
+		view := moduleGrantView{ID: m.ID, Name: m.Name, Perms: []grantView{}, Menus: []grantView{}}
+		perms := permsFor(target, m, g)
+		for _, p := range m.Permissions {
+			view.Perms = append(view.Perms, grantFor(target, p.ID, p.Name, p.Description, p.Default,
+				g.Perms[m.ID], slices.Contains(perms, p.ID)))
 		}
-		allowed := map[string]bool{}
-		for _, menu := range menusFor(target, m, g) {
-			allowed[menu.ID] = true
-		}
-		view := moduleGrantView{ID: m.ID, Name: m.Name}
+		allowed := menuIDs(menusFor(target, m, g))
 		for _, menu := range m.Menus {
-			v := menuGrantView{ID: menu.ID, Name: menu.Name, Path: menu.Path,
-				Default: target.IsAdmin() || hasAnyRole(target.Roles, menu.Default), Allowed: allowed[menu.ID]}
-			if o, ok := g[m.ID][menu.ID]; ok {
-				v.Override = &o
+			if menu.Requires == "" {
+				view.Menus = append(view.Menus, grantFor(target, menu.ID, menu.Name, "", menu.Default,
+					g.Menus[m.ID], slices.Contains(allowed, menu.ID)))
 			}
-			view.Menus = append(view.Menus, v)
 		}
-		modules = append(modules, view)
+		if len(view.Perms)+len(view.Menus) > 0 {
+			modules = append(modules, view)
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"admin": target.IsAdmin(), "modules": modules})
+}
+
+func grantFor(user *User, id, name, description string, roles []string, overrides map[string]bool, allowed bool) grantView {
+	v := grantView{ID: id, Name: name, Description: description,
+		Default: user.IsAdmin() || hasAnyRole(user.Roles, roles), Allowed: allowed}
+	if o, ok := overrides[id]; ok {
+		v.Override = &o
+	}
+	return v
 }
 
 func (s *Server) handleSetUserMenu(w http.ResponseWriter, r *http.Request, _ *User) {
@@ -233,11 +246,40 @@ func (s *Server) handleSetUserMenu(w http.ResponseWriter, r *http.Request, _ *Us
 		return
 	}
 	m, ok := s.registry.Get(in.Module)
-	if !ok || m.MenuByID(in.Menu) == nil {
-		writeError(w, http.StatusBadRequest, "模块或菜单不存在")
+	if !ok || m.MenuByID(in.Menu) == nil || m.MenuByID(in.Menu).Requires != "" {
+		writeError(w, http.StatusBadRequest, "模块或菜单不存在，或者这个菜单跟着功能权限走")
 		return
 	}
 	if err := s.store.SetGrant(r.Context(), target.ID, in.Module, in.Menu, in.Allowed); err != nil {
+		internalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSetUserPerm 单独设置一项功能权限，module 为 platform 时是平台自己的权限。
+func (s *Server) handleSetUserPerm(w http.ResponseWriter, r *http.Request, _ *User) {
+	target := s.targetUser(w, r)
+	if target == nil {
+		return
+	}
+	var in struct {
+		Module  string `json:"module"`
+		Perm    string `json:"perm"`
+		Allowed *bool  `json:"allowed"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	m, ok := s.registry.Get(in.Module)
+	if in.Module == platformModule.ID {
+		m, ok = platformModule, true
+	}
+	if !ok || m.PermissionByID(in.Perm) == nil {
+		writeError(w, http.StatusBadRequest, "模块或功能权限不存在")
+		return
+	}
+	if err := s.store.SetPermGrant(r.Context(), target.ID, in.Module, in.Perm, in.Allowed); err != nil {
 		internalError(w, err)
 		return
 	}
