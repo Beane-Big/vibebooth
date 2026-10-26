@@ -18,13 +18,16 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { api, isAdmin, type MenuGrant, type Person, type PersonInput, type User, type UserMenus } from "../api";
+import { api, isAdmin, type Grant, type Person, type PersonInput, type User, type UserMenus } from "../api";
 import { resizePhoto } from "../photo";
 
 // 选中的是一个人员，还是一个账号。
 type Selection = { kind: "person"; id: number } | { kind: "user"; id: number };
 
-// 用户应用：维护人员（家庭成员等），给人员开通账号或关联已有账号，并管理每个账号的密码、停用和菜单权限。
+// 账号详情里的一项授权是功能权限还是菜单，两者分开存。
+type GrantKind = "perm" | "menu";
+
+// 用户应用：维护人员（家庭成员等），给人员开通账号或关联已有账号，并管理每个账号的密码、停用和权限。
 // 一个账号最多属于一个人员，一个人员可以有多个账号。宽屏上左边是列表、右边是选中项的详情；窄屏上详情排在列表下面。
 export default function Users({ me }: { me: User }) {
   const [persons, setPersons] = useState<Person[] | null>(null);
@@ -509,11 +512,37 @@ function UserDetail({
     act(() => api.setPassword(user.id, password), "密码已重置，该用户需要用新密码重新登录").then(() => setPassword(""));
   }
 
+  // 功能权限和菜单分开存。allowed 为 null 表示恢复默认。
+  const setGrant = (kind: GrantKind, module: string, id: string, allowed: boolean | null) =>
+    kind === "perm" ? api.setUserPerm(user.id, module, id, allowed) : api.setUserMenu(user.id, module, id, allowed);
+
   // 勾选结果和默认值相同时直接恢复默认，数据库里只留和默认不同的设置。
-  function toggle(module: string, menu: MenuGrant) {
-    const next = !menu.allowed;
-    act(() => api.setUserMenu(user.id, module, menu.id, next === menu.default ? null : next), "菜单权限已更新");
+  function toggle(kind: GrantKind, module: string, grant: Grant) {
+    const next = !grant.allowed;
+    act(() => setGrant(kind, module, grant.id, next === grant.default ? null : next), "权限已更新");
   }
+
+  const renderGrant = (kind: GrantKind, module: string, grant: Grant) => (
+    <Space key={`${kind}:${grant.id}`} size={12} wrap>
+      <Checkbox checked={grant.allowed} disabled={menus?.admin} onChange={() => toggle(kind, module, grant)}>
+        {grant.name}
+      </Checkbox>
+      {grant.description && <Typography.Text type="secondary">{grant.description}</Typography.Text>}
+      {!menus?.admin &&
+        (grant.override === null ? (
+          <Tag>默认</Tag>
+        ) : (
+          <Button
+            type="link"
+            size="small"
+            style={{ padding: 0 }}
+            onClick={() => act(() => setGrant(kind, module, grant.id, null), "已恢复默认")}
+          >
+            恢复默认（{grant.default ? "有" : "无"}）
+          </Button>
+        ))}
+    </Space>
+  );
 
   return (
     <Card
@@ -589,35 +618,22 @@ function UserDetail({
       <Divider />
 
       <Typography.Title level={5} style={{ marginTop: 0 }}>
-        菜单权限
+        权限
       </Typography.Title>
-      {menus?.admin && <Typography.Text type="secondary">管理员拥有全部菜单。</Typography.Text>}
-      {menus && menus.modules.length === 0 && <Typography.Text type="secondary">还没有安装任何应用。</Typography.Text>}
-      <Flex vertical gap={16} style={{ marginTop: 8 }}>
+      <Typography.Text type="secondary">
+        {menus?.admin
+          ? "管理员拥有全部权限。"
+          : "功能权限决定能做什么，页面决定能打开哪些页面。“用户”应用只给管理员。"}
+      </Typography.Text>
+      <Flex vertical gap={16} style={{ marginTop: 12 }}>
         {menus?.modules.map((m) => (
           <div key={m.id}>
             <Typography.Text strong>{m.name}</Typography.Text>
             <Flex vertical gap={6} style={{ marginTop: 6 }}>
-              {m.menus.map((menu) => (
-                <Space key={menu.id} size={12} wrap>
-                  <Checkbox checked={menu.allowed} disabled={menus.admin} onChange={() => toggle(m.id, menu)}>
-                    {menu.name}
-                  </Checkbox>
-                  {!menus.admin &&
-                    (menu.override === null ? (
-                      <Tag>默认</Tag>
-                    ) : (
-                      <Button
-                        type="link"
-                        size="small"
-                        style={{ padding: 0 }}
-                        onClick={() => act(() => api.setUserMenu(user.id, m.id, menu.id, null), "已恢复默认")}
-                      >
-                        恢复默认（{menu.default ? "有" : "无"}）
-                      </Button>
-                    ))}
-                </Space>
-              ))}
+              {m.perms.length > 0 && m.menus.length > 0 && <Typography.Text type="secondary">功能权限</Typography.Text>}
+              {m.perms.map((p) => renderGrant("perm", m.id, p))}
+              {m.perms.length > 0 && m.menus.length > 0 && <Typography.Text type="secondary">页面</Typography.Text>}
+              {m.menus.map((menu) => renderGrant("menu", m.id, menu))}
             </Flex>
           </div>
         ))}

@@ -89,7 +89,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Secure:   s.cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
-	writeJSON(w, http.StatusOK, user)
+	s.writeMe(w, r, user)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -111,8 +111,25 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleMe(w http.ResponseWriter, _ *http.Request, user *User) {
-	writeJSON(w, http.StatusOK, user)
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user *User) {
+	s.writeMe(w, r, user)
+}
+
+// writeMe 返回当前用户，附上平台自己的功能权限，门户据此显示“设置”和“应用管理”。登录接口也返回同样的内容。
+func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user *User) {
+	g, err := s.store.Grants(r.Context(), user.ID)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	perms := permsFor(user, platformModule, g)
+	if perms == nil {
+		perms = []string{}
+	}
+	writeJSON(w, http.StatusOK, struct {
+		*User
+		Perms []string `json:"perms"`
+	}{user, perms})
 }
 
 func (s *Server) currentUser(r *http.Request) (*User, error) {
@@ -141,6 +158,22 @@ func (s *Server) requireUser(next func(http.ResponseWriter, *http.Request, *User
 func (s *Server) requireRole(role string, next func(http.ResponseWriter, *http.Request, *User)) http.HandlerFunc {
 	return s.requireUser(func(w http.ResponseWriter, r *http.Request, user *User) {
 		if !hasAnyRole(user.Roles, []string{role}) {
+			writeError(w, http.StatusForbidden, "没有权限")
+			return
+		}
+		next(w, r, user)
+	})
+}
+
+// requirePerm 只放行有平台某项功能权限的人，管理员总能通过。
+func (s *Server) requirePerm(perm string, next func(http.ResponseWriter, *http.Request, *User)) http.HandlerFunc {
+	return s.requireUser(func(w http.ResponseWriter, r *http.Request, user *User) {
+		ok, err := s.hasPlatformPerm(r, user, perm)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		if !ok {
 			writeError(w, http.StatusForbidden, "没有权限")
 			return
 		}
@@ -210,13 +243,13 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "没有访问这个应用的权限")
 		return
 	}
-	// 接口的细粒度权限由模块后端用令牌里的 menus 判断；这里只拦页面。
+	// 接口的细粒度权限由模块后端用令牌里的 menus 和 perms 判断；这里只拦页面。
 	if !isAPI && !canOpenPage(app, menus, path) {
 		writeError(w, http.StatusForbidden, "没有访问这个页面的权限")
 		return
 	}
 
-	token, err := s.issueToken(user, app.ID, menuIDs(menus))
+	token, err := s.issueToken(user, app.ID, menuIDs(menus), permsFor(user, app, g))
 	if err != nil {
 		internalError(w, err)
 		return
@@ -227,8 +260,8 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleVerifyAdmin 给平台自己的管理接口（目前是安装器 /api/platform/installer/）做登录校验：只放行管理员。
-// 通过时附上一个只能用于安装器的令牌，安装器再用公钥验签。
+// handleVerifyAdmin 给平台自己的管理接口（目前是安装器 /api/platform/installer/）做登录校验：
+// 只放行有“应用管理”权限的人（管理员总有）。通过时附上一个只能用于安装器的令牌，安装器再用公钥验签。
 func (s *Server) handleVerifyAdmin(w http.ResponseWriter, r *http.Request) {
 	user, err := s.currentUser(r)
 	if err != nil {
@@ -239,11 +272,16 @@ func (s *Server) handleVerifyAdmin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "未登录")
 		return
 	}
-	if !user.IsAdmin() {
-		writeError(w, http.StatusForbidden, "只有管理员能管理应用")
+	ok, err := s.hasPlatformPerm(r, user, permModules)
+	if err != nil {
+		internalError(w, err)
 		return
 	}
-	token, err := s.issueToken(user, "installer", nil)
+	if !ok {
+		writeError(w, http.StatusForbidden, "没有应用管理权限")
+		return
+	}
+	token, err := s.issueToken(user, "installer", nil, []string{permModules})
 	if err != nil {
 		internalError(w, err)
 		return
@@ -326,8 +364,8 @@ func loadOrCreateKey(path string) (*signingKey, error) {
 	return &signingKey{private: priv, kid: base64.RawURLEncoding.EncodeToString(sum[:8])}, nil
 }
 
-// issueToken 签发给某个模块用的令牌，menus 是这个人在该模块里有权限的菜单。
-func (s *Server) issueToken(user *User, audience string, menus []string) (string, error) {
+// issueToken 签发给某个模块用的令牌，menus 和 perms 是这个人在该模块里有的菜单和功能权限。
+func (s *Server) issueToken(user *User, audience string, menus, perms []string) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"iss":   tokenIssuer,
@@ -338,6 +376,7 @@ func (s *Server) issueToken(user *User, audience string, menus []string) (string
 		"name":  user.DisplayName,
 		"roles": user.Roles,
 		"menus": menus,
+		"perms": perms,
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	t.Header["kid"] = s.key.kid

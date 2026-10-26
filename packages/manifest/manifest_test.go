@@ -21,6 +21,33 @@ func TestParseDefaults(t *testing.T) {
 	}
 }
 
+func TestParseOptionalMenus(t *testing.T) {
+	m, err := Parse([]byte("id: demo\nname: 演示\nversion: 0.1.0\nservices: {frontend: {port: 80}}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Menus) != 1 || m.Menus[0].ID != DefaultMenu || m.Menus[0].Path != "/apps/demo/" || m.Menus[0].Default[0] != "user" {
+		t.Errorf("没写 menus 时应补一个所有人可见的首页菜单，实际 %+v", m.Menus)
+	}
+}
+
+func TestParsePermissions(t *testing.T) {
+	m, err := Parse([]byte(base + "  - {id: board, name: 记分板, path: /apps/demo/board/, requires: score}\n" +
+		"permissions:\n  - {id: score, name: 记分}\n  - {id: reset, name: 清零, default: [admin]}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := m.PermissionByID("score"); p == nil || len(p.Default) != 1 || p.Default[0] != "user" {
+		t.Errorf("功能权限默认角色应为 [user]，实际 %+v", p)
+	}
+	if m.PermissionByID("reset").Default[0] != "admin" || m.PermissionByID("x") != nil {
+		t.Error("PermissionByID 结果不对")
+	}
+	if m.MenuByID("board").Requires != "score" {
+		t.Error("菜单的 requires 没有解析出来")
+	}
+}
+
 func TestParseRejects(t *testing.T) {
 	cases := map[string]string{
 		"保留 id":       "id: core\nname: x\nversion: 0.1.0\nservices: {backend: {port: 80}}\n",
@@ -47,7 +74,10 @@ func TestParseRejects(t *testing.T) {
 		"菜单 id 重复":    base + "  - {id: home, name: x, path: /apps/demo/x/}\n",
 		"菜单路径重复":      base + "  - {id: x, name: x, path: /apps/demo/}\n",
 		"菜单缺 name":    base + "  - {id: x, path: /apps/demo/x/}\n",
-		"有前端没有菜单":     "id: demo\nname: x\nversion: 0.1.0\nservices: {frontend: {port: 80}}\n",
+		"菜单要的权限不存在":   base + "  - {id: x, name: x, path: /apps/demo/x/, requires: score}\n",
+		"权限 id 重复":    base + "permissions:\n  - {id: score, name: 记分}\n  - {id: score, name: x}\n",
+		"权限缺 name":    base + "permissions:\n  - {id: score}\n",
+		"权限 id 不合法":   base + "permissions:\n  - {id: Score, name: 记分}\n",
 		"有菜单没有前端":     "id: demo\nname: x\nversion: 0.1.0\nservices: {backend: {port: 80}}\nmenus: [{id: x, name: x, path: /apps/demo/}]\n",
 	}
 	for name, yaml := range cases {

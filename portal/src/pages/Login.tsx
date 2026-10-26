@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Alert, Button, Card, Form, Input, Typography } from "antd";
-import { api, type User } from "../api";
+import { api, type Me } from "../api";
 
-export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
+export default function Login({ onLogin }: { onLogin: (user: Me) => void }) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 

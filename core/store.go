@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS menu_grants (
 	allowed   BOOLEAN NOT NULL,
 	PRIMARY KEY (user_id, module_id, menu_id)
 );
+-- 按人授权功能权限：和 menu_grants 一样只记录和默认值不同的部分。module_id 为 platform 时是平台自己的权限。
+CREATE TABLE IF NOT EXISTS perm_grants (
+	user_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	module_id TEXT NOT NULL,
+	perm_id   TEXT NOT NULL,
+	allowed   BOOLEAN NOT NULL,
+	PRIMARY KEY (user_id, module_id, perm_id)
+);
 -- 人员：家庭成员等，其他模块只保存人员 id。账号通过 users.person_id 关联到人员，删除人员时账号保留、只解除关联。
 CREATE TABLE IF NOT EXISTS persons (
 	id         BIGSERIAL PRIMARY KEY,
@@ -270,28 +278,46 @@ func isForeignKeyViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
-// ---- 菜单授权 ----
+// ---- 菜单和功能权限授权 ----
 
-// grants 是一个人对菜单的单独设置：模块 id → 菜单 id → 是否允许。
-type grants map[string]map[string]bool
+// grantMap 是一个人的单独设置：模块 id → 菜单或功能权限 id → 是否允许。
+type grantMap map[string]map[string]bool
+
+// grants 是一个人对菜单和功能权限的全部单独设置。
+type grants struct {
+	Menus grantMap
+	Perms grantMap
+}
 
 func (s *Store) Grants(ctx context.Context, userID int64) (grants, error) {
-	rows, err := s.pool.Query(ctx, `SELECT module_id, menu_id, allowed FROM menu_grants WHERE user_id = $1`, userID)
+	menus, err := s.grantMap(ctx, `SELECT module_id, menu_id, allowed FROM menu_grants WHERE user_id = $1`, userID)
+	if err != nil {
+		return grants{}, err
+	}
+	perms, err := s.grantMap(ctx, `SELECT module_id, perm_id, allowed FROM perm_grants WHERE user_id = $1`, userID)
+	if err != nil {
+		return grants{}, err
+	}
+	return grants{Menus: menus, Perms: perms}, nil
+}
+
+func (s *Store) grantMap(ctx context.Context, query string, userID int64) (grantMap, error) {
+	rows, err := s.pool.Query(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	g := grants{}
+	g := grantMap{}
 	for rows.Next() {
-		var module, menu string
+		var module, id string
 		var allowed bool
-		if err := rows.Scan(&module, &menu, &allowed); err != nil {
+		if err := rows.Scan(&module, &id, &allowed); err != nil {
 			return nil, err
 		}
 		if g[module] == nil {
 			g[module] = map[string]bool{}
 		}
-		g[module][menu] = allowed
+		g[module][id] = allowed
 	}
 	return g, rows.Err()
 }
@@ -307,6 +333,20 @@ func (s *Store) SetGrant(ctx context.Context, userID int64, module, menu string,
 		INSERT INTO menu_grants (user_id, module_id, menu_id, allowed) VALUES ($1, $2, $3, $4)
 		ON CONFLICT (user_id, module_id, menu_id) DO UPDATE SET allowed = EXCLUDED.allowed`,
 		userID, module, menu, *allowed)
+	return err
+}
+
+// SetPermGrant 单独允许或禁止一项功能权限；allowed 为 nil 表示恢复默认值。
+func (s *Store) SetPermGrant(ctx context.Context, userID int64, module, perm string, allowed *bool) error {
+	if allowed == nil {
+		_, err := s.pool.Exec(ctx,
+			`DELETE FROM perm_grants WHERE user_id = $1 AND module_id = $2 AND perm_id = $3`, userID, module, perm)
+		return err
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO perm_grants (user_id, module_id, perm_id, allowed) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id, module_id, perm_id) DO UPDATE SET allowed = EXCLUDED.allowed`,
+		userID, module, perm, *allowed)
 	return err
 }
 
