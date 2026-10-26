@@ -25,7 +25,7 @@ import {
   Typography,
 } from "antd";
 import { AppstoreOutlined, ArrowLeftOutlined, HomeOutlined, PlusOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
-import { api, isAdmin, type AppGrant, type Grant, type Person, type PersonInput, type User, type UserMenus } from "../api";
+import { api, isAdmin, type AppGrant, type Grant, type Member, type Person, type PersonInput, type User, type UserMenus } from "../api";
 import { resizePhoto } from "../photo";
 
 // 选中的是一个成员，还是一个没关联成员的账号。
@@ -37,16 +37,142 @@ type GrantKind = "app" | "perm" | "menu";
 // 应用超过这个数时，权限页签上出现搜索和“只看已开通”。
 const MANY_APPS = 6;
 
-// 用户应用：左边是成员列表（家庭成员，加上没关联成员的账号），右边是选中项的页签：资料、账号、权限。
-// 一个账号最多属于一个成员，一个成员可以有多个账号，权限挂在账号上。窄屏上先看列表，点进去看详情。
+// 用户应用：管理员管成员、账号和权限；有“成员”权限的普通用户只能看成员，给他们写只有自己看得到的备注。
 export default function Users({ me }: { me: User }) {
+  return isAdmin(me) ? <AdminUsers me={me} /> : <MemberRemarks />;
+}
+
+// ListDetail 是左边列表、右边详情的布局。窄屏上先看列表，选中后只看详情，左上角返回列表。
+function ListDetail({ list, detail, selected, onBack }: { list: ReactNode; detail: ReactNode; selected: boolean; onBack: () => void }) {
+  const wide = !!Grid.useBreakpoint().lg;
+  if (wide) {
+    return (
+      <Row gutter={16} align="top">
+        <Col span={8}>{list}</Col>
+        <Col span={16}>{detail}</Col>
+      </Row>
+    );
+  }
+  return selected ? (
+    <Flex vertical gap={12}>
+      <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} style={{ alignSelf: "flex-start" }}>
+        成员
+      </Button>
+      {detail}
+    </Flex>
+  ) : (
+    list
+  );
+}
+
+// SearchBox 是成员列表顶部的搜索框。
+function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <div style={{ padding: "0 16px 8px" }}>
+      <Input allowClear prefix={<SearchOutlined />} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+// MemberRemarks 是普通用户看到的成员列表：左边是成员和自己写的备注，右边改备注。没有账号、权限和管理员的备注。
+function MemberRemarks() {
+  const [members, setMembers] = useState<Member[] | null>(null);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+
+  function load() {
+    api
+      .members()
+      .then(setMembers)
+      .catch((err) => setError(err.message));
+  }
+  useEffect(load, []);
+
+  const q = query.trim().toLowerCase();
+  const shown = (members ?? []).filter((m) => !q || [m.name, m.remark].some((t) => t.toLowerCase().includes(q)));
+  const current = members?.find((m) => m.id === selected);
+
+  const list = (
+    <Card title="成员" styles={{ body: { padding: "0 0 8px" } }}>
+      <SearchBox value={query} onChange={setQuery} placeholder="搜索姓名或备注" />
+      {error && <Alert type="error" message={error} showIcon style={{ margin: "0 16px 8px" }} />}
+      {members && shown.length === 0 && (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={q ? "没有找到" : "还没有成员"} />
+      )}
+      {shown.map((m) => (
+        <MemberRow
+          key={m.id}
+          avatar={<PersonAvatar person={m} />}
+          title={m.name}
+          subtitle={m.remark || "没有备注"}
+          active={m.id === selected}
+          onClick={() => setSelected(m.id)}
+        />
+      ))}
+    </Card>
+  );
+
+  const detail = current ? (
+    <RemarkDetail key={current.id} member={current} onSaved={load} />
+  ) : (
+    <Card>
+      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择一个成员，给他写备注。" />
+    </Card>
+  );
+
+  return <ListDetail list={list} detail={detail} selected={!!current} onBack={() => setSelected(null)} />;
+}
+
+// RemarkDetail 改自己给一个成员写的备注，清空后保存就是删除。
+function RemarkDetail({ member, onSaved }: { member: Member; onSaved: () => void }) {
+  const { message } = AntApp.useApp();
+  const [remark, setRemark] = useState(member.remark);
+
+  async function save() {
+    try {
+      await api.setRemark(member.id, remark);
+      message.success(remark.trim() ? "备注已保存" : "备注已删除");
+      onSaved();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "保存失败");
+    }
+  }
+
+  return (
+    <Card>
+      <Flex gap={16} align="center">
+        <PersonAvatar person={member} size={56} />
+        <Flex vertical gap={2} style={{ flex: 1, minWidth: 0 }}>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {member.name}
+          </Typography.Title>
+          <Typography.Text type="secondary">{member.remark || "没有备注"}</Typography.Text>
+        </Flex>
+      </Flex>
+      <Form layout="vertical" requiredMark={false} onFinish={save} style={{ marginTop: 24 }}>
+        <Form.Item label="我的备注" extra="只有你自己看得到，别人看不到你写的备注。">
+          <Space.Compact style={{ width: "100%" }}>
+            <Input value={remark} maxLength={200} placeholder="比如：小名、生日、喜好" onChange={(e) => setRemark(e.target.value)} />
+            <Button type="primary" htmlType="submit" disabled={remark.trim() === member.remark}>
+              保存
+            </Button>
+          </Space.Compact>
+        </Form.Item>
+      </Form>
+    </Card>
+  );
+}
+
+// AdminUsers 是管理员看到的：左边是成员列表（家庭成员，加上没关联成员的账号），右边是选中项的页签：资料、账号、权限。
+// 一个账号最多属于一个成员，一个成员可以有多个账号，权限挂在账号上。
+function AdminUsers({ me }: { me: User }) {
   const [persons, setPersons] = useState<Person[] | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Selection | null>(null);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
-  const wide = !!Grid.useBreakpoint().lg;
 
   function load() {
     Promise.all([api.persons(), api.users()])
@@ -80,15 +206,7 @@ export default function Users({ me }: { me: User }) {
       }
       styles={{ body: { padding: "0 0 8px" } }}
     >
-      <div style={{ padding: "0 16px 8px" }}>
-        <Input
-          allowClear
-          prefix={<SearchOutlined />}
-          placeholder="搜索姓名或用户名"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
+      <SearchBox value={query} onChange={setQuery} placeholder="搜索姓名或用户名" />
       {error && <Alert type="error" message={error} showIcon style={{ margin: "0 16px 8px" }} />}
       {persons && shownPersons.length === 0 && shownUnlinked.length === 0 && (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={q ? "没有找到" : "还没有成员，点“添加”开始。"} />
@@ -153,21 +271,7 @@ export default function Users({ me }: { me: User }) {
 
   return (
     <>
-      {wide ? (
-        <Row gutter={16} align="top">
-          <Col span={8}>{list}</Col>
-          <Col span={16}>{detail}</Col>
-        </Row>
-      ) : selected ? (
-        <Flex vertical gap={12}>
-          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => setSelected(null)} style={{ alignSelf: "flex-start" }}>
-            成员
-          </Button>
-          {detail}
-        </Flex>
-      ) : (
-        list
-      )}
+      <ListDetail list={list} detail={detail} selected={!!selected} onBack={() => setSelected(null)} />
       <Modal title="添加成员" open={adding} footer={null} onCancel={() => setAdding(false)} destroyOnHidden>
         <PersonForm
           submitText="添加"
@@ -204,7 +308,7 @@ function MemberRow({
   avatar: ReactNode;
   title: string;
   subtitle: string;
-  tags: ReactNode;
+  tags?: ReactNode;
   active: boolean;
   onClick: () => void;
 }) {

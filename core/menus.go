@@ -9,19 +9,22 @@ import (
 
 // platformModule 是平台自己的权限表，格式和模块清单一样，id 用保留名 platform，模块不会和它重名。
 // 授权同样存在 perm_grants 里，“用户”应用把它和各模块并排显示。
-// “用户”应用不在这里：能管账号的人可以给自己勾上任何权限，等于管理员，所以仍然只给管理员。
+// 管理账号不在这里：能管账号的人可以给自己勾上任何权限，等于管理员，所以仍然只给管理员。
+// “成员”只开放“用户”应用里的成员列表和自己的备注，看不到账号和权限。
 var platformModule = &Module{Manifest: &manifest.Manifest{
 	ID:   "platform",
 	Name: "平台",
 	Permissions: []manifest.Permission{
 		{ID: permSettings, Name: "设置", Description: "打开“设置”应用", Default: []string{"user"}},
 		{ID: permModules, Name: "应用管理", Description: "在“设置”里安装、升级和卸载应用，要同时有“设置”", Default: []string{"admin"}},
+		{ID: permMembers, Name: "成员", Description: "打开“用户”应用查看家庭成员，给他们写只有自己看得到的备注", Default: []string{"admin"}},
 	},
 }}
 
 const (
 	permSettings = "settings"
 	permModules  = "modules"
+	permMembers  = "members"
 )
 
 // permsFor 返回一个人在某个模块里有的功能权限。不能用这个应用时一项都没有。

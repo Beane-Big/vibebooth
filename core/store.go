@@ -79,6 +79,13 @@ CREATE TABLE IF NOT EXISTS persons (
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS person_id BIGINT REFERENCES persons(id) ON DELETE SET NULL;
+-- 成员备注：每个账号给成员写的备注只有自己看得到，和管理员维护的 persons.note 无关。
+CREATE TABLE IF NOT EXISTS person_remarks (
+	user_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	person_id BIGINT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+	remark    TEXT NOT NULL,
+	PRIMARY KEY (user_id, person_id)
+);
 `
 
 func (s *Store) Migrate(ctx context.Context) error {
@@ -278,6 +285,46 @@ func (s *Store) DeletePerson(ctx context.Context, id int64) error {
 		return errPersonNotFound
 	}
 	return nil
+}
+
+// Member 是“成员”权限看到的成员：只有姓名、照片和自己写的备注，没有管理员的备注和账号。
+type Member struct {
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Photo  string `json:"photo"`
+	Remark string `json:"remark"`
+}
+
+// ListMembers 返回全部成员，带上 userID 这个账号给他们写的备注。
+func (s *Store) ListMembers(ctx context.Context, userID int64) ([]Member, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT p.id, p.name, p.photo, COALESCE(r.remark, '')
+		FROM persons p LEFT JOIN person_remarks r ON r.person_id = p.id AND r.user_id = $1
+		ORDER BY p.id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Member, error) {
+		var m Member
+		err := row.Scan(&m.ID, &m.Name, &m.Photo, &m.Remark)
+		return m, err
+	})
+}
+
+// SetRemark 保存 userID 给成员写的备注；remark 为空时删除。成员不存在时返回 errPersonNotFound。
+func (s *Store) SetRemark(ctx context.Context, userID, personID int64, remark string) error {
+	if remark == "" {
+		_, err := s.pool.Exec(ctx, `DELETE FROM person_remarks WHERE user_id = $1 AND person_id = $2`, userID, personID)
+		return err
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO person_remarks (user_id, person_id, remark) VALUES ($1, $2, $3)
+		ON CONFLICT (user_id, person_id) DO UPDATE SET remark = EXCLUDED.remark`,
+		userID, personID, remark)
+	if isForeignKeyViolation(err) {
+		return errPersonNotFound
+	}
+	return err
 }
 
 func isForeignKeyViolation(err error) bool {

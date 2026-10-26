@@ -18,6 +18,9 @@ export type Person = {
 
 export type PersonInput = Pick<Person, "name" | "note" | "photo">;
 
+// 有“成员”权限的人看到的成员：没有管理员的备注，remark 是他自己写的、只有自己看得到的备注。
+export type Member = Pick<Person, "id" | "name" | "photo"> & { remark: string };
+
 export const isAdmin = (user: User) => user.roles.includes("admin");
 
 // 当前登录的人：登录和 /me 接口在账号信息之外还带上平台自己的功能权限（管理员总有全部）。
@@ -25,7 +28,7 @@ export const isAdmin = (user: User) => user.roles.includes("admin");
 export type Me = User & { perms: string[]; platform: boolean };
 
 // 平台自己的功能权限，和 core/menus.go 里的 platformModule 一致。
-export type PlatformPerm = "settings" | "modules";
+export type PlatformPerm = "settings" | "modules" | "members";
 
 export const hasPerm = (me: Me, perm: PlatformPerm) => me.perms.includes(perm);
 
@@ -138,6 +141,10 @@ export const api = {
   },
   uninstallModule: (id: string, purge: boolean) =>
     request<{ log: string }>(`/api/platform/installer/modules/${id}?purge=${purge}`, { method: "DELETE" }),
+
+  // 成员和自己的备注（有“成员”权限就能调用），remark 为空表示删除。
+  members: () => request<Member[]>("/api/platform/members"),
+  setRemark: (id: number, remark: string) => put(`/api/platform/members/${id}/remark`, { remark }),
 
   // 人员、账号与权限（只有管理员能调用）
   persons: () => request<Person[]>("/api/platform/persons"),
