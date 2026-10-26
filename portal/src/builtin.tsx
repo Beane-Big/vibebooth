@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { TeamOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, SettingOutlined, TeamOutlined } from "@ant-design/icons";
 
 // 平台自带的应用：代码在门户里，交互和模块一样，出现在应用页，点开是一个标签页。
 // 标签页里直接渲染门户的页面，不用内嵌页；按住 Ctrl / Cmd 点击时在浏览器新标签页打开同一个网址。
@@ -20,6 +20,22 @@ export const builtinApps: BuiltinApp[] = [
     url: "/admin/users",
     icon: <TeamOutlined />,
     adminOnly: true,
+  },
+  {
+    id: "modules",
+    name: "应用管理",
+    description: "安装、升级和卸载应用",
+    url: "/admin/modules",
+    icon: <AppstoreOutlined />,
+    adminOnly: true,
+  },
+  {
+    id: "settings",
+    name: "设置",
+    description: "平台的系统设置",
+    url: "/settings",
+    icon: <SettingOutlined />,
+    adminOnly: false,
   },
 ];
 

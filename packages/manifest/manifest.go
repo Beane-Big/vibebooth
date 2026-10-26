@@ -38,7 +38,7 @@ type Menu struct {
 	Path string `yaml:"path" json:"path"`
 	// Default 是默认拥有这个菜单的角色，不填为 [user]。管理员可以对单个人勾选或取消，覆盖默认值。
 	Default []string `yaml:"default" json:"-"`
-	// Settings 为 true 时，这个菜单同时出现在门户的“设置”页。
+	// Settings 已不再使用：模块的设置入口由模块自己放在页面上。保留这个字段，旧清单照样能装。
 	Settings bool `yaml:"settings" json:"-"`
 }
 

@@ -1,23 +1,13 @@
 import { useEffect, useState } from "react";
-import { Alert, Spin } from "antd";
+import { Alert, Empty, Spin } from "antd";
 import { api, ApiError, isAdmin, type App as AppInfo, type User } from "./api";
 import { builtinApps, isBuiltinURL } from "./builtin";
-import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, useAppTabs, type AppTab } from "./components/AppTabs";
-import Layout, { type Tab } from "./components/Layout";
+import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
+import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Modules from "./pages/Modules";
 import Users from "./pages/Users";
-
-// 门户页面不多，用路径区分即可，不引入路由库。切换页面用 history.pushState，不整页刷新，已打开的应用标签不会重新加载。
-const pages: Record<string, Tab> = {
-  "/": "apps",
-  "/settings": "settings",
-  "/admin/modules": "modules",
-  "/admin/users": "users",
-};
-
-const pageTitles: Record<Tab, string> = { apps: "应用", settings: "设置", modules: "应用管理", users: "用户" };
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -62,81 +52,73 @@ export default function App() {
   );
 }
 
+// 门户只有首页一个页面，其余都在标签里：模块应用放在内嵌页，平台自带的应用（用户、应用管理、设置）由门户直接渲染。
+// 直接访问自带应用的网址（例如按住 Ctrl 点卡片）时打开它的标签，地址栏回到首页。
 function Portal({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [apps, setApps] = useState<AppInfo[] | null>(null);
   const [error, setError] = useState("");
-  const [path, setPath] = useState(location.pathname);
   const tabs = useAppTabs();
-  let active = pages[path] ?? "apps";
-  // 管理页只给管理员；其他人输入网址也只会看到应用页，接口本身也会拒绝。
-  if ((active === "modules" || active === "users") && !isAdmin(user)) active = "apps";
+  // 每个标签被刷新的次数：平台自带的应用用它作 key 重新挂载，首页变了就重新取应用列表。
+  const [reloads, setReloads] = useState<Record<string, number>>({});
+  // 管理类的自带应用只给管理员；其他人输入网址也只会看到首页，接口本身也会拒绝。
+  const builtins = builtinApps.filter((app) => !app.adminOnly || isAdmin(user));
 
   useEffect(() => {
+    const builtin = builtins.find((app) => app.url === location.pathname);
+    if (builtin) tabs.open({ url: builtin.url, title: builtin.name });
+    if (location.pathname !== "/") history.replaceState(null, "", "/");
+  }, []);
+
+  useEffect(() => {
+    setError("");
     api
       .apps()
       .then(setApps)
       .catch((err) => setError(err.message));
-  }, []);
+  }, [reloads[PORTAL_TAB]]);
 
-  useEffect(() => {
-    const onPopState = () => setPath(location.pathname);
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-
-  // 打开门户的某个页面，同时切回门户标签。
-  function navigate(to: string) {
-    if (to !== location.pathname) history.pushState(null, "", to);
-    setPath(to);
-    tabs.activate(PORTAL_TAB);
+  // 刷新一个标签：模块应用重新加载内嵌页，停在原来的页面；自带应用重新挂载、重新取数据；首页重新取应用列表。
+  function refresh(key: string) {
+    if (key !== PORTAL_TAB && !isBuiltinURL(key)) reloadFrame(key);
+    else setReloads((r) => ({ ...r, [key]: (r[key] ?? 0) + 1 }));
   }
 
   // 应用的标签页里加载到了门户自己：登录过期时整页去登录，登录后回到门户并恢复标签；
-  // 指向平台自带应用（例如家庭优化大师的“管理人员”）时，应用退回原来的页面，另开自带应用的标签；
-  // 其他情况关掉这个标签，打开对应的门户页面。
+  // 指向平台自带应用（例如家庭优化大师空白时的“用户”链接）时，应用退回原来的页面，另开自带应用的标签；
+  // 其他情况关掉这个标签，回到首页。
   function onEmbeddedPortal(tab: AppTab, url: string, frame: HTMLIFrameElement) {
     if (url.startsWith("/login")) {
       location.href = "/login";
       return;
     }
     const path = url.split("?")[0];
-    const builtin = builtinApps.find((app) => app.url === path);
+    const builtin = builtins.find((app) => app.url === path);
     if (builtin) {
       frame.contentWindow?.history.back();
       tabs.open({ url: builtin.url, title: builtin.name });
       return;
     }
     tabs.close(tab.url);
-    navigate(path);
+    tabs.activate(PORTAL_TAB);
   }
 
   return (
-    <Layout
-      user={user}
-      active={active}
-      showSettings={!!apps?.some((app) => app.settingsUrl)}
-      onNavigate={navigate}
-      onLogout={onLogout}
-    >
-      <AppTabBar state={tabs} portalTitle={pageTitles[active]} />
+    <Layout user={user} tabs={<AppTabBar state={tabs} onRefresh={refresh} />} onLogout={onLogout}>
       <div className="content" style={tabs.active !== PORTAL_TAB ? { display: "none" } : undefined}>
         {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
-        {active === "modules" && <Modules />}
-        {active === "users" && <Users me={user} />}
-        {(active === "apps" || active === "settings") && apps && (
-          <Home
-            apps={apps}
-            builtins={builtinApps.filter((app) => !app.adminOnly || isAdmin(user))}
-            isSettings={active === "settings"}
-            onOpen={tabs.open}
-          />
-        )}
+        {apps && <Home apps={apps} builtins={builtins} onOpen={tabs.open} />}
       </div>
       {tabs.tabs
-        .filter((t) => isBuiltinURL(t.url))
+        .filter((t) => builtins.some((app) => app.url === t.url))
         .map((t) => (
-          <div key={t.url} className="content" style={t.url !== tabs.active ? { display: "none" } : undefined}>
-            {t.url === "/admin/users" && isAdmin(user) && <Users me={user} />}
+          <div
+            key={`${t.url}#${reloads[t.url] ?? 0}`}
+            className="content"
+            style={t.url !== tabs.active ? { display: "none" } : undefined}
+          >
+            {t.url === "/admin/users" && <Users me={user} />}
+            {t.url === "/admin/modules" && <Modules />}
+            {t.url === "/settings" && <Empty description="暂时没有系统设置。" />}
           </div>
         ))}
       <AppFrames state={tabs} onEmbeddedPortal={onEmbeddedPortal} />

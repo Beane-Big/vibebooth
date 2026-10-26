@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { Button, Tabs, Tooltip } from "antd";
-import { ExportOutlined } from "@ant-design/icons";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Button, Dropdown, Tabs, Tooltip } from "antd";
+import { ExportOutlined, HomeOutlined, ReloadOutlined } from "@ant-design/icons";
 import { isBuiltinURL } from "../builtin";
 
 // 在门户里打开的应用：每个应用一个标签页，内容是同一个网站下的内嵌页，登录状态天然共享。
@@ -9,7 +9,7 @@ import { isBuiltinURL } from "../builtin";
 
 export type AppTab = { url: string; title: string };
 
-// 第一个标签固定是门户自己（应用、设置、应用管理、用户这些页面）。
+// 第一个标签固定是门户首页，列出所有应用。
 export const PORTAL_TAB = "portal";
 
 // 门户被加载进了自己的内嵌页时（应用的“返回”链接、登录过期跳到登录页），内嵌页里的门户发出这个事件交给外层处理，见 main.tsx。
@@ -93,25 +93,53 @@ export function useAppTabs() {
 
 export type AppTabsState = ReturnType<typeof useAppTabs>;
 
-// AppTabBar 是顶栏下面的标签栏，没有打开任何应用时不显示。
-export function AppTabBar({ state, portalTitle }: { state: AppTabsState; portalTitle: string }) {
-  if (state.tabs.length === 0) return null;
+// AppTabBar 是顶栏中间的标签栏：第一个固定是首页，后面是打开的应用。右侧是当前标签的“刷新”和“在新窗口打开”，
+// 右键点标签也能刷新或关闭。
+export function AppTabBar({ state, onRefresh }: { state: AppTabsState; onRefresh: (key: string) => void }) {
   const current = state.tabs.find((t) => t.url === state.active);
+  // 右键菜单包住标签文字；只有应用标签能关闭，首页只能刷新。
+  const withMenu = (key: string, label: ReactNode, closable: boolean) => (
+    <Dropdown
+      trigger={["contextMenu"]}
+      menu={{
+        items: [
+          { key: "refresh", icon: <ReloadOutlined />, label: "刷新", onClick: () => onRefresh(key) },
+          ...(closable ? [{ key: "close", label: "关闭", onClick: () => state.close(key) }] : []),
+        ],
+      }}
+    >
+      <span>{label}</span>
+    </Dropdown>
+  );
   return (
-    <div className="app-tabbar">
-      <Tabs
-        type="editable-card"
-        size="small"
-        hideAdd
-        activeKey={state.active}
-        onChange={state.activate}
-        onEdit={(key, action) => action === "remove" && typeof key === "string" && state.close(key)}
-        items={[
-          { key: PORTAL_TAB, label: portalTitle, closable: false },
-          ...state.tabs.map((t) => ({ key: t.url, label: t.title })),
-        ]}
-        tabBarExtraContent={
-          current && (
+    <Tabs
+      className="app-tabbar"
+      type="editable-card"
+      size="small"
+      hideAdd
+      activeKey={state.active}
+      onChange={state.activate}
+      onEdit={(key, action) => action === "remove" && typeof key === "string" && state.close(key)}
+      items={[
+        {
+          key: PORTAL_TAB,
+          label: withMenu(PORTAL_TAB, <HomeOutlined aria-label="首页" style={{ marginInlineEnd: 0 }} />, false),
+          closable: false,
+        },
+        ...state.tabs.map((t) => ({ key: t.url, label: withMenu(t.url, t.title, true) })),
+      ]}
+      tabBarExtraContent={
+        <span className="app-tabbar-tools">
+          <Tooltip title="刷新">
+            <Button
+              type="text"
+              size="small"
+              icon={<ReloadOutlined />}
+              aria-label="刷新"
+              onClick={() => onRefresh(state.active)}
+            />
+          </Tooltip>
+          {current && (
             <Tooltip title="在新窗口打开">
               <Button
                 type="text"
@@ -121,11 +149,22 @@ export function AppTabBar({ state, portalTitle }: { state: AppTabsState; portalT
                 onClick={() => window.open(currentURL(current), "_blank")}
               />
             </Tooltip>
-          )
-        }
-      />
-    </div>
+          )}
+        </span>
+      }
+    />
   );
+}
+
+// reloadFrame 重新加载某个应用标签的内嵌页，停留在应用里当前所在的页面。
+export function reloadFrame(url: string) {
+  const frame = document.querySelector<HTMLIFrameElement>(`.app-frames iframe[data-url="${CSS.escape(url)}"]`);
+  try {
+    frame?.contentWindow?.location.reload();
+  } catch {
+    // 拿不到内嵌页的窗口时，重新设置一次地址，回到应用打开时的页面。
+    if (frame) frame.src = url;
+  }
 }
 
 // AppFrames 放所有打开的模块应用（平台自带的应用由门户自己渲染）。切换标签只是隐藏和显示，应用里填了一半的内容不会丢。
