@@ -5,7 +5,7 @@ import type { BuiltinApp } from "../builtin";
 import type { AppTab } from "../components/AppTabs";
 import { inPlace } from "../components/Layout";
 
-// 首页列出能打开的应用，平台自带的应用（用户、应用管理、设置）排在前面。
+// 首页列出能打开的应用，平台自带的应用（用户、设置）排在前面。
 // 点卡片在门户里以标签页打开；按住 Ctrl / Cmd 或用中键点击时在浏览器新标签页打开，登录状态共享。
 export default function Home({
   apps,

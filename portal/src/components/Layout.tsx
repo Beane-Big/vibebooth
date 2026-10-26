@@ -5,7 +5,7 @@ import { api, type User } from "../api";
 import { useThemeMode, type ThemeMode } from "../theme";
 
 // 门户各页面共用的顶栏，只有一行：左边是平台名称，中间是标签栏（第一个固定是首页），右边是头像。
-// 用户、应用管理、设置都是平台自带的应用，从首页打开；点头像只能切换外观和退出登录。
+// 用户、设置都是平台自带的应用，从首页打开（应用管理在设置里）；点头像只能切换外观和退出登录。
 export default function Layout({
   user,
   tabs,

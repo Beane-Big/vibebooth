@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { Alert, Empty, Spin } from "antd";
+import { Alert, Spin } from "antd";
 import { api, ApiError, isAdmin, type App as AppInfo, type User } from "./api";
-import { builtinApps, isBuiltinURL } from "./builtin";
+import { builtinAliases, builtinApps, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
-import Modules from "./pages/Modules";
+import Settings from "./pages/Settings";
 import Users from "./pages/Users";
 
 export default function App() {
@@ -52,8 +52,8 @@ export default function App() {
   );
 }
 
-// 门户只有首页一个页面，其余都在标签里：模块应用放在内嵌页，平台自带的应用（用户、应用管理、设置）由门户直接渲染。
-// 直接访问自带应用的网址（例如按住 Ctrl 点卡片）时打开它的标签，地址栏回到首页。
+// 门户只有首页一个页面，其余都在标签里：模块应用放在内嵌页，平台自带的应用（用户、设置）由门户直接渲染。
+// 直接访问自带应用的网址（例如按住 Ctrl 点卡片）时打开它的标签，地址栏回到首页；旧网址 /admin/modules 打开“设置”。
 function Portal({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [apps, setApps] = useState<AppInfo[] | null>(null);
   const [error, setError] = useState("");
@@ -62,9 +62,10 @@ function Portal({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [reloads, setReloads] = useState<Record<string, number>>({});
   // 管理类的自带应用只给管理员；其他人输入网址也只会看到首页，接口本身也会拒绝。
   const builtins = builtinApps.filter((app) => !app.adminOnly || isAdmin(user));
+  const findBuiltin = (path: string) => builtins.find((app) => app.url === (builtinAliases[path] ?? path));
 
   useEffect(() => {
-    const builtin = builtins.find((app) => app.url === location.pathname);
+    const builtin = findBuiltin(location.pathname);
     if (builtin) tabs.open({ url: builtin.url, title: builtin.name });
     if (location.pathname !== "/") history.replaceState(null, "", "/");
   }, []);
@@ -92,7 +93,7 @@ function Portal({ user, onLogout }: { user: User; onLogout: () => void }) {
       return;
     }
     const path = url.split("?")[0];
-    const builtin = builtins.find((app) => app.url === path);
+    const builtin = findBuiltin(path);
     if (builtin) {
       frame.contentWindow?.history.back();
       tabs.open({ url: builtin.url, title: builtin.name });
@@ -117,8 +118,7 @@ function Portal({ user, onLogout }: { user: User; onLogout: () => void }) {
             style={t.url !== tabs.active ? { display: "none" } : undefined}
           >
             {t.url === "/admin/users" && <Users me={user} />}
-            {t.url === "/admin/modules" && <Modules />}
-            {t.url === "/settings" && <Empty description="暂时没有系统设置。" />}
+            {t.url === "/settings" && <Settings me={user} />}
           </div>
         ))}
       <AppFrames state={tabs} onEmbeddedPortal={onEmbeddedPortal} />
