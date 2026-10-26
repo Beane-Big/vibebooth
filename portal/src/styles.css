@@ -44,14 +44,14 @@ body {
 .app-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .app-text .ant-typography { margin: 0; }
 
-/* 标签栏占满顶栏中间，标签贴着顶栏底边，选中的标签和下面的内容区同色，像浏览器的标签。
-   标签多了放不下时 Ant Design 会把多出的收进“更多”。 */
+/* 标签栏占满顶栏中间，标签和左边的标题、右边的按钮在同一条中线上。
+   选中的标签是一块圆角底色，和下面的内容区同色。标签多了放不下时 Ant Design 会把多出的收进“更多”。 */
 .app-tabbar { flex: 1; min-width: 0; align-self: stretch; }
-.app-tabbar > .ant-tabs-nav { height: 100%; margin: 0; align-items: flex-end; }
+.app-tabbar > .ant-tabs-nav { height: 100%; margin: 0; align-items: center; }
 .app-tabbar > .ant-tabs-nav::before { border-bottom: 0; }
-.app-tabbar > .ant-tabs-nav .ant-tabs-nav-wrap { align-self: flex-end; }
-.app-tabbar .ant-tabs-extra-content { align-self: center; }
-.app-tabbar .ant-tabs-tab { padding: 6px 12px !important; background: transparent !important; border-color: transparent !important; }
+.app-tabbar > .ant-tabs-nav .ant-tabs-nav-list { align-items: center; }
+.app-tabbar .ant-tabs-tab { padding: 6px 12px !important; background: transparent !important; border-color: transparent !important; border-radius: 6px !important; }
+.app-tabbar .ant-tabs-tab:hover { background: var(--bg) !important; }
 .app-tabbar .ant-tabs-tab-active { background: var(--bg) !important; }
 .app-tabbar-tools { display: flex; gap: 4px; padding-inline-start: 8px; }
 .app-frames { flex: 1; position: relative; }

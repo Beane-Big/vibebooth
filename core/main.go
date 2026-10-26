@@ -119,6 +119,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/platform/persons", s.requireRole("admin", s.handleCreatePerson))
 	mux.HandleFunc("PUT /api/platform/persons/{id}", s.requireRole("admin", s.handleUpdatePerson))
 	mux.HandleFunc("DELETE /api/platform/persons/{id}", s.requireRole("admin", s.handleDeletePerson))
+	mux.HandleFunc("GET /api/platform/members", s.requirePerm(permMembers, s.handleListMembers))
+	mux.HandleFunc("PUT /api/platform/members/{id}/remark", s.requirePerm(permMembers, s.handleSetRemark))
 	// 对外接口：给模块后端在内部网络里直接调用（http://core:8080），网关不转发 /api/platform/ext/，浏览器访问不到。
 	// 和模块的对外接口一样目前没有服务令牌，只返回模块需要的字段（不含备注）。契约见 contracts/openapi.yaml。
 	mux.HandleFunc("GET /api/platform/ext/v1/persons", s.handleExtPersons)

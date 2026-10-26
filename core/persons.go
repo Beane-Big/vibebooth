@@ -126,6 +126,39 @@ func (s *Server) handleDeletePerson(w http.ResponseWriter, r *http.Request, _ *U
 	}
 }
 
+// ---- 成员备注（有平台“成员”权限的人用，管理员也能用）----
+
+func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request, me *User) {
+	list, err := s.store.ListMembers(r.Context(), me.ID)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// handleSetRemark 保存自己给一个成员写的备注，空字符串表示删除。
+func (s *Server) handleSetRemark(w http.ResponseWriter, r *http.Request, me *User) {
+	id, ok := personID(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		Remark string `json:"remark"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	in.Remark = strings.TrimSpace(in.Remark)
+	if utf8.RuneCountInString(in.Remark) > 200 {
+		writeError(w, http.StatusBadRequest, "备注不能超过 200 个字")
+		return
+	}
+	if !personFailed(w, s.store.SetRemark(r.Context(), me.ID, id, in.Remark)) {
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 // ---- 对外接口 v1（契约见 contracts/openapi.yaml）----
 
 // extPerson 是对外接口返回的人员信息，字段一旦发布就不能删改，只能新增。备注不对外。

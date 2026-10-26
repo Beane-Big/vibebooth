@@ -15,13 +15,15 @@ export type BuiltinApp = {
 };
 
 export const builtinApps: BuiltinApp[] = [
-  // 能管账号的人可以给自己勾上任何权限，等于管理员，所以“用户”不单独开放，只给管理员。
+  // 管理员在这里管成员、账号和权限；有“成员”权限的普通用户只能看成员、给他们写自己的备注。
+  // 能管账号的人可以给自己勾上任何权限，等于管理员，所以账号和权限只给管理员。
   {
     id: "users",
     name: "用户",
-    description: "维护家庭成员和他们的登录账号",
+    description: "家庭成员和他们的账号",
     url: "/admin/users",
     icon: <TeamOutlined />,
+    perm: "members",
   },
   {
     id: "settings",
