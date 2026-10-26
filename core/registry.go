@@ -112,8 +112,6 @@ type appView struct {
 	URL         string `json:"url"`
 	Icon        string `json:"icon,omitempty"`
 	Healthy     bool   `json:"healthy"`
-	// SettingsURL 是用户有权限的第一个设置菜单（settings: true）。门户只负责展示入口，设置接口的权限仍由模块自己校验。
-	SettingsURL string `json:"settingsUrl,omitempty"`
 }
 
 // handleApps 返回当前用户至少有一个菜单的应用，并并发检查各模块健康状态。
@@ -124,11 +122,9 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) 
 		return
 	}
 	var apps []*Module
-	var userMenus [][]manifest.Menu
 	for _, m := range s.registry.List() {
-		if menus := menusFor(user, m, g); len(menus) > 0 {
+		if len(menusFor(user, m, g)) > 0 {
 			apps = append(apps, m)
-			userMenus = append(userMenus, menus)
 		}
 	}
 	views := make([]appView, len(apps))
@@ -137,12 +133,6 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) 
 		views[i] = appView{ID: m.ID, Name: m.Name, Description: m.Description, Version: m.Version, URL: m.FrontendPath()}
 		if m.Icon != "" {
 			views[i].Icon = "/api/platform/apps/" + m.ID + "/icon"
-		}
-		for _, menu := range userMenus[i] {
-			if menu.Settings {
-				views[i].SettingsURL = menu.Path
-				break
-			}
 		}
 		wg.Add(1)
 		go func(i int, m *Module) {

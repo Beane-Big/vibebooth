@@ -5,43 +5,35 @@ import type { BuiltinApp } from "../builtin";
 import type { AppTab } from "../components/AppTabs";
 import { inPlace } from "../components/Layout";
 
-// 应用页列出能打开的应用，平台自带的应用排在前面；设置页只汇总各应用自己的设置页入口，设置内容由应用自己实现。
+// 首页列出能打开的应用，平台自带的应用（用户、应用管理、设置）排在前面。
 // 点卡片在门户里以标签页打开；按住 Ctrl / Cmd 或用中键点击时在浏览器新标签页打开，登录状态共享。
 export default function Home({
   apps,
   builtins,
-  isSettings,
   onOpen,
 }: {
   apps: App[];
   builtins: BuiltinApp[];
-  isSettings: boolean;
   onOpen: (tab: AppTab) => void;
 }) {
-  const shown = isSettings ? apps.filter((app) => app.settingsUrl) : apps;
-
-  if (shown.length === 0 && (isSettings || builtins.length === 0)) {
-    return <Empty description={isSettings ? "还没有可设置的组件。" : "还没有可用的应用。"} />;
-  }
+  if (apps.length === 0 && builtins.length === 0) return <Empty description="还没有可用的应用。" />;
   return (
     <Row gutter={[16, 16]}>
-      {!isSettings &&
-        builtins.map((app) => (
-          <AppCard
-            key={app.id}
-            tab={{ url: app.url, title: app.name }}
-            icon={<IconBox>{app.icon}</IconBox>}
-            description={app.description}
-            onOpen={onOpen}
-          />
-        ))}
-      {shown.map((app) => (
+      {builtins.map((app) => (
         <AppCard
           key={app.id}
-          tab={isSettings ? { url: app.settingsUrl!, title: `${app.name} · 设置` } : { url: app.url, title: app.name }}
-          name={app.name}
+          tab={{ url: app.url, title: app.name }}
+          icon={<IconBox>{app.icon}</IconBox>}
+          description={app.description}
+          onOpen={onOpen}
+        />
+      ))}
+      {apps.map((app) => (
+        <AppCard
+          key={app.id}
+          tab={{ url: app.url, title: app.name }}
           icon={app.icon ? <img className="app-icon" src={app.icon} alt="" /> : <IconBox>{app.name.slice(0, 1)}</IconBox>}
-          description={isSettings ? `${app.name}的设置` : app.description || " "}
+          description={app.description || " "}
           unhealthy={!app.healthy}
           onOpen={onOpen}
         />
@@ -50,17 +42,15 @@ export default function Home({
   );
 }
 
-// AppCard 是一张应用卡片，点击在门户里以标签页打开；name 不填时用标签标题。
+// AppCard 是一张应用卡片，点击在门户里以标签页打开，卡片上的名称就是标签标题。
 function AppCard({
   tab,
-  name = tab.title,
   icon,
   description,
   unhealthy = false,
   onOpen,
 }: {
   tab: AppTab;
-  name?: string;
   icon: ReactNode;
   description: string;
   unhealthy?: boolean;
@@ -81,7 +71,7 @@ function AppCard({
             {icon}
             <div className="app-text">
               <Typography.Text strong ellipsis>
-                {name}
+                {tab.title}
                 {unhealthy && (
                   <Tag color="error" style={{ marginInlineStart: 8 }}>
                     不可用

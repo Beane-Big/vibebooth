@@ -28,7 +28,6 @@ export type App = {
   url: string;
   icon?: string;
   healthy: boolean;
-  settingsUrl?: string;
 };
 
 // 应用管理页：安装器返回的已安装模块。

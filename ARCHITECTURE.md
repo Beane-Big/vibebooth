@@ -24,7 +24,7 @@ flowchart TB
         subgraph base["平台本体 · Compose 项目 home-platform"]
             traefik["traefik 网关<br/>按网址前缀转发；转给模块前先请 core 校验登录和菜单权限"]
             socket["socket-proxy<br/>只读，供 traefik 读标签"]
-            portal["portal 门户<br/>登录、应用、设置、应用管理、“用户”应用<br/>路径 /"]
+            portal["portal 门户<br/>登录、应用、标签栏、自带应用<br/>路径 /"]
             core["core 平台核心<br/>登录、校验、发令牌、人员、账号与菜单权限<br/>/api/platform/"]
             installer["installer 安装器<br/>校验模块包、启动和卸载模块<br/>/api/platform/installer/"]
             iproxy["installer-proxy<br/>可写，只给安装器用"]
@@ -80,7 +80,7 @@ flowchart TB
 | `socket-proxy` | Docker 接口的门卫（现成软件） | Traefik 通过读取容器列表来发现路由规则；socket-proxy 只开放"读容器列表"这一项权限，不把整个 Docker 的控制权交出去 |
 | `postgres` | 数据库（现成软件） | 存放人员、账号、密码哈希、登录会话和按人的菜单授权 |
 | `core` | 平台核心（自己写的 Go 代码） | 处理登录和登出；替网关校验登录状态和菜单权限；给模块签发 5 分钟有效的令牌；管理人员和账号，并通过对外接口把人员名单提供给模块；每 5 秒扫描一次 `modules-data` 卷里的模块清单，生成应用列表 |
-| `portal` | 门户（自己写的 React 代码，由 nginx 提供） | 登录页、应用列表、设置入口；管理员还能看到“应用管理”页和平台自带的“用户”应用 |
+| `portal` | 门户（自己写的 React 代码，由 nginx 提供） | 登录页、应用列表和标签栏，以及平台自带的应用：“设置”所有人可见，“用户”“应用管理”只对管理员显示 |
 | `installer` | 模块安装器（自己写的 Go 代码） | 校验上传的模块包，导入镜像，以独立的 Compose 项目启动模块，并把清单写进 `modules-data` 卷；也负责卸载。只有管理员能调用 |
 | `installer-proxy` | 安装器专用的 Docker 门卫（现成软件） | 开放创建、删除容器、镜像、网络、卷的权限，只接在安装器所在的内部网络上 |
 | `build-proxy` | 构建代理（自己写的 Go 代码） | 给声明了 `docker-build` 特权的模块（例如构建器）用的 Docker 门卫：逐个检查请求，只放行构建 `vb-` 开头的模块镜像，以及查看、打标签、导出、删除这些镜像和清理构建缓存；碰不到容器和平台自己的镜像。只接在内部网络 `platform-build` 上 |
@@ -160,7 +160,7 @@ flowchart TB
 ```yaml
 menus:
   - {id: home, name: 记事, path: /apps/notes/, default: [user]}
-  - {id: settings, name: 设置, path: /apps/notes/settings/, default: [admin], settings: true}
+  - {id: settings, name: 设置, path: /apps/notes/settings/, default: [admin]}
 ```
 
 - **谁有哪个菜单**：管理员在“用户”应用里对每个账号勾选或取消，覆盖默认值；没改过的跟随默认值。只记录和默认不同的部分（表 `menu_grants`），模块升级新增的菜单自动按默认值生效。管理员拥有全部菜单。
@@ -172,4 +172,4 @@ menus:
 
 ## 设置入口
 
-门户顶部的“设置”页汇总 `settings: true` 的菜单，点进去跳到模块自己的设置页，设置的内容和数据都由模块自己负责。门户只是不显示入口，真正的权限由网关的页面拦截和模块后端的 `HasMenu` 检查。
+模块的设置放在模块自己里面：模块在自己的页面上放设置入口（例如顶栏右侧的“设置”），只对有设置菜单的人显示，设置的内容和数据都由模块自己负责；真正的权限由网关的页面拦截和模块后端的 `HasMenu` 检查。门户自带的“设置”应用只放平台的系统级设置，目前还没有内容。旧清单里菜单上的 `settings: true` 仍然能装，平台不再使用。

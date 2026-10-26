@@ -21,14 +21,8 @@ body {
 /* 内容区限宽居中，手机上两边留 16px。 */
 .content { width: 100%; max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
 
-.topbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; box-shadow: var(--shadow); }
+.topbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; box-shadow: var(--shadow); line-height: normal; }
 .brand { font-weight: 600; font-size: 16px; color: var(--text); white-space: nowrap; }
-/* 菜单占满中间，放不下时 Ant Design 会把多出的收进“更多”。 */
-.topbar .ant-menu { flex: 1; min-width: 0; border-bottom: 0; background: transparent; }
-.topbar .ant-menu-item-selected { font-weight: 600; }
-/* Fluent 的选中短线是圆头的，左右各缩进一点。 */
-.topbar .ant-menu-horizontal > .ant-menu-item::after { border-radius: 2px; inset-inline: 12px !important; }
-.topbar .ant-menu-horizontal > .ant-menu-item-selected::after { border-bottom-color: var(--accent) !important; }
 /* 按钮文字加粗是 Fluent 的做法，链接按钮和顶栏的用户名保持常规字重。 */
 .ant-btn-link, .topbar .ant-btn-text { font-weight: 400; }
 
@@ -50,10 +44,16 @@ body {
 .app-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .app-text .ant-typography { margin: 0; }
 
-/* 应用标签栏和内嵌页：标签栏贴在顶栏下面，内嵌页占满剩下的高度。 */
-.app-tabbar { position: sticky; top: 56px; z-index: 9; padding: 6px 16px 0; background: var(--surface); box-shadow: var(--shadow); }
-.app-tabbar .ant-tabs-nav { margin: 0; }
-.app-tabbar .ant-tabs-nav::before { border-bottom: 0; }
+/* 标签栏占满顶栏中间，标签贴着顶栏底边，选中的标签和下面的内容区同色，像浏览器的标签。
+   标签多了放不下时 Ant Design 会把多出的收进“更多”。 */
+.app-tabbar { flex: 1; min-width: 0; align-self: stretch; }
+.app-tabbar > .ant-tabs-nav { height: 100%; margin: 0; align-items: flex-end; }
+.app-tabbar > .ant-tabs-nav::before { border-bottom: 0; }
+.app-tabbar > .ant-tabs-nav .ant-tabs-nav-wrap { align-self: flex-end; }
+.app-tabbar .ant-tabs-extra-content { align-self: center; }
+.app-tabbar .ant-tabs-tab { padding: 6px 12px !important; background: transparent !important; border-color: transparent !important; }
+.app-tabbar .ant-tabs-tab-active { background: var(--bg) !important; }
+.app-tabbar-tools { display: flex; gap: 4px; padding-inline-start: 8px; }
 .app-frames { flex: 1; position: relative; }
 .app-frames iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
 

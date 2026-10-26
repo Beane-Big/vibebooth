@@ -1,30 +1,24 @@
 import { cloneElement, type MouseEvent, type ReactElement, type ReactNode } from "react";
-import { Avatar, Button, Dropdown, Grid, Layout as AntLayout, Menu, Segmented, Tooltip, Typography, theme } from "antd";
-import { AppstoreOutlined, HomeOutlined, LogoutOutlined, SettingOutlined } from "@ant-design/icons";
-import { api, isAdmin, type User } from "../api";
+import { Avatar, Button, Dropdown, Grid, Layout as AntLayout, Segmented, Typography, theme } from "antd";
+import { LogoutOutlined } from "@ant-design/icons";
+import { api, type User } from "../api";
 import { useThemeMode, type ThemeMode } from "../theme";
 
-export type Tab = "apps" | "settings" | "modules" | "users";
-
-// 门户各页面共用的顶栏，children 放在顶栏下面。顶栏只放回到应用页的首页图标，设置、应用管理收在点头像弹出的菜单里，
-// “应用管理”只对管理员显示。“用户”是平台自带的应用，从应用页打开。页面由 onNavigate 在门户内切换；按住 Ctrl / Cmd 或用中键点击时照常在新标签页打开。
+// 门户各页面共用的顶栏，只有一行：左边是平台名称，中间是标签栏（第一个固定是首页），右边是头像。
+// 用户、应用管理、设置都是平台自带的应用，从首页打开；点头像只能切换外观和退出登录。
 export default function Layout({
   user,
-  active,
-  showSettings,
-  onNavigate,
+  tabs,
   onLogout,
   children,
 }: {
   user: User;
-  active: Tab;
-  showSettings: boolean;
-  onNavigate: (path: string) => void;
+  tabs: ReactNode;
   onLogout: () => void;
   children: ReactNode;
 }) {
   const { mode, setMode } = useThemeMode();
-  // 手机上只显示头像，名字收进下拉菜单。
+  // 手机上只显示头像，名字收进下拉菜单；平台名称也不显示，给标签栏腾地方。
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
 
@@ -33,51 +27,15 @@ export default function Layout({
     onLogout();
   }
 
-  const pages: { id: Tab; label: string; href: string; icon?: ReactNode; shown: boolean }[] = [
-    { id: "apps", label: "应用", href: "/", shown: true },
-    { id: "settings", label: "设置", href: "/settings", icon: <SettingOutlined />, shown: showSettings || active === "settings" },
-    { id: "modules", label: "应用管理", href: "/admin/modules", icon: <AppstoreOutlined />, shown: isAdmin(user) },
-  ];
-  const link = (p: (typeof pages)[number], content: ReactNode = p.label) => (
-    <a
-      href={p.href}
-      aria-label={p.label}
-      onClick={(e) => {
-        if (!inPlace(e)) return;
-        e.preventDefault();
-        onNavigate(p.href);
-      }}
-    >
-      {content}
-    </a>
-  );
-  const menuPages = pages.filter((p) => p.id !== "apps" && p.shown);
-
   return (
     <AntLayout style={{ minHeight: "100vh" }}>
       <AntLayout.Header className="topbar">
-        <span className="brand">Vibebooth</span>
-        <Menu
-          mode="horizontal"
-          selectedKeys={[active]}
-          items={[
-            {
-              key: "apps",
-              label: <Tooltip title="应用">{link(pages[0], <HomeOutlined style={{ fontSize: 18 }} />)}</Tooltip>,
-            },
-          ]}
-        />
+        {screens.sm && <span className="brand">Vibebooth</span>}
+        {tabs}
         <Dropdown
           trigger={["click"]}
           placement="bottomRight"
-          menu={{
-            selectedKeys: [active],
-            items: [
-              ...menuPages.map((p) => ({ key: p.id, icon: p.icon, label: link(p) })),
-              ...(menuPages.length > 0 ? [{ type: "divider" as const }] : []),
-              { key: "logout", icon: <LogoutOutlined />, label: "退出登录", onClick: logout },
-            ],
-          }}
+          menu={{ items: [{ key: "logout", icon: <LogoutOutlined />, label: "退出登录", onClick: logout }] }}
           dropdownRender={(menu) => (
             <div
               style={{
