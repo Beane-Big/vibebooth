@@ -110,6 +110,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/apps/{id}/menus", s.requireUser(s.handleAppMenus))
 	mux.HandleFunc("GET /api/platform/themes", s.requireUser(s.handleThemes))
 	mux.HandleFunc("GET /api/platform/themes/{id}/{path...}", s.requireUser(s.handleThemeFile))
+	mux.HandleFunc("GET /api/platform/appearance", s.requireUser(s.handleAppearance))
+	mux.HandleFunc("PUT /api/platform/appearance", s.requirePerm(permModules, s.handleSetAppearance))
 	mux.HandleFunc("GET /api/platform/users", s.requireRole("admin", s.handleListUsers))
 	mux.HandleFunc("POST /api/platform/users", s.requireRole("admin", s.handleCreateUser))
 	mux.HandleFunc("PUT /api/platform/users/{id}", s.requireRole("admin", s.handleUpdateUser))

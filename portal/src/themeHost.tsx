@@ -117,19 +117,36 @@ export function loadTheme(t: ThemeInfo): Promise<ThemeDefinition> {
 // 主题管理页装好或卸载主题后发出这个事件，门户重新读主题列表。
 export const THEMES_CHANGED_EVENT = "vb-themes-changed";
 
-// useActiveTheme 读出已安装的主题，加载当前皮肤对应的主题包：套上它的颜色参数和样式表，返回它注册的内容。
-// 选用的主题被卸载了就按经典皮肤显示；加载失败时返回错误，由首页提示并退回经典皮肤。
+// useActiveTheme 读出已安装的主题和平台默认的皮肤，加载当前皮肤对应的主题包：套上它的颜色参数和样式表，返回它注册的内容。
+// 自己选的主题被卸载了就改回跟随平台默认；加载失败时返回错误，由首页提示并退回经典皮肤。
 export function useActiveTheme() {
-  const { skin, setOverrides } = useThemeMode();
+  const { skin, ownSkin, setSkin, setDefaultSkin, setOverrides } = useThemeMode();
   const [themes, setThemes] = React.useState<ThemeInfo[]>([]);
   const [loaded, setLoaded] = React.useState<{ key: string; def?: ThemeDefinition; error?: string } | null>(null);
+  // 读到过主题列表没有。列表回来之前它是空的，不能据此判断自己选的主题被卸载了。
+  const [listed, setListed] = React.useState(false);
 
   React.useEffect(() => {
-    const reload = () => api.themes().then(setThemes, () => setThemes([]));
+    const reload = () => {
+      api.themes().then(
+        (list) => {
+          setThemes(list);
+          setListed(true);
+        },
+        () => setThemes([]),
+      );
+      api.appearance().then((a) => setDefaultSkin(a.defaultSkin), () => {});
+    };
     reload();
     window.addEventListener(THEMES_CHANGED_EVENT, reload);
     return () => window.removeEventListener(THEMES_CHANGED_EVENT, reload);
   }, []);
+
+  React.useEffect(() => {
+    if (!listed) return;
+    const own = ownSkin && themeID(ownSkin);
+    if (own && !themes.some((t) => t.id === own)) setSkin(null);
+  }, [themes, listed]);
 
   const active = themes.find((t) => t.id === themeID(skin)) ?? null;
   const key = active ? `${active.id}@${active.version}` : "";
