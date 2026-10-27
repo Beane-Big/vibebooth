@@ -200,8 +200,8 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, displayName string, ad
 	return err
 }
 
-// SetPassword 重置密码，并让这个人在所有设备上重新登录。
-func (s *Store) SetPassword(ctx context.Context, id int64, password string) error {
+// SetPassword 重置密码，并让这个人在所有设备上重新登录。keepSession 不为空时保留这个会话（自己改密码时不用重新登录）。
+func (s *Store) SetPassword(ctx context.Context, id int64, password string, keepSession []byte) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -209,7 +209,7 @@ func (s *Store) SetPassword(ctx context.Context, id int64, password string) erro
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET password_hash = $2 WHERE id = $1`, id, string(hash)); err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, id)
+	_, err = s.pool.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1 AND token_hash IS DISTINCT FROM $2`, id, keepSession)
 	return err
 }
 

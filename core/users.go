@@ -156,7 +156,48 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request, me *U
 		writeError(w, http.StatusForbidden, "管理员密码不对")
 		return
 	}
-	if err := s.store.SetPassword(r.Context(), target.ID, in.Password); err != nil {
+	if err := s.store.SetPassword(r.Context(), target.ID, in.Password, nil); err != nil {
+		internalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSetMyPassword 改自己的密码，要先输入当前密码。输错和登录失败一样计入限流。
+// 改完后其他设备要重新登录，当前这个会话保留。
+func (s *Server) handleSetMyPassword(w http.ResponseWriter, r *http.Request, me *User) {
+	var in struct {
+		CurrentPassword string `json:"currentPassword"`
+		Password        string `json:"password"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	switch {
+	case len(in.Password) < 8:
+		writeError(w, http.StatusBadRequest, "密码至少 8 位")
+		return
+	case in.Password == in.CurrentPassword:
+		writeError(w, http.StatusBadRequest, "新密码不能和当前密码一样")
+		return
+	}
+	ip := clientIP(r)
+	if !s.limiter.Allow(ip) {
+		writeError(w, http.StatusTooManyRequests, "密码输错次数过多，请稍后再试")
+		return
+	}
+	ok, err := s.store.CheckPassword(r.Context(), me.Username, in.CurrentPassword)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	if ok == nil {
+		s.limiter.Fail(ip)
+		writeError(w, http.StatusForbidden, "当前密码不对")
+		return
+	}
+	hash, _ := sessionHash(r)
+	if err := s.store.SetPassword(r.Context(), me.ID, in.Password, hash); err != nil {
 		internalError(w, err)
 		return
 	}

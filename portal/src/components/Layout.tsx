@@ -1,13 +1,14 @@
 import { cloneElement, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { Button, Dropdown, Grid, Layout as AntLayout, Modal, Segmented, Typography, theme } from "antd";
-import { CameraOutlined, LogoutOutlined } from "@ant-design/icons";
+import { CameraOutlined, LockOutlined, LogoutOutlined } from "@ant-design/icons";
 import { api, type Me } from "../api";
+import MyPassword from "./MyPassword";
 import MyPhoto from "./MyPhoto";
 import PersonAvatar from "./PersonAvatar";
 import { useThemeMode, type ThemeMode } from "../theme";
 
 // 门户各页面共用的顶栏，只有一行：左边是平台名称，中间是标签栏（第一个固定是首页），右边是头像。
-// 用户、设置都是平台自带的应用，从首页打开（应用管理在设置里）；点头像可以切换外观、换自己的头像和退出登录。
+// 用户、设置都是平台自带的应用，从首页打开（应用管理在设置里）；点头像可以切换外观、换自己的头像、改密码和退出登录。
 export default function Layout({
   user,
   tabs,
@@ -25,6 +26,7 @@ export default function Layout({
   const { token } = theme.useToken();
   const [photo, setPhoto] = useState(user.photo);
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   async function logout() {
     await api.logout();
@@ -45,6 +47,7 @@ export default function Layout({
               ...(user.personId !== null
                 ? [{ key: "photo", icon: <CameraOutlined />, label: "更换头像", onClick: () => setPhotoOpen(true) }]
                 : []),
+              { key: "password", icon: <LockOutlined />, label: "修改密码", onClick: () => setPasswordOpen(true) },
               { key: "logout", icon: <LogoutOutlined />, label: "退出登录", onClick: logout },
             ],
           }}
@@ -87,6 +90,9 @@ export default function Layout({
       {children}
       <Modal title="更换头像" open={photoOpen} footer={null} onCancel={() => setPhotoOpen(false)} width={360}>
         <MyPhoto name={user.displayName} photo={photo} onChange={setPhoto} />
+      </Modal>
+      <Modal title="修改密码" open={passwordOpen} footer={null} onCancel={() => setPasswordOpen(false)} width={360} destroyOnHidden>
+        <MyPassword username={user.username} onDone={() => setPasswordOpen(false)} />
       </Modal>
     </AntLayout>
   );

@@ -28,6 +28,7 @@ import { AppstoreOutlined, ArrowLeftOutlined, HomeOutlined, PlusOutlined, Search
 import { api, isAdmin, type AppGrant, type Grant, type Member, type Person, type PersonInput, type User, type UserMenus } from "../api";
 import MyPhoto from "../components/MyPhoto";
 import PersonAvatar from "../components/PersonAvatar";
+import { confirmRules, passwordRules } from "../password";
 import { resizePhoto } from "../photo";
 
 // 选中的是一个成员，还是一个没关联成员的账号。
@@ -686,19 +687,6 @@ function AccountDetail({ user, persons, me, onSaved }: { user: User; persons: Pe
 }
 
 type CreateForm = { username: string; password: string; confirm: string; admin: boolean };
-
-// 设置密码时要输入两次：passwordRules 校验长度，confirmRules 校验和 password 字段一致。
-const passwordRules = [
-  { required: true, message: "请输入密码" },
-  { min: 8, message: "密码至少 8 位" },
-];
-const confirmRules = [
-  { required: true, message: "请再输入一次密码" },
-  ({ getFieldValue }: { getFieldValue: (name: string) => unknown }) => ({
-    validator: (_: unknown, value: string) =>
-      !value || value === getFieldValue("password") ? Promise.resolve() : Promise.reject(new Error("两次输入的密码不一样")),
-  }),
-];
 
 // AddAccount 给成员开通新账号或关联一个没关联成员的账号。还没有账号时直接摊开说明和两个按钮。
 function AddAccount({
