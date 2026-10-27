@@ -78,6 +78,16 @@ func TestAppAllowed(t *testing.T) {
 	if !appAllowed(user, m, noMenus) {
 		t.Error("单独打开后应该能用")
 	}
+	if menus := menusFor(user, m, noMenus); len(menus) != 0 || canOpenPage(m, menus, "/apps/demo/") {
+		t.Error("应用开着、页面都关着时有入口，但一个页面都打不开")
+	}
+	backend, err := manifest.Parse([]byte("id: hook\nname: 钩子\nversion: 0.1.0\nservices: {backend: {port: 8000}}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appAllowed(admin, &Module{Manifest: backend}, grants{Apps: map[string]bool{"hook": true}}) {
+		t.Error("只有后端的模块没有入口，管理员也不能用")
+	}
 }
 
 func TestPlatformPerms(t *testing.T) {
