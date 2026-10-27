@@ -8,7 +8,7 @@
 
 ## 开发流程
 
-1. `npx github:Beane-Big/create-vibebooth theme <id>`：生成主题仓库 `vibebooth-theme-<id>/`，里面是一个能直接用的玻璃效果示例。
+1. `npx github:Beane-Big/create-vibebooth-theme <id>`：生成主题仓库 `vibebooth-theme-<id>/`，里面是一个能直接用的玻璃效果示例。
 2. `npm run dev`：本机预览，模拟门户的顶栏、首页和常见组件，可切换深浅色。不需要本机有平台。
 3. `npm run install:local`：打包并装到本机平台（要 Docker 和本机平台），在头像菜单的“皮肤”里选用。
 4. `npm run pack` 生成的 `dist/<id>-<版本>.zip` 就是要上传到正式平台“设置 → 主题”页的主题包。改了代码要发布时先改 `theme.yaml` 的 `version`。

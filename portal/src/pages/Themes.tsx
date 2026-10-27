@@ -5,7 +5,7 @@ import { PackageDragger, ResultAlert, type OperationResult } from "../components
 import { THEMES_CHANGED_EVENT } from "../themeHost";
 
 // 主题管理：上传主题包安装或升级，卸载主题。装好的主题所有人都能在头像菜单的“皮肤”里选用。
-// 主题包的格式见 docs/theme-spec.md，用 create-vibebooth theme 生成。
+// 主题包的格式见 docs/theme-spec.md，用 create-vibebooth-theme 生成。
 export default function Themes() {
   const [themes, setThemes] = useState<ThemeInfo[] | null>(null);
   const [error, setError] = useState("");
