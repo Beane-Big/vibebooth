@@ -115,7 +115,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user *User) {
 	s.writeMe(w, r, user)
 }
 
-// writeMe 返回当前用户，附上平台自己的功能权限，门户据此显示“设置”和“应用管理”。登录接口也返回同样的内容。
+// writeMe 返回当前用户，附上平台自己的功能权限（门户据此显示“设置”和“应用管理”）和自己的头像。登录接口也返回同样的内容。
 // Platform 为 false 表示不能用门户，门户只显示“没有权限”，他只能直接打开自己能用的应用。
 func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user *User) {
 	g, err := s.store.Grants(r.Context(), user.ID)
@@ -127,11 +127,24 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user *User) {
 	if perms == nil {
 		perms = []string{}
 	}
+	// 顶栏头像用账号关联的成员的照片，没有关联或没有照片时为空。
+	photo := ""
+	if user.PersonID != nil {
+		p, err := s.store.PersonByUser(r.Context(), user.ID)
+		if err != nil && !errors.Is(err, errPersonNotFound) {
+			internalError(w, err)
+			return
+		}
+		if p != nil {
+			photo = p.Photo
+		}
+	}
 	writeJSON(w, http.StatusOK, struct {
 		*User
 		Perms    []string `json:"perms"`
 		Platform bool     `json:"platform"`
-	}{user, perms, appAllowed(user, platformModule, g)})
+		Photo    string   `json:"photo"`
+	}{user, perms, appAllowed(user, platformModule, g), photo})
 }
 
 func (s *Server) currentUser(r *http.Request) (*User, error) {

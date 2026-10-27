@@ -1,6 +1,6 @@
 const PHOTO_SIZE = 320;
 
-// 把照片居中裁成正方形并压缩成 JPEG，避免把手机原图（几 MB）存进数据库。家庭优化大师里换照片用的是同样的做法。
+// 把照片居中裁成正方形并压缩成 JPEG，避免把手机原图（几 MB）存进数据库。管理员改成员照片和本人换头像都用它。
 export function resizePhoto(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();

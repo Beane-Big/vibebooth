@@ -25,7 +25,8 @@ export const isAdmin = (user: User) => user.roles.includes("admin");
 
 // 当前登录的人：登录和 /me 接口在账号信息之外还带上平台自己的功能权限（管理员总有全部）。
 // platform 为 false 表示不能用门户：门户只显示“没有权限”，他只能直接打开自己能用的应用。
-export type Me = User & { perms: string[]; platform: boolean };
+// photo 是账号关联的成员的照片，没有时为空。
+export type Me = User & { perms: string[]; platform: boolean; photo: string };
 
 // 平台自己的功能权限，和 core/menus.go 里的 platformModule 一致。
 export type PlatformPerm = "settings" | "modules" | "members";
@@ -120,6 +121,9 @@ const put = (path: string, body: unknown) => request<void>(path, { method: "PUT"
 
 export const api = {
   me: () => request<Me>("/api/platform/me"),
+  // 换自己的头像（改账号关联的成员的照片），photo 为空表示去掉照片。
+  setMyPhoto: (photo: string) =>
+    request<{ photo: string }>("/api/platform/me/photo", { method: "PUT", body: JSON.stringify({ photo }) }),
   apps: () => request<App[]>("/api/platform/apps"),
   login: (username: string, password: string) =>
     request<Me>("/api/platform/auth/login", {

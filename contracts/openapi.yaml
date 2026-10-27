@@ -5,7 +5,7 @@ info:
   description: |
     给模块后端在内部网络里调用，基础地址 http://core:8080。
     网关不转发 /api/platform/ext/，浏览器访问不到。目前不需要令牌。
-    人员由管理员在门户的“用户”应用里维护；模块只保存人员 id，需要姓名和照片时调用这里。
+    人员由管理员在门户的“用户”应用里维护，本人可以在门户里换自己的头像；模块只读，只保存人员 id，需要姓名和照片时调用这里。
 paths:
   /api/platform/ext/v1/persons:
     get:
@@ -29,30 +29,6 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Person" }
-        "404":
-          description: 人员不存在
-  /api/platform/ext/v1/persons/{id}/photo:
-    put:
-      summary: 修改一个人员的头像（只改照片，不改其他信息）
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [photo]
-              properties:
-                photo: { type: string, description: JPEG 的 data URL，不超过 300 KB；空字符串表示去掉照片 }
-      responses:
-        "200":
-          description: 修改后的人员信息
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Person" }
-        "400":
-          description: 照片格式不对或太大
         "404":
           description: 人员不存在
   /api/platform/ext/v1/users/{id}/person:

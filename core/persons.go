@@ -159,6 +159,33 @@ func (s *Server) handleSetRemark(w http.ResponseWriter, r *http.Request, me *Use
 	}
 }
 
+// handleSetMyPhoto 让每个人换自己的头像：改的是账号关联的成员的照片。别人的头像只有管理员能在“用户”里改，模块不能改。
+func (s *Server) handleSetMyPhoto(w http.ResponseWriter, r *http.Request, me *User) {
+	var in struct {
+		Photo string `json:"photo"`
+	}
+	if !decodePhotoJSON(w, r, &in) {
+		return
+	}
+	if !validPhoto(in.Photo) {
+		writeError(w, http.StatusBadRequest, "照片格式不对或太大")
+		return
+	}
+	p, err := s.store.PersonByUser(r.Context(), me.ID)
+	if errors.Is(err, errPersonNotFound) {
+		writeError(w, http.StatusBadRequest, "你的账号还没有关联成员，请管理员先在“用户”里关联")
+		return
+	}
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	p, err = s.store.UpdatePersonPhoto(r.Context(), p.ID, in.Photo)
+	if !personFailed(w, err) {
+		writeJSON(w, http.StatusOK, map[string]string{"photo": p.Photo})
+	}
+}
+
 // ---- 对外接口 v1（契约见 contracts/openapi.yaml）----
 
 // extPerson 是对外接口返回的人员信息，字段一旦发布就不能删改，只能新增。备注不对外。
@@ -189,28 +216,6 @@ func (s *Server) handleExtPerson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, err := s.store.PersonByID(r.Context(), id)
-	if !personFailed(w, err) {
-		writeJSON(w, http.StatusOK, toExt(p))
-	}
-}
-
-// handleExtSetPhoto 让模块（如家庭优化大师）替人员换头像，只能改照片，不能改其他信息。
-func (s *Server) handleExtSetPhoto(w http.ResponseWriter, r *http.Request) {
-	id, ok := personID(w, r)
-	if !ok {
-		return
-	}
-	var in struct {
-		Photo string `json:"photo"`
-	}
-	if !decodePhotoJSON(w, r, &in) {
-		return
-	}
-	if !validPhoto(in.Photo) {
-		writeError(w, http.StatusBadRequest, "照片格式不对或太大")
-		return
-	}
-	p, err := s.store.UpdatePersonPhoto(r.Context(), id, in.Photo)
 	if !personFailed(w, err) {
 		writeJSON(w, http.StatusOK, toExt(p))
 	}
