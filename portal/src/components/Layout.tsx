@@ -1,8 +1,8 @@
-import { cloneElement, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
-import { App as AntApp, Button, Dropdown, Flex, Grid, Layout as AntLayout, Modal, Segmented, Typography, theme } from "antd";
+import { cloneElement, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { Button, Dropdown, Grid, Layout as AntLayout, Modal, Segmented, Typography, theme } from "antd";
 import { CameraOutlined, LogoutOutlined } from "@ant-design/icons";
 import { api, type Me } from "../api";
-import { resizePhoto } from "../photo";
+import MyPhoto from "./MyPhoto";
 import PersonAvatar from "./PersonAvatar";
 import { useThemeMode, type ThemeMode } from "../theme";
 
@@ -89,53 +89,6 @@ export default function Layout({
         <MyPhoto name={user.displayName} photo={photo} onChange={setPhoto} />
       </Modal>
     </AntLayout>
-  );
-}
-
-// MyPhoto 换自己的头像：选好照片立即保存，会自动裁成正方形。各个应用里看到的都是这张照片。
-function MyPhoto({ name, photo, onChange }: { name: string; photo: string; onChange: (photo: string) => void }) {
-  const { message } = AntApp.useApp();
-  const [saving, setSaving] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
-
-  async function save(next: () => Promise<string>, success: string) {
-    setSaving(true);
-    try {
-      const res = await api.setMyPhoto(await next());
-      onChange(res.photo);
-      message.success(success);
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "保存失败");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Flex vertical align="center" gap={16} style={{ padding: "16px 0 8px" }}>
-      <PersonAvatar person={{ name, photo }} size={96} />
-      <Flex gap={8}>
-        <Button type="primary" loading={saving} onClick={() => fileInput.current?.click()}>
-          选择照片
-        </Button>
-        {photo && (
-          <Button danger disabled={saving} onClick={() => save(async () => "", "已去掉头像")}>
-            去掉照片
-          </Button>
-        )}
-      </Flex>
-      <input
-        ref={fileInput}
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = "";
-          if (file) save(() => resizePhoto(file), "头像已更换");
-        }}
-      />
-    </Flex>
   );
 }
 

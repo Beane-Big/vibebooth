@@ -159,7 +159,22 @@ func (s *Server) handleSetRemark(w http.ResponseWriter, r *http.Request, me *Use
 	}
 }
 
-// handleSetMyPhoto 让每个人换自己的头像：改的是账号关联的成员的照片。别人的头像只有管理员能在“用户”里改，模块不能改。
+// 每个人可以改自己的姓名和头像，改的是账号关联的成员。别人的资料只有管理员能在“用户”里改，模块不能改。
+
+// myPerson 返回当前账号关联的成员；没有关联时已经写好 400。
+func (s *Server) myPerson(w http.ResponseWriter, r *http.Request, me *User) (*Person, bool) {
+	p, err := s.store.PersonByUser(r.Context(), me.ID)
+	if errors.Is(err, errPersonNotFound) {
+		writeError(w, http.StatusBadRequest, "你的账号还没有关联成员，请管理员先在“用户”里关联")
+		return nil, false
+	}
+	if err != nil {
+		internalError(w, err)
+		return nil, false
+	}
+	return p, true
+}
+
 func (s *Server) handleSetMyPhoto(w http.ResponseWriter, r *http.Request, me *User) {
 	var in struct {
 		Photo string `json:"photo"`
@@ -171,33 +186,85 @@ func (s *Server) handleSetMyPhoto(w http.ResponseWriter, r *http.Request, me *Us
 		writeError(w, http.StatusBadRequest, "照片格式不对或太大")
 		return
 	}
-	p, err := s.store.PersonByUser(r.Context(), me.ID)
-	if errors.Is(err, errPersonNotFound) {
-		writeError(w, http.StatusBadRequest, "你的账号还没有关联成员，请管理员先在“用户”里关联")
+	p, ok := s.myPerson(w, r, me)
+	if !ok {
 		return
 	}
-	if err != nil {
-		internalError(w, err)
-		return
-	}
-	p, err = s.store.UpdatePersonPhoto(r.Context(), p.ID, in.Photo)
+	p, err := s.store.UpdatePersonPhoto(r.Context(), p.ID, in.Photo)
 	if !personFailed(w, err) {
 		writeJSON(w, http.StatusOK, map[string]string{"photo": p.Photo})
 	}
 }
 
-// ---- 对外接口 v1（契约见 contracts/openapi.yaml）----
-
-// extPerson 是对外接口返回的人员信息，字段一旦发布就不能删改，只能新增。备注不对外。
-type extPerson struct {
-	ID    int64  `json:"id"`
-	Name  string `json:"name"`
-	Photo string `json:"photo"`
+func (s *Server) handleSetMyName(w http.ResponseWriter, r *http.Request, me *User) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	switch {
+	case in.Name == "":
+		writeError(w, http.StatusBadRequest, "姓名不能为空")
+		return
+	case utf8.RuneCountInString(in.Name) > 30:
+		writeError(w, http.StatusBadRequest, "姓名不能超过 30 个字")
+		return
+	}
+	p, ok := s.myPerson(w, r, me)
+	if !ok {
+		return
+	}
+	p, err := s.store.UpdatePersonName(r.Context(), p.ID, in.Name)
+	if !personFailed(w, err) {
+		writeJSON(w, http.StatusOK, map[string]string{"name": p.Name})
+	}
 }
 
-func toExt(p *Person) extPerson { return extPerson{ID: p.ID, Name: p.Name, Photo: p.Photo} }
+// ---- 对外接口 v1（契约见 contracts/openapi.yaml）----
+
+// extPerson 是对外接口返回的人员信息，字段一旦发布就不能删改，只能新增。管理员的备注不对外。
+// DisplayName 是给某个人看的称呼：请求带了 viewer（账号 id）且他给这个人写过备注时是备注，否则是姓名。
+type extPerson struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Photo       string `json:"photo"`
+	DisplayName string `json:"displayName"`
+}
+
+func toExt(p *Person, remarks map[int64]string) extPerson {
+	display := p.Name
+	if r := remarks[p.ID]; r != "" {
+		display = r
+	}
+	return extPerson{ID: p.ID, Name: p.Name, Photo: p.Photo, DisplayName: display}
+}
+
+// viewerRemarks 取查询参数 viewer（账号 id，模块令牌里的 sub）写过的备注；没带 viewer 时为空。无效时已经写好 400。
+func (s *Server) viewerRemarks(w http.ResponseWriter, r *http.Request) (map[int64]string, bool) {
+	v := r.URL.Query().Get("viewer")
+	if v == "" {
+		return nil, true
+	}
+	id, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "viewer 无效")
+		return nil, false
+	}
+	remarks, err := s.store.Remarks(r.Context(), id)
+	if err != nil {
+		internalError(w, err)
+		return nil, false
+	}
+	return remarks, true
+}
 
 func (s *Server) handleExtPersons(w http.ResponseWriter, r *http.Request) {
+	remarks, ok := s.viewerRemarks(w, r)
+	if !ok {
+		return
+	}
 	list, err := s.store.ListPersons(r.Context())
 	if err != nil {
 		internalError(w, err)
@@ -205,7 +272,7 @@ func (s *Server) handleExtPersons(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]extPerson, len(list))
 	for i := range list {
-		out[i] = toExt(&list[i])
+		out[i] = toExt(&list[i], remarks)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -215,9 +282,13 @@ func (s *Server) handleExtPerson(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	remarks, ok := s.viewerRemarks(w, r)
+	if !ok {
+		return
+	}
 	p, err := s.store.PersonByID(r.Context(), id)
 	if !personFailed(w, err) {
-		writeJSON(w, http.StatusOK, toExt(p))
+		writeJSON(w, http.StatusOK, toExt(p, remarks))
 	}
 }
 
@@ -227,8 +298,12 @@ func (s *Server) handleExtUserPerson(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	remarks, ok := s.viewerRemarks(w, r)
+	if !ok {
+		return
+	}
 	p, err := s.store.PersonByUser(r.Context(), id)
 	if !personFailed(w, err) {
-		writeJSON(w, http.StatusOK, toExt(p))
+		writeJSON(w, http.StatusOK, toExt(p, remarks))
 	}
 }

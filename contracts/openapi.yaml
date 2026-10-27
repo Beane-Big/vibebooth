@@ -5,11 +5,14 @@ info:
   description: |
     给模块后端在内部网络里调用，基础地址 http://core:8080。
     网关不转发 /api/platform/ext/，浏览器访问不到。目前不需要令牌。
-    人员由管理员在门户的“用户”应用里维护，本人可以在门户里换自己的头像；模块只读，只保存人员 id，需要姓名和照片时调用这里。
+    人员由管理员在门户的“用户”应用里维护，本人可以在门户里改自己的姓名和头像；模块只读，只保存人员 id，需要姓名和照片时调用这里。
+    显示人员时用 displayName 并带上 viewer：每个人在“用户”里给别人写的备注，在各个应用里会代替姓名显示（只对他自己）。
 paths:
   /api/platform/ext/v1/persons:
     get:
       summary: 列出全部人员
+      parameters:
+        - { name: viewer, in: query, required: false, schema: { type: integer }, description: 看的人的账号 id（模块令牌里的 sub）；带上后 displayName 用他写的备注 }
       responses:
         "200":
           description: 人员列表，按 id 升序
@@ -23,6 +26,7 @@ paths:
       summary: 查询一个人员
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: viewer, in: query, required: false, schema: { type: integer }, description: 看的人的账号 id（模块令牌里的 sub）；带上后 displayName 用他写的备注 }
       responses:
         "200":
           description: 人员信息
@@ -37,6 +41,7 @@ paths:
       description: id 是账号 id，也就是模块令牌里的 sub。一个账号最多属于一个人员。
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: viewer, in: query, required: false, schema: { type: integer }, description: 看的人的账号 id（模块令牌里的 sub）；带上后 displayName 用他写的备注 }
       responses:
         "200":
           description: 账号所属的人员
@@ -49,8 +54,9 @@ components:
   schemas:
     Person:
       type: object
-      required: [id, name, photo]
+      required: [id, name, photo, displayName]
       properties:
         id: { type: integer, description: 人员 id，模块只保存它 }
         name: { type: string, description: 姓名 }
+        displayName: { type: string, description: 给人看的称呼：带了 viewer 且他给这个人写过备注时是备注，否则同 name。模块显示人员时用它 }
         photo: { type: string, description: 头像，JPEG 的 data URL；没有时为空字符串 }

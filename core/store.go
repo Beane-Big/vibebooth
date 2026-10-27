@@ -270,6 +270,11 @@ func (s *Store) UpdatePerson(ctx context.Context, id int64, name, note, photo st
 		id, name, note, photo))
 }
 
+func (s *Store) UpdatePersonName(ctx context.Context, id int64, name string) (*Person, error) {
+	return scanPerson(s.pool.QueryRow(ctx,
+		`UPDATE persons SET name = $2, updated_at = now() WHERE id = $1 RETURNING `+personColumns, id, name))
+}
+
 func (s *Store) UpdatePersonPhoto(ctx context.Context, id int64, photo string) (*Person, error) {
 	return scanPerson(s.pool.QueryRow(ctx,
 		`UPDATE persons SET photo = $2, updated_at = now() WHERE id = $1 RETURNING `+personColumns, id, photo))
@@ -287,18 +292,20 @@ func (s *Store) DeletePerson(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Member 是“成员”权限看到的成员：只有姓名、照片和自己写的备注，没有管理员的备注和账号。
+// Member 是“成员”权限看到的成员：只有姓名、照片和自己写的备注，没有管理员的备注和账号。Self 表示是不是自己。
 type Member struct {
 	ID     int64  `json:"id"`
 	Name   string `json:"name"`
 	Photo  string `json:"photo"`
 	Remark string `json:"remark"`
+	Self   bool   `json:"self"`
 }
 
 // ListMembers 返回全部成员，带上 userID 这个账号给他们写的备注。
 func (s *Store) ListMembers(ctx context.Context, userID int64) ([]Member, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT p.id, p.name, p.photo, COALESCE(r.remark, '')
+		SELECT p.id, p.name, p.photo, COALESCE(r.remark, ''),
+		       p.id IS NOT DISTINCT FROM (SELECT person_id FROM users WHERE id = $1)
 		FROM persons p LEFT JOIN person_remarks r ON r.person_id = p.id AND r.user_id = $1
 		ORDER BY p.id`, userID)
 	if err != nil {
@@ -306,9 +313,28 @@ func (s *Store) ListMembers(ctx context.Context, userID int64) ([]Member, error)
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Member, error) {
 		var m Member
-		err := row.Scan(&m.ID, &m.Name, &m.Photo, &m.Remark)
+		err := row.Scan(&m.ID, &m.Name, &m.Photo, &m.Remark, &m.Self)
 		return m, err
 	})
+}
+
+// Remarks 返回 userID 这个账号写过的全部备注：成员 id → 备注。
+func (s *Store) Remarks(ctx context.Context, userID int64) (map[int64]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT person_id, remark FROM person_remarks WHERE user_id = $1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var remark string
+		if err := rows.Scan(&id, &remark); err != nil {
+			return nil, err
+		}
+		out[id] = remark
+	}
+	return out, rows.Err()
 }
 
 // SetRemark 保存 userID 给成员写的备注；remark 为空时删除。成员不存在时返回 errPersonNotFound。

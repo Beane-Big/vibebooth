@@ -17,7 +17,7 @@ var platformModule = &Module{Manifest: &manifest.Manifest{
 	Permissions: []manifest.Permission{
 		{ID: permSettings, Name: "设置", Description: "打开“设置”应用", Default: []string{"user"}},
 		{ID: permModules, Name: "应用管理", Description: "在“设置”里安装、升级和卸载应用，要同时有“设置”", Default: []string{"admin"}},
-		{ID: permMembers, Name: "成员", Description: "打开“用户”应用查看家庭成员，给他们写只有自己看得到的备注", Default: []string{"admin"}},
+		{ID: permMembers, Name: "成员", Description: "打开“用户”应用查看家庭成员，给他们写只有自己看得到的备注（其他应用里会代替姓名显示）", Default: []string{"admin"}},
 	},
 }}
 
