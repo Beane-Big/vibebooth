@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Checkbox, Collapse, Flex, List, Space, Tag, Typography, Upload } from "antd";
-import { InboxOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Checkbox, Flex, List, Space, Tag, Typography } from "antd";
 import { api, ApiError, privilegeInfo, type InstalledModule } from "../api";
+import { PackageDragger, ResultAlert, type OperationResult } from "../components/PackageUpload";
 
 // 应用管理：上传模块包安装或升级，卸载模块。安装和卸载都不会重启平台和其他应用。
 export default function Modules() {
@@ -10,7 +10,7 @@ export default function Modules() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   // 最近一次安装或卸载的结果和日志。
-  const [result, setResult] = useState<{ ok: boolean; message: string; log: string } | null>(null);
+  const [result, setResult] = useState<OperationResult | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [purge, setPurge] = useState(false);
   // 模块声明了特权时，安装器先拒绝并列出特权，管理员确认后再带上 allowPrivileges 装一次。
@@ -66,24 +66,15 @@ export default function Modules() {
             上传模块包（zip）：构建器构建出的软件包，或者在模块仓库里用 <code>npm run pack</code>{" "}
             生成的。已安装的应用会升级到包里的版本，数据保留。
           </Typography.Text>
-          <Upload.Dragger
-            accept=".zip"
-            maxCount={1}
-            disabled={busy}
-            // 只选文件，不自动上传，点“安装”时再提交。
-            beforeUpload={(f) => {
+          <PackageDragger
+            file={file}
+            onChange={(f) => {
               setFile(f);
               setConfirming(null);
-              return false;
             }}
-            onRemove={() => setFile(null)}
-            fileList={file ? [{ uid: "package", name: file.name, status: "done" }] : []}
-          >
-            <p className="ant-upload-drag-icon">
-              <InboxOutlined />
-            </p>
-            <p className="ant-upload-text">点击或把模块包拖到这里</p>
-          </Upload.Dragger>
+            disabled={busy}
+            text="点击或把模块包拖到这里"
+          />
           <div>
             <Button type="primary" onClick={() => install()} disabled={!file} loading={busy}>
               {busy ? "处理中" : "安装"}
@@ -117,23 +108,7 @@ export default function Modules() {
         </Flex>
       </Card>
 
-      {result && (
-        <Alert
-          type={result.ok ? "success" : "error"}
-          showIcon
-          message={result.message}
-          description={
-            result.log && (
-              <Collapse
-                ghost
-                size="small"
-                defaultActiveKey={result.ok ? [] : ["log"]}
-                items={[{ key: "log", label: "日志", children: <pre className="log">{result.log}</pre> }]}
-              />
-            )
-          }
-        />
-      )}
+      {result && <ResultAlert result={result} />}
 
       <Card title="已安装的应用">
         {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -30,6 +31,8 @@ func (s *server) routes(verifier *auth.Verifier) http.Handler {
 	api.HandleFunc("GET /api/platform/installer/modules", s.list)
 	api.HandleFunc("POST /api/platform/installer/modules", s.install)
 	api.HandleFunc("DELETE /api/platform/installer/modules/{id}", s.uninstall)
+	api.HandleFunc("POST /api/platform/installer/themes", s.installTheme)
+	api.HandleFunc("DELETE /api/platform/installer/themes/{id}", s.uninstallTheme)
 	return verifier.Middleware(requireModulesPerm(api))
 }
 
@@ -97,11 +100,56 @@ func (s *server) uninstall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"log": log.String()})
 }
 
+// installTheme 接收 multipart 表单里的 package 文件（主题包 zip）。主题带脚本，在门户里以使用者的身份运行，
+// 所以和特权模块一样要管理员确认：表单里没有 allowScript=true 时返回 409，由门户弹窗确认。
+func (s *server) installTheme(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxThemePackage)
+	file, _, err := r.FormFile("package")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("请上传主题包（zip，不超过 %d MB）", maxThemePackage>>20), "")
+		return
+	}
+	defer file.Close()
+	tmp, err := os.CreateTemp("", "theme-*.zip")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "保存主题包失败", "")
+		return
+	}
+	defer os.Remove(tmp.Name())
+	_, err = io.Copy(tmp, file)
+	tmp.Close()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "上传中断，请重试", "")
+		return
+	}
+	var log bytes.Buffer
+	t, err := s.installer.InstallTheme(tmp.Name(), r.FormValue("allowScript") == "true", &log)
+	if err != nil {
+		s.fail(w, err, log.String())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"theme": t, "log": log.String()})
+}
+
+func (s *server) uninstallTheme(w http.ResponseWriter, r *http.Request) {
+	var log bytes.Buffer
+	if err := s.installer.UninstallTheme(r.PathValue("id"), &log); err != nil {
+		s.fail(w, err, log.String())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"log": log.String()})
+}
+
 // fail 把模块包不合规范的错误原样告诉管理员；其他错误记日志，并把安装日志一起返回方便排查。
 func (s *server) fail(w http.ResponseWriter, err error, log string) {
 	var priv *PrivilegeError
 	if errors.As(err, &priv) {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": priv.Error(), "privileges": priv.Privileges})
+		return
+	}
+	var script *ScriptError
+	if errors.As(err, &script) {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": script.Error(), "script": true})
 		return
 	}
 	var inv *modpkg.InvalidError

@@ -1,6 +1,6 @@
 # Vibebooth 架构说明
 
-> 对应代码版本：平台本体（含模块安装器、用户与菜单权限）。模块在各自的仓库里，不属于本仓库；下文用两个假想的模块 `notes`（记事）和 `contacts`（通讯录）举例。代码里的服务、路由、登录流程有变化时，要同步更新本文档。部署步骤见 [DEPLOY.md](DEPLOY.md)，模块开发规范见 [docs/module-spec.md](docs/module-spec.md)。
+> 对应代码版本：平台本体（含模块安装器、用户与菜单权限）。模块在各自的仓库里，不属于本仓库；下文用两个假想的模块 `notes`（记事）和 `contacts`（通讯录）举例。代码里的服务、路由、登录流程有变化时，要同步更新本文档。部署步骤见 [DEPLOY.md](DEPLOY.md)，模块开发规范见 [docs/module-spec.md](docs/module-spec.md)，门户主题规范见 [docs/theme-spec.md](docs/theme-spec.md)。
 
 ## 一句话总结
 
@@ -66,7 +66,7 @@ flowchart TB
 | Dockerfile | 说明怎样从源码构建镜像的脚本 | 菜谱 | `core/Dockerfile`：先用 Go 编译，再把编译结果放进一个很小的 alpine 系统 |
 | Compose | 用一个文件描述多个容器以及它们的关系，一条命令就能全部启动 | 整桌菜的菜单 | 根目录 `docker-compose.yml` 是平台本体；每个模块有自己的 `compose.yaml`，由安装器作为独立项目 `mod-<id>` 启动 |
 | 网络（network） | 容器之间的内部局域网，容器之间用服务名互相访问 | 厨房里的传菜口 | 在 `platform` 网络里，`core` 用 `postgres:5432` 就能连上数据库，`notes-backend` 用 `contacts-backend:8000` 就能连上另一个模块 |
-| 卷（volume） | 容器之外保存数据的地方，容器删掉后数据还在 | 冰箱 | `pgdata` 存数据库数据，`core-data` 存登录令牌的签名密钥（`jwt.pem`），`modules-data` 存已安装模块的清单；模块的卷带项目前缀，例如 `mod-notes_data` 存 notes 模块的 SQLite 数据库文件 |
+| 卷（volume） | 容器之外保存数据的地方，容器删掉后数据还在 | 冰箱 | `pgdata` 存数据库数据，`core-data` 存登录令牌的签名密钥（`jwt.pem`），`modules-data` 存已安装模块的清单和门户主题（`.themes/` 下）；模块的卷带项目前缀，例如 `mod-notes_data` 存 notes 模块的 SQLite 数据库文件 |
 
 所以 `docker compose down` 只是把"菜"倒掉，"冰箱"里的数据还在；加上 `-v` 才会连冰箱一起清空。卸载模块也一样，默认保留它的卷，勾选“同时删除数据”才会删。
 
@@ -79,9 +79,9 @@ flowchart TB
 | `traefik` | 网关（现成软件） | 唯一对外的入口（8080 端口），按网址前缀把请求转给对应服务；转给模块之前，先问 `core` 这个人登录了没有、有没有这个页面的菜单权限 |
 | `socket-proxy` | Docker 接口的门卫（现成软件） | Traefik 通过读取容器列表来发现路由规则；socket-proxy 只开放"读容器列表"这一项权限，不把整个 Docker 的控制权交出去 |
 | `postgres` | 数据库（现成软件） | 存放人员、账号、密码哈希、登录会话和按人的菜单授权 |
-| `core` | 平台核心（自己写的 Go 代码） | 处理登录和登出；替网关校验登录状态和菜单权限；给模块签发 5 分钟有效的令牌；管理人员和账号，并通过对外接口把人员名单提供给模块；每 5 秒扫描一次 `modules-data` 卷里的模块清单，生成应用列表 |
+| `core` | 平台核心（自己写的 Go 代码） | 处理登录和登出；替网关校验登录状态和菜单权限；给模块签发 5 分钟有效的令牌；管理人员和账号，并通过对外接口把人员名单提供给模块；每 5 秒扫描一次 `modules-data` 卷里的模块清单，生成应用列表；发已安装主题的文件 |
 | `portal` | 门户（自己写的 React 代码，由 nginx 提供） | 登录页、应用列表和标签栏，以及平台自带的应用：“设置”所有人可见，“用户”和“设置”里的“应用管理”只对管理员显示 |
-| `installer` | 模块安装器（自己写的 Go 代码） | 校验上传的模块包，导入镜像，以独立的 Compose 项目启动模块，并把清单写进 `modules-data` 卷；也负责卸载。只有有“应用管理”权限的人能调用（管理员总有） |
+| `installer` | 模块安装器（自己写的 Go 代码） | 校验上传的模块包，导入镜像，以独立的 Compose 项目启动模块，并把清单写进 `modules-data` 卷；也负责卸载，以及安装、卸载门户主题。只有有“应用管理”权限的人能调用（管理员总有） |
 | `installer-proxy` | 安装器专用的 Docker 门卫（现成软件） | 开放创建、删除容器、镜像、网络、卷的权限，只接在安装器所在的内部网络上 |
 | `build-proxy` | 构建代理（自己写的 Go 代码） | 给声明了 `docker-build` 特权的模块（例如构建器）用的 Docker 门卫：逐个检查请求，只放行构建 `vb-` 开头的模块镜像，以及查看、打标签、导出、删除这些镜像和清理构建缓存；碰不到容器和平台自己的镜像。只接在内部网络 `platform-build` 上 |
 | `<id>-frontend` / `<id>-backend` | 模块（各自的仓库，技术栈自选） | 模块 `<id>` 的页面 `/apps/<id>/` 和接口 `/api/<id>/`；后端用 `core` 公开的公钥校验令牌，从而知道是谁在访问 |
@@ -131,6 +131,15 @@ flowchart TB
 安装开始后，关掉页面或断网不会中断安装，结果可以稍后在“应用管理”页查看。
 
 > 已知限制：安装器只检查 `images.tar` 里 `manifest.json` 列出的镜像名。新版 Docker 导入时也可能读取 `index.json` 里的镜像名，理论上一个特意构造的包能借此覆盖别的镜像。因为只有有“应用管理”权限的人能上传，模块包也是自己打的，目前没有处理；以后要安装别人做的模块包时需要补上这项检查。
+
+## 门户主题
+
+主题换门户的颜色、背景、组件样式、玻璃效果和首页，规范见 [docs/theme-spec.md](docs/theme-spec.md)。主题只有前端文件，没有容器：
+
+- 在“设置 → 主题”页上传（或命令行 `installer install-theme <zip>`），安装器校验后解压到 `modules-data` 卷的 `.themes/<id>/`。目录以 `.` 开头，`core` 扫描模块时跳过它。主题带脚本时要管理员确认（命令行加 `--allow-script`），因为脚本在门户里以使用者的身份运行。
+- `core` 的 `GET /api/platform/themes` 列出主题，`GET /api/platform/themes/<id>/<文件>` 只发清单声明的文件和 `assets/` 下的文件，都要登录。
+- 门户把自己的 React 和一部分 Ant Design 组件放在 `window.vibebooth` 上，加载选用的主题脚本，主题调用 `registerTheme` 注册颜色参数、背景、玻璃效果和首页组件（`portal/src/themeHost.tsx`）。内置皮肤“经典”和“彩色方块”不是主题包，在门户代码里。
+- 模块的页面在 iframe 里，不受主题影响。
 
 ## 模块之间怎么通信
 
