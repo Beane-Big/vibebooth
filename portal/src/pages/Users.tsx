@@ -474,15 +474,6 @@ function PersonForm({
           <Button type="text" shape="circle" style={{ width: 64, height: 64, padding: 0 }} onClick={() => fileInput.current?.click()} aria-label="选择照片">
             <PersonAvatar person={{ name, photo }} size={64} />
           </Button>
-          {photo ? (
-            <Button type="link" size="small" danger onClick={() => setPhoto("")}>
-              去掉照片
-            </Button>
-          ) : (
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              点头像选照片
-            </Typography.Text>
-          )}
         </Flex>
         <Row gutter={16} style={{ flex: 1, minWidth: 220 }}>
           <Col xs={24} md={10}>

@@ -30,11 +30,6 @@ export default function MyPhoto({ name, photo, onChange }: { name: string; photo
         <Button type="primary" loading={saving} onClick={() => fileInput.current?.click()}>
           选择照片
         </Button>
-        {photo && (
-          <Button danger disabled={saving} onClick={() => save(async () => "", "已去掉头像")}>
-            去掉照片
-          </Button>
-        )}
       </Flex>
       <input
         ref={fileInput}
