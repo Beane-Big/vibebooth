@@ -33,17 +33,19 @@ type User struct {
 	// Perms 是这个人在本模块里有的功能权限 id（module.yaml 的 permissions），同样在“用户”页按人设置。
 	// 旧平台签发的令牌里没有这个字段。
 	Perms []string `json:"perms"`
+	// All 只在独立模式（Standalone）下为 true：本地用户拥有全部菜单和功能权限。
+	All bool `json:"all"`
 }
 
 // HasMenu 判断当前用户有没有某个菜单的权限。模块后端用它检查接口权限，例如只有有“设置”菜单的人能清零。
 func (u *User) HasMenu(id string) bool {
-	return slices.Contains(u.Menus, id)
+	return u.All || slices.Contains(u.Menus, id)
 }
 
 // Has 判断当前用户有没有某项功能权限，例如 Has("score") 才能加分。模块声明了 permissions 时优先用它，
 // 而不是 HasMenu：功能权限不依赖页面怎么划分。
 func (u *User) Has(perm string) bool {
-	return slices.Contains(u.Perms, perm)
+	return u.All || slices.Contains(u.Perms, perm)
 }
 
 type claims struct {
@@ -112,9 +114,26 @@ func (v *Verifier) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// Standalone 在离开平台单独运行模块时代替 Middleware：不校验令牌，每个请求都当成同一个拥有全部权限的本地用户。
+// 请求里带着令牌说明模块其实跑在平台里，这时一律拒绝，免得误开独立模式后所有人都拥有全部权限。
+func Standalone(name string) func(http.Handler) http.Handler {
+	user := &User{ID: "local", Name: name, Roles: []string{"admin"}, All: true}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != "" {
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]string{"error": "模块开着独立模式（STANDALONE），不能在平台里运行"})
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, user)))
+		})
+	}
+}
+
 type userKey struct{}
 
-// UserFrom 返回 Middleware 放入请求上下文的用户。
+// UserFrom 返回 Middleware 或 Standalone 放入请求上下文的用户。
 func UserFrom(ctx context.Context) *User {
 	u, _ := ctx.Value(userKey{}).(*User)
 	return u

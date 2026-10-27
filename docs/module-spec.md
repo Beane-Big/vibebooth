@@ -23,7 +23,9 @@
 | 3 分权 | 页面和功能按人授权 | 令牌里的 `menus` 和 `perms`，“用户”应用里的授权界面 | 加 `menus` 和 `permissions` |
 | 4 用平台数据 | 例如家庭成员名单和头像 | 平台的对外接口（`contracts/openapi.yaml`） | 不用加 |
 
-特权（例如构建器的 `docker-build`）不算在这 5 级里，是另一条独立的声明，安装时要管理员确认。模块仓库的 `AGENTS.md` 写明模块当前是第几级，不要越级调用平台契约。
+特权（例如构建器的 `docker-build`）不算在这 5 级里，是另一条独立的声明，安装时要管理员确认。模块仓库的 `AGENTS.md` 写明模块当前是第几级，不要越级调用平台契约。脚手架生成的模块要升级时，在模块目录里运行 `npx github:Beane-Big/create-vibebooth add <backend | data | permissions | persons>`。
+
+模块也要能离开平台单独运行，方便在本机开发和演示：脚手架生成的模块运行 `npm run standalone`。后端用 SDK 的 `auth.Standalone` 代替令牌校验（环境变量 `STANDALONE=1` 时），所有请求都当成一个拥有全部菜单和功能权限的本地用户；请求里带着网关的令牌时它一律拒绝，所以误开独立模式装到平台里也不会让所有人拥有全部权限。不要在 `compose.yaml` 里设这个变量。第 4 级取不到平台的人员，要自己降级（例如用一份本地名单）。
 
 ## 安装器检查的规则
 
@@ -44,7 +46,7 @@
 ## 编码约定
 
 - 只读写本模块仓库和本模块自己的数据（`volumes` 里声明的卷，安装后卷名是 `mod-<id>_<卷名>`）。默认用 SQLite 文件放在卷里。
-- 不写登录代码。后端用 SDK `github.com/Beane-Big/vibebooth/packages/sdk-go/auth` 校验网关注入的令牌（`go.mod` 里按版本引用，例如 `v0.1.0`，对应平台仓库的标签 `packages/sdk-go/v0.1.0`），不自己解析请求头里的用户信息；其他语言要按同样的规则用 JWKS 公钥验签（RS256，`iss` 是 `home-platform`，`aud` 是模块 id）。
+- 不写登录代码。后端用 SDK `github.com/Beane-Big/vibebooth/packages/sdk-go/auth` 校验网关注入的令牌（`go.mod` 里按版本引用，例如 `v0.2.0`，对应平台仓库的标签 `packages/sdk-go/v0.2.0`），不自己解析请求头里的用户信息；其他语言要按同样的规则用 JWKS 公钥验签（RS256，`iss` 是 `home-platform`，`aud` 是模块 id）。
 - 接口权限用令牌里的功能权限判断（Go 里是 `auth.UserFrom(ctx).Has("<权限 id>")`，要 SDK `v0.2.0` 以上）；没有声明功能权限的模块用菜单判断（`HasMenu("<菜单 id>")`）。都不要用角色判断。前端可以让后端返回令牌里的权限，据此隐藏按钮，但真正的检查在后端。
 - 跨模块只调用对方 `/api/<id>/ext/v1/` 下的对外接口，不 import 其他模块的代码，也不读别人的数据。对外接口的契约写在 `contracts/openapi.yaml`，不兼容的改动新开 v2。
 - 人员（家庭成员等）由平台保存，不要在模块里另建人员表：用平台的对外接口 `http://core:8080/api/platform/ext/v1/` 读取人员名单（只读，模块不能改人员资料，头像只有管理员或本人在门户里换），模块只保存人员 id；显示人员时带上 `?viewer=<令牌里的 sub>` 并用 `displayName`，这样每个人看到的是自己写的备注（没写时是姓名）；要知道当前登录的是哪个人，用令牌里的 `sub`（账号 id）查 `users/{id}/person`。契约见平台仓库的 `contracts/openapi.yaml`。
