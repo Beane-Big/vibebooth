@@ -114,7 +114,7 @@ type appView struct {
 	Healthy     bool   `json:"healthy"`
 }
 
-// handleApps 返回当前用户至少有一个菜单的应用，并并发检查各模块健康状态。
+// handleApps 返回当前用户能用的应用（应用开关开着就有入口，里面能看哪些页面另按菜单算），并并发检查各模块健康状态。
 func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) {
 	g, err := s.store.Grants(r.Context(), user.ID)
 	if err != nil {
@@ -123,7 +123,7 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) 
 	}
 	var apps []*Module
 	for _, m := range s.registry.List() {
-		if len(menusFor(user, m, g)) > 0 {
+		if appAllowed(user, m, g) {
 			apps = append(apps, m)
 		}
 	}
@@ -175,7 +175,7 @@ func (s *Server) handleAppIcon(w http.ResponseWriter, r *http.Request, user *Use
 		internalError(w, err)
 		return
 	}
-	if len(menusFor(user, m, g)) == 0 {
+	if !appAllowed(user, m, g) {
 		http.NotFound(w, r)
 		return
 	}

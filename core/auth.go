@@ -269,14 +269,23 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		internalError(w, err)
 		return
 	}
+	// 应用开关关着时整个应用都不放行。开着但一个菜单都没有时，门户里有入口，页面给提示，接口仍然不放行：
+	// 有的模块（例如构建器）只靠这一条挡住没有页面的人。接口的细粒度权限由模块后端用令牌里的 menus 和 perms 判断。
 	menus := menusFor(user, app, g)
-	if len(menus) == 0 {
-		writeError(w, http.StatusForbidden, "没有访问这个应用的权限")
+	if !appAllowed(user, app, g) || (isAPI && len(menus) == 0) {
+		if isAPI {
+			writeError(w, http.StatusForbidden, "没有访问这个应用的权限")
+		} else {
+			writeDenied(w, app, deniedApp)
+		}
 		return
 	}
-	// 接口的细粒度权限由模块后端用令牌里的 menus 和 perms 判断；这里只拦页面。
 	if !isAPI && !canOpenPage(app, menus, path) {
-		writeError(w, http.StatusForbidden, "没有访问这个页面的权限")
+		if len(menus) == 0 {
+			writeDenied(w, app, deniedNoPages)
+		} else {
+			writeDenied(w, app, deniedPage)
+		}
 		return
 	}
 
