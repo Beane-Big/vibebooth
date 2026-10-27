@@ -74,7 +74,9 @@ body {
 @media (max-width: 575px) {
   .skin-tiles .topbar { top: 8px; margin: 8px 16px 0; border-radius: 16px; }
 }
-.topbar.topbar-collapsed { margin-top: -56px; transform: translateY(-100%); opacity: 0; pointer-events: none; }
+/* 收起的顶栏：负外边距等于顶栏高度，把它占的位置也让出来。主题包会用 .theme-<id> .topbar 改外边距，
+   这条要压过它们，所以外边距加 !important；高度由 Layout.tsx 量好写在 --topbar-height 上。 */
+.topbar.topbar-collapsed { margin-top: calc(-1 * var(--topbar-height, 56px)) !important; transform: translateY(-100%); opacity: 0; pointer-events: none; }
 .skin-tiles .topbar.topbar-collapsed { transform: translateY(calc(-100% - 12px)); }
 .topbar.topbar-collapsed + .layout-content { padding-top: 0; }
 @media (max-width: 575px) {
