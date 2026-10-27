@@ -32,7 +32,7 @@ export default function Layout({
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
   const topbarRef = useRef<HTMLElement>(null);
-  const topbarCollapsed = useCollapsibleTopbar(topbarRef);
+  const topbarHidden = useCollapsibleTopbar(topbarRef);
 
   async function logout() {
     await api.logout();
@@ -41,7 +41,10 @@ export default function Layout({
 
   return (
     <AntLayout className={skinClass(skin, activeTheme)} style={{ minHeight: "100vh", background: plain ? "var(--surface)" : undefined }}>
-      <AntLayout.Header ref={topbarRef} className={topbarCollapsed ? "topbar topbar-collapsed" : "topbar"}>
+      <AntLayout.Header
+        ref={topbarRef}
+        className={topbarHidden === "frame" ? "topbar topbar-hidden topbar-collapsed" : topbarHidden ? "topbar topbar-hidden" : "topbar"}
+      >
         {screens.sm && <span className="brand">Vibebooth</span>}
         {tabs}
         <Dropdown
@@ -97,10 +100,16 @@ export default function Layout({
 
 // 页面向下滚动时收起顶栏，向上滚动或回到顶部时恢复。模块在同源 iframe 里滚动，
 // 它的 scroll 事件不会冒泡到门户，所以加载后也监听 iframe 文档中的滚动容器。
-// 收起时顶栏要连同占的位置一起让出来，主题包可能改顶栏的高度（headerHeight）和外边距，
-// 所以量出顶栏的实际高度写到 --topbar-height，styles.css 按它算收起时的负外边距。
+// 门户页面自己滚动时（首页、用户、设置等）顶栏本来就随页面滚走了位置，只把它藏起来，不改布局：
+// 改了布局页面高度会变，滚到底部时浏览器把滚动位置往回拉，又触发展开，来回抖。
+// 模块的 iframe 占满顶栏下面的区域，收起时顶栏要连同占的位置一起让出来（返回 "frame"），iframe 跟着变高。
+// 主题包可能改顶栏的高度（headerHeight）和外边距，所以量出顶栏的实际高度写到 --topbar-height，styles.css 按它算收起时的负外边距。
+// iframe 变高同样会让滚动位置往回拉，所以收起或展开后等过渡结束再响应滚动；能滚动的距离不比让出的位置多时不收起，
+// 否则收起后就滚不动了，顶栏再也出不来。
+type TopbarHidden = false | "page" | "frame";
+
 function useCollapsibleTopbar(topbarRef: RefObject<HTMLElement | null>) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [hidden, setHidden] = useState<TopbarHidden>(false);
 
   useEffect(() => {
     const topbar = topbarRef.current;
@@ -112,12 +121,22 @@ function useCollapsibleTopbar(topbarRef: RefObject<HTMLElement | null>) {
 
   useEffect(() => {
     const frameCleanups = new Map<HTMLIFrameElement, () => void>();
+    let current: TopbarHidden = false;
+    let changedAt = 0;
 
-    function watchDocument(doc: Document, view: Window, active: () => boolean) {
+    function update(next: TopbarHidden) {
+      if (next === current) return;
+      current = next;
+      changedAt = performance.now();
+      setHidden(next);
+    }
+
+    // frame 是滚动发生在哪个模块的 iframe 里，门户页面自己滚动时为空。
+    function watchDocument(doc: Document, view: Window, frame?: HTMLIFrameElement) {
       const positions = new WeakMap<EventTarget, { y: number; direction: number; distance: number }>();
 
       function onScroll(e: Event) {
-        if (!active()) return;
+        if (frame && frame.getClientRects().length === 0) return;
         const target = e.target;
         if (!target) return;
         const y = target === doc ? view.scrollY : (target as HTMLElement).scrollTop;
@@ -126,7 +145,7 @@ function useCollapsibleTopbar(topbarRef: RefObject<HTMLElement | null>) {
         const previous = positions.get(target);
         if (!previous) {
           positions.set(target, { y, direction: 0, distance: 0 });
-          if (y <= 0) setCollapsed(false);
+          if (y <= 0) update(false);
           return;
         }
 
@@ -135,25 +154,36 @@ function useCollapsibleTopbar(topbarRef: RefObject<HTMLElement | null>) {
         if (y <= 0) {
           previous.direction = 0;
           previous.distance = 0;
-          setCollapsed(false);
+          update(false);
           return;
         }
         if (Math.abs(delta) < 1) return;
+        if (performance.now() - changedAt < 300) {
+          previous.direction = 0;
+          previous.distance = 0;
+          return;
+        }
 
         const direction = Math.sign(delta);
         previous.distance = previous.direction === direction ? previous.distance + Math.abs(delta) : Math.abs(delta);
         previous.direction = direction;
         if (previous.distance < 12) return;
 
-        setCollapsed(direction > 0);
         previous.distance = 0;
+        if (direction < 0) {
+          update(false);
+        } else if (!frame) {
+          update("page");
+        } else if (current === "frame" || scrollRange(target, doc, view) > frame.getBoundingClientRect().top) {
+          update("frame");
+        }
       }
 
       doc.addEventListener("scroll", onScroll, true);
       return () => doc.removeEventListener("scroll", onScroll, true);
     }
 
-    const stopWatchingPage = watchDocument(document, window, () => true);
+    const stopWatchingPage = watchDocument(document, window);
 
     function watchFrame(frame: HTMLIFrameElement) {
       if (frameCleanups.has(frame)) return;
@@ -163,7 +193,7 @@ function useCollapsibleTopbar(topbarRef: RefObject<HTMLElement | null>) {
         stopWatchingFrame();
         try {
           if (frame.contentDocument && frame.contentWindow) {
-            stopWatchingFrame = watchDocument(frame.contentDocument, frame.contentWindow, () => frame.getClientRects().length > 0);
+            stopWatchingFrame = watchDocument(frame.contentDocument, frame.contentWindow, frame);
           }
         } catch {
           // 非同源模块不能读取文档；它仍可正常使用，只是不参与顶栏的自动收起。
@@ -200,7 +230,7 @@ function useCollapsibleTopbar(topbarRef: RefObject<HTMLElement | null>) {
           (node) => node instanceof HTMLElement && (node.matches(".app-frames, .app-frames iframe") || node.querySelector(".app-frames iframe")),
         );
       });
-      if (activeTabChanged) setCollapsed(false);
+      if (activeTabChanged) update(false);
       refreshFrames();
     });
     if (content) observer.observe(content, { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] });
@@ -212,7 +242,14 @@ function useCollapsibleTopbar(topbarRef: RefObject<HTMLElement | null>) {
     };
   }, []);
 
-  return collapsed;
+  return hidden;
+}
+
+// scrollRange 是滚动容器最多能滚动的距离。
+function scrollRange(target: EventTarget, doc: Document, view: Window) {
+  if (target === doc) return doc.documentElement.scrollHeight - view.innerHeight;
+  const el = target as HTMLElement;
+  return el.scrollHeight - el.clientHeight;
 }
 
 // skinClass 是顶层的 class：内置皮肤是 skin-classic / skin-tiles，主题包是 skin-theme theme-<id>，主题的样式表可以据此写规则。
