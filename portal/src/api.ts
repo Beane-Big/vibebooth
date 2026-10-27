@@ -137,6 +137,9 @@ export const api = {
     request<{ photo: string }>("/api/platform/me/photo", { method: "PUT", body: JSON.stringify({ photo }) }),
   // 改自己的姓名（账号关联的成员的姓名）。
   setMyName: (name: string) => put("/api/platform/me/name", { name }),
+  // 改自己的密码，要先输入当前密码；其他设备要重新登录，当前设备不用。
+  setMyPassword: (currentPassword: string, password: string) =>
+    put("/api/platform/me/password", { currentPassword, password }),
   apps: () => request<App[]>("/api/platform/apps"),
   login: (username: string, password: string) =>
     request<Me>("/api/platform/auth/login", {
