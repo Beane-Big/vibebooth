@@ -1,22 +1,23 @@
-import { cloneElement, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
-import { Button, Dropdown, Grid, Layout as AntLayout, Modal, Segmented, Typography, theme } from "antd";
-import { CameraOutlined, LockOutlined, LogoutOutlined } from "@ant-design/icons";
+import { cloneElement, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { Button, Dropdown, Grid, Layout as AntLayout, Segmented, Typography, theme } from "antd";
+import { IdcardOutlined, LogoutOutlined } from "@ant-design/icons";
 import { api, type Me } from "../api";
-import MyPassword from "./MyPassword";
-import MyPhoto from "./MyPhoto";
 import PersonAvatar from "./PersonAvatar";
 import { useThemeMode, type ThemeMode } from "../theme";
 
 // 门户各页面共用的顶栏，只有一行：左边是平台名称，中间是标签栏（第一个固定是首页），右边是头像。
-// 用户、设置都是平台自带的应用，从首页打开（应用管理在设置里）；点头像可以切换外观、换自己的头像、改密码和退出登录。
+// 用户、设置都是平台自带的应用，从首页打开（应用管理在设置里）；点头像可以切换外观、打开“用户”应用看自己的资料和账号、退出登录。
+// onUserInfo 为空表示他不能用“用户”应用，菜单里就没有“用户信息”。
 export default function Layout({
   user,
   tabs,
+  onUserInfo,
   onLogout,
   children,
 }: {
   user: Me;
   tabs: ReactNode;
+  onUserInfo?: () => void;
   onLogout: () => void;
   children: ReactNode;
 }) {
@@ -24,9 +25,6 @@ export default function Layout({
   // 手机上只显示头像，名字收进下拉菜单；平台名称也不显示，给标签栏腾地方。
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
-  const [photo, setPhoto] = useState(user.photo);
-  const [photoOpen, setPhotoOpen] = useState(false);
-  const [passwordOpen, setPasswordOpen] = useState(false);
 
   async function logout() {
     await api.logout();
@@ -43,11 +41,7 @@ export default function Layout({
           placement="bottomRight"
           menu={{
             items: [
-              // 没关联成员的账号（比如客厅的平板）没有自己的头像。
-              ...(user.personId !== null
-                ? [{ key: "photo", icon: <CameraOutlined />, label: "更换头像", onClick: () => setPhotoOpen(true) }]
-                : []),
-              { key: "password", icon: <LockOutlined />, label: "修改密码", onClick: () => setPasswordOpen(true) },
+              ...(onUserInfo ? [{ key: "user", icon: <IdcardOutlined />, label: "用户信息", onClick: onUserInfo }] : []),
               { key: "logout", icon: <LogoutOutlined />, label: "退出登录", onClick: logout },
             ],
           }}
@@ -82,18 +76,12 @@ export default function Layout({
           )}
         >
           <Button type="text" style={{ paddingInline: 8, height: 40 }}>
-            <PersonAvatar person={{ name: user.displayName, photo }} size={28} />
+            <PersonAvatar person={{ name: user.displayName, photo: user.photo }} size={28} />
             {screens.sm && <span>{user.displayName}</span>}
           </Button>
         </Dropdown>
       </AntLayout.Header>
       {children}
-      <Modal title="更换头像" open={photoOpen} footer={null} onCancel={() => setPhotoOpen(false)} width={360}>
-        <MyPhoto name={user.displayName} photo={photo} onChange={setPhoto} />
-      </Modal>
-      <Modal title="修改密码" open={passwordOpen} footer={null} onCancel={() => setPasswordOpen(false)} width={360} destroyOnHidden>
-        <MyPassword username={user.username} onDone={() => setPasswordOpen(false)} />
-      </Modal>
     </AntLayout>
   );
 }

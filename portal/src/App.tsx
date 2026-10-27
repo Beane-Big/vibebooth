@@ -58,6 +58,7 @@ export default function App() {
   return (
     <Portal
       user={user}
+      onMeChanged={() => api.me().then(setUser).catch(console.error)}
       onLogout={() => {
         clearAppTabs();
         setUser(null);
@@ -68,7 +69,7 @@ export default function App() {
 
 // 门户只有首页一个页面，其余都在标签里：模块应用放在内嵌页，平台自带的应用（用户、设置）由门户直接渲染。
 // 直接访问自带应用的网址（例如按住 Ctrl 点卡片）时打开它的标签，地址栏回到首页；旧网址 /admin/modules 打开“设置”。
-function Portal({ user, onLogout }: { user: Me; onLogout: () => void }) {
+function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => void; onLogout: () => void }) {
   const [apps, setApps] = useState<AppInfo[] | null>(null);
   const [error, setError] = useState("");
   const tabs = useAppTabs();
@@ -116,8 +117,16 @@ function Portal({ user, onLogout }: { user: Me; onLogout: () => void }) {
     tabs.activate(PORTAL_TAB);
   }
 
+  // 头像菜单里的“用户信息”打开“用户”应用，自己排在第一个；没有“用户”应用的人没有这一项。
+  const usersApp = builtins.find((app) => app.id === "users");
+
   return (
-    <Layout user={user} tabs={<AppTabBar state={tabs} onRefresh={refresh} />} onLogout={onLogout}>
+    <Layout
+      user={user}
+      tabs={<AppTabBar state={tabs} onRefresh={refresh} />}
+      onUserInfo={usersApp && (() => tabs.open({ url: usersApp.url, title: usersApp.name }))}
+      onLogout={onLogout}
+    >
       <div className="content" style={tabs.active !== PORTAL_TAB ? { display: "none" } : undefined}>
         {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
         {apps && <Home apps={apps} builtins={builtins} onOpen={tabs.open} />}
@@ -130,7 +139,7 @@ function Portal({ user, onLogout }: { user: Me; onLogout: () => void }) {
             className="content"
             style={t.url !== tabs.active ? { display: "none" } : undefined}
           >
-            {t.url === "/admin/users" && <Users me={user} />}
+            {t.url === "/admin/users" && <Users me={user} onMeChanged={onMeChanged} />}
             {t.url === "/settings" && <Settings me={user} />}
           </div>
         ))}

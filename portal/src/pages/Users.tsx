@@ -26,6 +26,7 @@ import {
 } from "antd";
 import { AppstoreOutlined, ArrowLeftOutlined, HomeOutlined, PlusOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
 import { api, isAdmin, type AppGrant, type Grant, type Member, type Person, type PersonInput, type User, type UserMenus } from "../api";
+import MyPassword from "../components/MyPassword";
 import MyPhoto from "../components/MyPhoto";
 import PersonAvatar from "../components/PersonAvatar";
 import { confirmRules, passwordRules } from "../password";
@@ -40,9 +41,10 @@ type GrantKind = "app" | "perm" | "menu";
 // 应用超过这个数时，权限页签上出现搜索和“只看已开通”。
 const MANY_APPS = 6;
 
-// 用户应用：管理员管成员、账号和权限；有“成员”权限的普通用户只能看成员，给他们写只有自己看得到的备注。
-export default function Users({ me }: { me: User }) {
-  return isAdmin(me) ? <AdminUsers me={me} /> : <MemberRemarks />;
+// 用户应用：管理员管成员、账号和权限；有“成员”权限的普通用户只能看成员，给他们写只有自己看得到的备注，改自己的资料和密码。
+// onMeChanged 在改了自己的姓名或头像后调用，让顶栏跟着更新。
+export default function Users({ me, onMeChanged }: { me: User; onMeChanged: () => void }) {
+  return isAdmin(me) ? <AdminUsers me={me} /> : <MemberRemarks onMeChanged={onMeChanged} />;
 }
 
 // ListDetail 是左边列表、右边详情的布局。窄屏上先看列表，选中后只看详情，左上角返回列表。
@@ -77,8 +79,9 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
   );
 }
 
-// MemberRemarks 是普通用户看到的成员列表：左边是成员和自己写的备注，右边看资料、写备注，自己的资料可以改。没有账号、权限和管理员的备注。
-function MemberRemarks() {
+// MemberRemarks 是普通用户看到的成员列表：自己排第一个，左边是成员和自己写的备注，右边看资料、写备注。
+// 选中自己时右边是自己的资料和账号。没有账号、权限和管理员的备注。
+function MemberRemarks({ onMeChanged }: { onMeChanged: () => void }) {
   const [members, setMembers] = useState<Member[] | null>(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
@@ -93,7 +96,9 @@ function MemberRemarks() {
   useEffect(load, []);
 
   const q = query.trim().toLowerCase();
-  const shown = (members ?? []).filter((m) => !q || [m.name, m.remark].some((t) => t.toLowerCase().includes(q)));
+  const shown = (members ?? [])
+    .filter((m) => !q || [m.name, m.remark].some((t) => t.toLowerCase().includes(q)))
+    .sort((a, b) => Number(b.self) - Number(a.self));
   const current = members?.find((m) => m.id === selected);
 
   const list = (
@@ -108,7 +113,7 @@ function MemberRemarks() {
           key={m.id}
           avatar={<PersonAvatar person={m} />}
           title={m.name}
-          subtitle={m.remark || "没有备注"}
+          subtitle={m.self ? "我的资料和账号" : m.remark || "没有备注"}
           tags={m.self && <Tag color="blue">我</Tag>}
           active={m.id === selected}
           onClick={() => setSelected(m.id)}
@@ -117,7 +122,16 @@ function MemberRemarks() {
     </Card>
   );
 
-  const detail = current ? (
+  const detail = current?.self ? (
+    <SelfDetail
+      key={current.id}
+      member={current}
+      onSaved={() => {
+        load();
+        onMeChanged();
+      }}
+    />
+  ) : current ? (
     <MemberDetail key={current.id} member={current} onSaved={load} />
   ) : (
     <Card>
@@ -128,18 +142,15 @@ function MemberRemarks() {
   return <ListDetail list={list} detail={detail} selected={!!current} onBack={() => setSelected(null)} />;
 }
 
-// MemberDetail 是普通用户看到的一个成员：别人的姓名只能看，可以写只有自己看得到的备注；
-// 自己的姓名和头像可以改，改的是自己关联的成员，各个应用里都会看到。
+// MemberDetail 是普通用户看到的别人：姓名只能看，可以写只有自己看得到的备注。
 function MemberDetail({ member, onSaved }: { member: Member; onSaved: () => void }) {
   const { message } = AntApp.useApp();
-  const [name, setName] = useState(member.name);
   const [remark, setRemark] = useState(member.remark);
-  const [photoOpen, setPhotoOpen] = useState(false);
 
-  async function act(action: () => Promise<void>, success: string) {
+  async function save() {
     try {
-      await action();
-      message.success(success);
+      await api.setRemark(member.id, remark);
+      message.success(remark.trim() ? "备注已保存" : "备注已删除");
       onSaved();
     } catch (err) {
       message.error(err instanceof Error ? err.message : "保存失败");
@@ -156,34 +167,20 @@ function MemberDetail({ member, onSaved }: { member: Member; onSaved: () => void
           </Typography.Title>
           <Typography.Text type="secondary">{member.remark || "没有备注"}</Typography.Text>
         </Flex>
-        {member.self && <Button onClick={() => setPhotoOpen(true)}>更换头像</Button>}
       </Flex>
       <Row gutter={16} style={{ marginTop: 24 }}>
         <Col xs={24} md={12}>
-          <Form layout="vertical" requiredMark={false} onFinish={() => act(() => api.setMyName(name), "姓名已保存")}>
+          <Form layout="vertical">
             <Form.Item label="姓名">
-              {member.self ? (
-                <Space.Compact style={{ width: "100%" }}>
-                  <Input value={name} maxLength={30} onChange={(e) => setName(e.target.value)} />
-                  <Button type="primary" htmlType="submit" disabled={!name.trim() || name.trim() === member.name}>
-                    保存
-                  </Button>
-                </Space.Compact>
-              ) : (
-                <Input value={member.name} disabled />
-              )}
+              <Input value={member.name} disabled />
             </Form.Item>
           </Form>
         </Col>
         <Col xs={24} md={12}>
-          <Form
-            layout="vertical"
-            requiredMark={false}
-            onFinish={() => act(() => api.setRemark(member.id, remark), remark.trim() ? "备注已保存" : "备注已删除")}
-          >
-            <Form.Item label="我的备注" extra="只有你自己看得到。写了备注，家庭优化大师等其他应用里给你显示的就是备注，不是姓名。">
+          <Form layout="vertical" requiredMark={false} onFinish={save}>
+            <Form.Item label="我的备注">
               <Space.Compact style={{ width: "100%" }}>
-                <Input value={remark} maxLength={200} placeholder="比如：老爸、宝贝" onChange={(e) => setRemark(e.target.value)} />
+                <Input value={remark} maxLength={200} onChange={(e) => setRemark(e.target.value)} />
                 <Button type="primary" htmlType="submit" disabled={remark.trim() === member.remark}>
                   保存
                 </Button>
@@ -192,10 +189,74 @@ function MemberDetail({ member, onSaved }: { member: Member; onSaved: () => void
           </Form>
         </Col>
       </Row>
+    </Card>
+  );
+}
+
+// SelfDetail 是普通用户看到的自己，和管理员看成员一样分页签：资料里改姓名和头像（改的是自己关联的成员，各个应用里都会看到），
+// 账号里改密码。
+function SelfDetail({ member, onSaved }: { member: Member; onSaved: () => void }) {
+  const { message } = AntApp.useApp();
+  const [tab, setTab] = useState("profile");
+  const [name, setName] = useState(member.name);
+  const [photoOpen, setPhotoOpen] = useState(false);
+
+  async function saveName() {
+    try {
+      await api.setMyName(name);
+      message.success("姓名已保存");
+      onSaved();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "保存失败");
+    }
+  }
+
+  return (
+    <>
+      <DetailCard
+        avatar={<PersonAvatar person={member} size={56} />}
+        title={member.name}
+        subtitle="这是你自己"
+        tab={tab}
+        onTab={setTab}
+        items={[
+          {
+            key: "profile",
+            label: "资料",
+            children: (
+              <Row gutter={16}>
+                <Col xs={24} md={12}>
+                  <Form layout="vertical" requiredMark={false} onFinish={saveName}>
+                    <Form.Item label="姓名">
+                      <Space.Compact style={{ width: "100%" }}>
+                        <Input value={name} maxLength={30} onChange={(e) => setName(e.target.value)} />
+                        <Button type="primary" htmlType="submit" disabled={!name.trim() || name.trim() === member.name}>
+                          保存
+                        </Button>
+                      </Space.Compact>
+                    </Form.Item>
+                  </Form>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form layout="vertical">
+                    <Form.Item label="头像">
+                      <Flex gap={12} align="center">
+                        <PersonAvatar person={member} size={32} />
+                        <Button onClick={() => setPhotoOpen(true)}>更换头像</Button>
+                      </Flex>
+                    </Form.Item>
+                  </Form>
+                </Col>
+              </Row>
+            ),
+          },
+          { key: "account", label: "账号", children: <MyPassword /> },
+        ]}
+      />
       <Modal title="更换头像" open={photoOpen} footer={null} onCancel={() => setPhotoOpen(false)} width={360}>
         <MyPhoto name={member.name} photo={member.photo} onChange={onSaved} />
       </Modal>
-    </Card>
+    </>
   );
 }
 
