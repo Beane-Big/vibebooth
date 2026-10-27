@@ -160,7 +160,7 @@ function MemberDetail({ member, onSaved }: { member: Member; onSaved: () => void
       <Row gutter={16} style={{ marginTop: 24 }}>
         <Col xs={24} md={12}>
           <Form layout="vertical" requiredMark={false} onFinish={() => act(() => api.setMyName(name), "姓名已保存")}>
-            <Form.Item label="姓名" extra={member.self && "这是你自己，可以改姓名和头像。"}>
+            <Form.Item label="姓名">
               {member.self ? (
                 <Space.Compact style={{ width: "100%" }}>
                   <Input value={name} maxLength={30} onChange={(e) => setName(e.target.value)} />
@@ -685,7 +685,7 @@ function AccountDetail({ user, persons, me, onSaved }: { user: User; persons: Pe
   );
 }
 
-type CreateForm = { username: string; displayName?: string; password: string; confirm: string; admin: boolean };
+type CreateForm = { username: string; password: string; confirm: string; admin: boolean };
 
 // 设置密码时要输入两次：passwordRules 校验长度，confirmRules 校验和 password 字段一致。
 const passwordRules = [
@@ -720,7 +720,8 @@ function AddAccount({
   async function create(values: CreateForm) {
     try {
       const { confirm: _, ...input } = values;
-      const u = await api.createUser({ ...input, displayName: values.displayName || person.name, personId: person.id });
+      // 关联了成员的账号显示名称就是成员姓名。
+      const u = await api.createUser({ ...input, displayName: person.name, personId: person.id });
       message.success("账号已开通");
       form.resetFields();
       setAdding(null);
@@ -764,11 +765,8 @@ function AddAccount({
                 <Input autoCapitalize="none" />
               </Form.Item>
             </Col>
-            <Col xs={24} md={12}>
-              <Form.Item label="显示名称" name="displayName">
-                <Input placeholder={`不填则用“${person.name}”`} />
-              </Form.Item>
-            </Col>
+          </Row>
+          <Row gutter={16}>
             <Col xs={24} md={12}>
               <Form.Item label="初始密码（至少 8 位）" name="password" rules={passwordRules}>
                 <Input.Password autoComplete="new-password" />
@@ -821,6 +819,7 @@ function AddAccount({
 }
 
 // AccountSettings 是一个账号的显示名称、管理员、停用和重置密码；link 是关联或解除关联成员的操作。
+// 关联了成员的账号显示名称跟着成员姓名，这里只能看。
 // 开关和权限页签一样拨动即保存，显示名称要点“保存”。
 function AccountSettings({ user, me, onSaved, link }: { user: User; me: User; onSaved: () => void; link: ReactNode }) {
   const { message } = AntApp.useApp();
@@ -863,14 +862,20 @@ function AccountSettings({ user, me, onSaved, link }: { user: User; me: User; on
             </Form.Item>
           </Col>
           <Col xs={24} md={12}>
-            <Form.Item label="显示名称" required>
-              <Space.Compact style={{ width: "100%" }}>
-                <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
-                <Button type="primary" htmlType="submit" disabled={displayName.trim() === user.displayName}>
-                  保存
-                </Button>
-              </Space.Compact>
-            </Form.Item>
+            {user.personId !== null ? (
+              <Form.Item label="显示名称">
+                <Input value={user.displayName} disabled />
+              </Form.Item>
+            ) : (
+              <Form.Item label="显示名称" required>
+                <Space.Compact style={{ width: "100%" }}>
+                  <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
+                  <Button type="primary" htmlType="submit" disabled={displayName.trim() === user.displayName}>
+                    保存
+                  </Button>
+                </Space.Compact>
+              </Form.Item>
+            )}
           </Col>
         </Row>
       </Form>

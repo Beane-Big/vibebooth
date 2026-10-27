@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS person_remarks (
 	remark    TEXT NOT NULL,
 	PRIMARY KEY (user_id, person_id)
 );
+-- 关联了人员的账号，显示名称就是人员姓名。改姓名、关联账号时会一起改；这里把以前不一致的数据对齐一次。
+UPDATE users u SET display_name = p.name FROM persons p WHERE p.id = u.person_id AND u.display_name <> p.name;
 `
 
 func (s *Store) Migrate(ctx context.Context) error {
@@ -131,7 +133,7 @@ func rolesFor(admin bool) []string {
 	return []string{"user"}
 }
 
-// CreateUser 新建账号；personID 不为 nil 时同时关联到这个人员，人员不存在时返回 errPersonNotFound。
+// CreateUser 新建账号；personID 不为 nil 时同时关联到这个人员，显示名称用人员姓名，人员不存在时返回 errPersonNotFound。
 func (s *Store) CreateUser(ctx context.Context, username, displayName, password string, admin bool, personID *int64) (*User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -139,9 +141,10 @@ func (s *Store) CreateUser(ctx context.Context, username, displayName, password 
 	}
 	u := &User{Username: username, DisplayName: displayName, Roles: rolesFor(admin), PersonID: personID}
 	err = s.pool.QueryRow(ctx,
-		`INSERT INTO users (username, display_name, password_hash, roles, person_id) VALUES ($1, $2, $3, $4, $5)
-		 ON CONFLICT (username) DO NOTHING RETURNING id`,
-		username, displayName, string(hash), u.Roles, personID).Scan(&u.ID)
+		`INSERT INTO users (username, display_name, password_hash, roles, person_id)
+		 VALUES ($1, COALESCE((SELECT name FROM persons WHERE id = $5), $2), $3, $4, $5)
+		 ON CONFLICT (username) DO NOTHING RETURNING id, display_name`,
+		username, displayName, string(hash), u.Roles, personID).Scan(&u.ID, &u.DisplayName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, errUsernameTaken
 	}
@@ -151,9 +154,11 @@ func (s *Store) CreateUser(ctx context.Context, username, displayName, password 
 	return u, err
 }
 
-// SetUserPerson 把账号关联到人员，personID 为 nil 时解除关联。
+// SetUserPerson 把账号关联到人员，显示名称改成人员姓名；personID 为 nil 时解除关联，显示名称保持不变。
 func (s *Store) SetUserPerson(ctx context.Context, id int64, personID *int64) error {
-	_, err := s.pool.Exec(ctx, `UPDATE users SET person_id = $2 WHERE id = $1`, id, personID)
+	_, err := s.pool.Exec(ctx,
+		`UPDATE users SET person_id = $2, display_name = COALESCE((SELECT name FROM persons WHERE id = $2), display_name) WHERE id = $1`,
+		id, personID)
 	if isForeignKeyViolation(err) {
 		return errPersonNotFound
 	}
@@ -182,10 +187,12 @@ func (s *Store) UserByID(ctx context.Context, id int64) (*User, error) {
 	return &u, err
 }
 
-// UpdateUser 修改显示名、是否管理员、是否停用。停用时删除这个人的全部会话，让他立即退出。
+// UpdateUser 修改显示名、是否管理员、是否停用；关联了人员的账号显示名称跟着人员姓名，传入的 displayName 不生效。
+// 停用时删除这个人的全部会话，让他立即退出。
 func (s *Store) UpdateUser(ctx context.Context, id int64, displayName string, admin, disabled bool) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE users SET display_name = $2, roles = $3, disabled = $4 WHERE id = $1`,
+		`UPDATE users SET display_name = COALESCE((SELECT name FROM persons WHERE id = users.person_id), $2), roles = $3, disabled = $4
+		 WHERE id = $1`,
 		id, displayName, rolesFor(admin), disabled)
 	if err == nil && disabled {
 		_, err = s.pool.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, id)
@@ -264,15 +271,24 @@ func (s *Store) CreatePerson(ctx context.Context, name, note, photo string) (*Pe
 		`INSERT INTO persons (name, note, photo) VALUES ($1, $2, $3) RETURNING `+personColumns, name, note, photo))
 }
 
+// UpdatePerson 和 UpdatePersonName 改姓名时，关联的账号显示名称一起改。
 func (s *Store) UpdatePerson(ctx context.Context, id int64, name, note, photo string) (*Person, error) {
-	return scanPerson(s.pool.QueryRow(ctx,
-		`UPDATE persons SET name = $2, note = $3, photo = $4, updated_at = now() WHERE id = $1 RETURNING `+personColumns,
+	return scanPerson(s.pool.QueryRow(ctx, syncAccountNames(
+		`UPDATE persons SET name = $2, note = $3, photo = $4, updated_at = now() WHERE id = $1 RETURNING `+personColumns),
 		id, name, note, photo))
 }
 
 func (s *Store) UpdatePersonName(ctx context.Context, id int64, name string) (*Person, error) {
-	return scanPerson(s.pool.QueryRow(ctx,
-		`UPDATE persons SET name = $2, updated_at = now() WHERE id = $1 RETURNING `+personColumns, id, name))
+	return scanPerson(s.pool.QueryRow(ctx, syncAccountNames(
+		`UPDATE persons SET name = $2, updated_at = now() WHERE id = $1 RETURNING `+personColumns), id, name))
+}
+
+// syncAccountNames 包住一条以 $1 为人员 id、$2 为新姓名的 UPDATE persons 语句，在同一条语句里把关联账号的显示名称改成新姓名。
+// 人员不存在时两边都不改，照样返回 0 行。
+func syncAccountNames(update string) string {
+	return `WITH p AS (` + update + `),
+		u AS (UPDATE users SET display_name = $2 WHERE person_id = (SELECT id FROM p))
+		SELECT * FROM p`
 }
 
 func (s *Store) UpdatePersonPhoto(ctx context.Context, id int64, photo string) (*Person, error) {
