@@ -7,6 +7,7 @@ import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
+import Themes from "./pages/Themes";
 import Users from "./pages/Users";
 import { useThemeMode } from "./theme";
 import { useActiveTheme } from "./themeHost";
@@ -125,7 +126,6 @@ function Portal({ user, onLogout }: { user: Me; onLogout: () => void }) {
       user={user}
       tabs={<AppTabBar state={tabs} onRefresh={refresh} />}
       onLogout={onLogout}
-      themes={theme.themes}
       activeTheme={theme.active?.id}
       // 彩色方块皮肤的首页用卡片的底色（浅色时是纯白），彩色图标更干净；其他页面的卡片还是放在灰底上。
       plain={skin === "tiles" && tabs.active === PORTAL_TAB}
@@ -146,6 +146,7 @@ function Portal({ user, onLogout }: { user: Me; onLogout: () => void }) {
           >
             {t.url === "/admin/users" && <Users me={user} />}
             {t.url === "/settings" && <Settings me={user} />}
+            {t.url === "/themes" && <Themes me={user} themes={theme.themes} />}
           </div>
         ))}
       <AppFrames state={tabs} onEmbeddedPortal={onEmbeddedPortal} />

@@ -136,7 +136,7 @@ flowchart TB
 
 主题换门户的颜色、背景、组件样式、玻璃效果和首页，规范见 [docs/theme-spec.md](docs/theme-spec.md)。主题只有前端文件，没有容器：
 
-- 在“设置 → 主题”页上传（或命令行 `installer install-theme <zip>`），安装器校验后解压到 `modules-data` 卷的 `.themes/<id>/`。目录以 `.` 开头，`core` 扫描模块时跳过它。主题带脚本时要管理员确认（命令行加 `--allow-script`），因为脚本在门户里以使用者的身份运行。
+- 在“主题”应用里上传（要“应用管理”权限）（或命令行 `installer install-theme <zip>`），安装器校验后解压到 `modules-data` 卷的 `.themes/<id>/`。目录以 `.` 开头，`core` 扫描模块时跳过它。主题带脚本时要管理员确认（命令行加 `--allow-script`），因为脚本在门户里以使用者的身份运行。
 - `core` 的 `GET /api/platform/themes` 列出主题，`GET /api/platform/themes/<id>/<文件>` 只发清单声明的文件和 `assets/` 下的文件，都要登录。
 - 门户把自己的 React 和一部分 Ant Design 组件放在 `window.vibebooth` 上，加载选用的主题脚本，主题调用 `registerTheme` 注册颜色参数、背景、玻璃效果和首页组件（`portal/src/themeHost.tsx`）。内置皮肤“经典”和“彩色方块”不是主题包，在门户代码里。
 - 模块的页面在 iframe 里，不受主题影响。

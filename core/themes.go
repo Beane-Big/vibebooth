@@ -36,7 +36,7 @@ func (s *Server) themes() []*manifest.Theme {
 	return list
 }
 
-// handleThemes 返回已安装的主题，所有登录的人都能看到，在头像菜单里选用。
+// handleThemes 返回已安装的主题，所有登录的人都能看到，在“主题”应用里选用。
 func (s *Server) handleThemes(w http.ResponseWriter, _ *http.Request, _ *User) {
 	writeJSON(w, http.StatusOK, s.themes())
 }

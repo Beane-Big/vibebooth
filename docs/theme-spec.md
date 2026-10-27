@@ -10,8 +10,8 @@
 
 1. `npx github:Beane-Big/create-vibebooth-theme <id>`：生成主题仓库 `vibebooth-theme-<id>/`，里面是一个能直接用的玻璃效果示例。
 2. `npm run dev`：本机预览，模拟门户的顶栏、首页和常见组件，可切换深浅色。不需要本机有平台。
-3. `npm run install:local`：打包并装到本机平台（要 Docker 和本机平台），在头像菜单的“皮肤”里选用。
-4. `npm run pack` 生成的 `dist/<id>-<版本>.zip` 就是要上传到正式平台“设置 → 主题”页的主题包。改了代码要发布时先改 `theme.yaml` 的 `version`。
+3. `npm run install:local`：打包并装到本机平台（要 Docker 和本机平台），在“主题”应用里选用。
+4. `npm run pack` 生成的 `dist/<id>-<版本>.zip` 就是要上传到正式平台“主题”应用的主题包。它会先截一张预览页的图作为截图。改了代码要发布时先改 `theme.yaml` 的 `version`。
 
 ## 主题包
 
@@ -22,7 +22,7 @@ zip 根目录：
 | `theme.yaml` | 清单，见下 |
 | `theme.js` | 主题的脚本（IIFE 格式），清单的 `script` |
 | `theme.css` | 主题的样式表，清单的 `style` |
-| 预览图 | 清单的 `preview`，`.svg`、`.png`、`.jpg`、`.webp` |
+| 截图 | 清单的 `preview`，`.png`、`.jpg`、`.webp`（也接受 `.svg`），“主题”应用里显示它，应该是主题真实的页面截图，建议 1280×800 |
 | `assets/` | 图片、字体等附带文件 |
 
 ```yaml
@@ -33,7 +33,7 @@ description: "渐变背景和玻璃效果"
 version: 0.1.0
 script: theme.js
 style: theme.css
-preview: preview.svg
+preview: preview.png
 ```
 
 ## 安装器检查的规则
@@ -45,7 +45,7 @@ preview: preview.svg
 - **大小**：解压后不超过 20 MB，上传的 zip 不超过 25 MB。
 - **脚本要确认**：带 `script` 的主题，管理员要在页面上确认（命令行 `installer install-theme <zip> --allow-script`）才安装。没有声明 `script` 的主题，`assets/` 里也不能有 `.js`。
 
-只有有“应用管理”权限的人能安装和卸载主题。装好的主题所有登录的人都能选用，每个人在头像菜单的“皮肤”里选，选择存在自己的浏览器里。
+只有有“应用管理”权限的人能安装和卸载主题。装好的主题所有登录的人都能选用，每个人在首页的“主题”应用里选，选择存在自己的浏览器里；“主题”应用里每个皮肤显示一张截图，内置的“经典”“彩色方块”也在里面。
 
 ## 安全
 

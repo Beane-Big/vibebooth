@@ -1,18 +1,14 @@
 import { useState } from "react";
 import { Card, Col, Empty, Menu, Row } from "antd";
-import { AppstoreOutlined, SkinOutlined } from "@ant-design/icons";
+import { AppstoreOutlined } from "@ant-design/icons";
 import { hasPerm, type Me } from "../api";
 import Modules from "./Modules";
-import Themes from "./Themes";
 
-// 平台自带的“设置”应用：左边是设置项，右边是选中项的内容。目前有“应用管理”和“主题”，都要有“应用管理”权限才显示，
-// 没有的人看到空页面。
+// 平台自带的“设置”应用：左边是设置项，右边是选中项的内容。目前只有“应用管理”，要有“应用管理”权限才显示，
+// 没有的人看到空页面。主题的上传和卸载在“主题”应用里。
 export default function Settings({ me }: { me: Me }) {
   const items = hasPerm(me, "modules")
-    ? [
-        { key: "modules", icon: <AppstoreOutlined />, label: "应用管理" },
-        { key: "themes", icon: <SkinOutlined />, label: "主题" },
-      ]
+    ? [{ key: "modules", icon: <AppstoreOutlined />, label: "应用管理" }]
     : [];
   const [active, setActive] = useState(items[0]?.key ?? "");
 
@@ -32,7 +28,6 @@ export default function Settings({ me }: { me: Me }) {
       </Col>
       <Col xs={24} lg={18}>
         {active === "modules" && <Modules />}
-        {active === "themes" && <Themes />}
       </Col>
     </Row>
   );

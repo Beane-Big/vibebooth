@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { SettingOutlined, TeamOutlined } from "@ant-design/icons";
+import { SettingOutlined, SkinOutlined, TeamOutlined } from "@ant-design/icons";
 import { hasPerm, isAdmin, type Me, type PlatformPerm } from "./api";
 
 // 平台自带的应用：代码在门户里，交互和模块一样，出现在应用页，点开是一个标签页。
@@ -12,8 +12,8 @@ export type BuiltinApp = {
   icon: ReactNode;
   // 彩色方块皮肤里图标底色的渐变，从左上到右下两种颜色。
   tint: [string, string];
-  // 要有平台的哪项功能权限才能看到；不写表示只给管理员。
-  perm?: PlatformPerm;
+  // 要有平台的哪项功能权限才能看到，everyone 表示所有人都能看到；不写表示只给管理员。
+  perm?: PlatformPerm | "everyone";
 };
 
 export const builtinApps: BuiltinApp[] = [
@@ -37,6 +37,16 @@ export const builtinApps: BuiltinApp[] = [
     tint: ["#ff7a6b", "#9b4dff"],
     perm: "settings",
   },
+  // 每个人在这里给自己选主题；有“应用管理”权限的人还能上传和卸载主题包。
+  {
+    id: "themes",
+    name: "主题",
+    description: "换门户的外观",
+    url: "/themes",
+    icon: <SkinOutlined />,
+    tint: ["#ffc75f", "#ff5f8f"],
+    perm: "everyone",
+  },
 ];
 
 // 以前单独存在、现在并进别的自带应用的网址：“应用管理”在“设置”里。
@@ -44,6 +54,6 @@ export const builtinAliases: Record<string, string> = { "/admin/modules": "/sett
 
 // 这个人能看到的自带应用。其他人输入网址也只会看到首页，接口本身也会拒绝。
 export const builtinAppsFor = (me: Me) =>
-  builtinApps.filter((app) => (app.perm ? hasPerm(me, app.perm) : isAdmin(me)));
+  builtinApps.filter((app) => (app.perm === "everyone" || (app.perm ? hasPerm(me, app.perm) : isAdmin(me))));
 
 export const isBuiltinURL = (url: string) => builtinApps.some((app) => app.url === url);
