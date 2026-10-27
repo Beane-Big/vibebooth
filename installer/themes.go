@@ -105,7 +105,7 @@ func (in *Installer) InstallTheme(zipPath string, allowScript bool, log io.Write
 	if err := replaceDir(staging, filepath.Join(in.themesDir(), t.ID)); err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(log, "主题 %s %s 已安装，在头像菜单的“皮肤”里选用\n", t.ID, t.Version)
+	fmt.Fprintf(log, "主题 %s %s 已安装，在“主题”应用里选用\n", t.ID, t.Version)
 	return t, nil
 }
 
