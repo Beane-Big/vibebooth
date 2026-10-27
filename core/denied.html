@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.App}}</title>
+<script>
+  // 和门户用同一个外观设置（同一个网站，本地存储共用）：选了浅色或深色就照着来，没选时跟随系统。
+  try {
+    var mode = localStorage.getItem("vb-theme");
+    if (mode === "light" || mode === "dark") document.documentElement.dataset.theme = mode;
+  } catch (e) {}
+</script>
+<style>
+  /* 颜色和门户默认的 Fluent 2 色板一致。 */
+  :root {
+    --bg: #f5f5f5;
+    --surface: #ffffff;
+    --text: #242424;
+    --muted: #616161;
+    --accent: #0f6cbd;
+    --accent-soft: #ebf3fc;
+    --shadow: 0 0 2px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1f1f1f;
+      --surface: #292929;
+      --text: #ffffff;
+      --muted: #adadad;
+      --accent: #479ef5;
+      --accent-soft: #1f3a56;
+      --shadow: 0 0 2px rgba(0,0,0,0.24), 0 2px 4px rgba(0,0,0,0.28);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1f1f1f;
+    --surface: #292929;
+    --text: #ffffff;
+    --muted: #adadad;
+    --accent: #479ef5;
+    --accent-soft: #1f3a56;
+    --shadow: 0 0 2px rgba(0,0,0,0.24), 0 2px 4px rgba(0,0,0,0.28);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  main {
+    width: 100%;
+    max-width: 420px;
+    padding: 40px 28px 32px;
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    text-align: center;
+  }
+  svg { width: 132px; height: 132px; }
+  h1 { margin: 20px 0 8px; font-size: 20px; font-weight: 600; line-height: 1.4; }
+  p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+  a.button {
+    display: inline-block;
+    margin-top: 24px;
+    padding: 6px 20px;
+    border-radius: 4px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  a.button[hidden] { display: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    .key { animation: float 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  }
+  @keyframes float { 50% { transform: translateY(-4px) rotate(-6deg); } }
+</style>
+</head>
+<body>
+<main>
+  <svg viewBox="0 0 132 132" aria-hidden="true">
+    <circle cx="66" cy="66" r="62" fill="var(--accent-soft)"/>
+    <rect x="40" y="30" width="46" height="72" rx="6" fill="var(--surface)" stroke="var(--accent)" stroke-width="3"/>
+    <path d="M86 34 L98 40 V96 L86 100" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linejoin="round"/>
+    <circle cx="76" cy="68" r="3.5" fill="var(--accent)"/>
+    <g class="key">
+      <circle cx="112" cy="56" r="6.5" fill="none" stroke="var(--accent)" stroke-width="3"/>
+      <path d="M112 62.5 V82 M112 75 H117 M112 80 H116" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <path d="M24 40 q1.5 4.5 6 6 q-4.5 1.5 -6 6 q-1.5 -4.5 -6 -6 q4.5 -1.5 6 -6 z M28 84 q1 3 4 4 q-3 1 -4 4 q-1 -3 -4 -4 q3 -1 4 -4 z" fill="var(--accent)" opacity="0.45"/>
+  </svg>
+  <h1>{{.Title}}</h1>
+  <p>{{.Detail}}</p>
+  <a class="button" href="/" id="portal" hidden>返回首页</a>
+</main>
+<script>
+  // 在门户的标签页里打开时用门户的标签栏回去，不放链接；单独打开时给一个回门户的按钮。
+  if (window.top === window.self) document.getElementById("portal").hidden = false;
+</script>
+</body>
+</html>

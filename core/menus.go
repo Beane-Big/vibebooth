@@ -35,7 +35,8 @@ func permsFor(user *User, m *Module, g grants) []string {
 	return grantedPerms(user, m, g)
 }
 
-// menusFor 返回一个人在某个模块里能用的菜单。不能用这个应用时一个都没有，门户里看不到，网关也不放行。
+// menusFor 返回一个人在某个模块里能用的菜单。不能用这个应用时一个都没有；能用时也可能一个都没有，
+// 这时门户里有入口，打开后网关给他看“暂无可访问的页面”的提示。
 func menusFor(user *User, m *Module, g grants) []manifest.Menu {
 	if !appAllowed(user, m, g) {
 		return nil
@@ -43,9 +44,13 @@ func menusFor(user *User, m *Module, g grants) []manifest.Menu {
 	return grantedMenus(user, m, g)
 }
 
-// appAllowed 判断一个人能不能用整个应用：有单独设置的按设置；没有的，平台默认都能用，模块按菜单的默认值和
-// 单独设置至少有一个菜单才能用（和以前一样）。管理员总能用，避免把自己锁在外面。
+// appAllowed 判断一个人能不能用整个应用，也就是门户里有没有它的入口；里面能看哪些页面另按菜单算，可能一个都没有。
+// 有单独设置的按设置；没有的，平台默认都能用，模块按菜单的默认值和单独设置至少有一个菜单才能用（和以前一样）。
+// 管理员总能用，避免把自己锁在外面。只有后端的模块没有入口，谁都不能用，它的接口只给其他模块在内部调用。
 func appAllowed(user *User, m *Module, g grants) bool {
+	if m != platformModule && len(m.Menus) == 0 {
+		return false
+	}
 	if user.IsAdmin() {
 		return true
 	}
