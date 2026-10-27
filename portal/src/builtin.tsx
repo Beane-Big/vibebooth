@@ -10,6 +10,8 @@ export type BuiltinApp = {
   description: string;
   url: string;
   icon: ReactNode;
+  // 彩色方块皮肤里图标底色的渐变，从左上到右下两种颜色。
+  tint: [string, string];
   // 要有平台的哪项功能权限才能看到；不写表示只给管理员。
   perm?: PlatformPerm;
 };
@@ -23,6 +25,7 @@ export const builtinApps: BuiltinApp[] = [
     description: "家庭成员和他们的账号",
     url: "/admin/users",
     icon: <TeamOutlined />,
+    tint: ["#4fd2ff", "#0a5cff"],
     perm: "members",
   },
   {
@@ -31,6 +34,7 @@ export const builtinApps: BuiltinApp[] = [
     description: "平台的系统设置和应用管理",
     url: "/settings",
     icon: <SettingOutlined />,
+    tint: ["#ff7a6b", "#9b4dff"],
     perm: "settings",
   },
 ];
