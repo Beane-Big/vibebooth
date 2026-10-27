@@ -57,6 +57,23 @@ body {
 .app-frames { flex: 1; position: relative; }
 .app-frames iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
 
+/* 彩色方块皮肤的顶栏：照 joypixels.com，悬浮在页面上的圆角长条，和下面的内容一样宽、阴影更柔更散；
+   平台名称用渐变色，选中的标签是一个描边的胶囊。 */
+.skin-tiles .topbar {
+  top: 12px; margin: 12px max(16px, (100% - 1088px) / 2) 0; border-radius: 20px;
+  box-shadow: var(--float-shadow);
+}
+.skin-tiles .brand {
+  font-size: 18px; font-weight: 700; padding-inline: 4px 8px;
+  background: linear-gradient(120deg, #2f8cff, #9b4dff); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.skin-tiles .app-tabbar .ant-tabs-tab { border-radius: 999px !important; border: 1.5px solid transparent !important; padding: 5px 14px !important; }
+.skin-tiles .app-tabbar .ant-tabs-tab-active { background: transparent !important; border-color: var(--text) !important; }
+.skin-tiles .topbar .ant-btn { border-radius: 999px; }
+@media (max-width: 575px) {
+  .skin-tiles .topbar { top: 8px; margin: 8px 16px 0; border-radius: 16px; }
+}
+
 pre.log {
   margin: 0;
   padding: 12px;
@@ -85,3 +102,65 @@ pre.log {
 .app-grants .ant-collapse-content-box { padding-top: 0 !important; }
 .app-grant-icon { width: 32px; height: 32px; border-radius: 8px; flex: none; object-fit: cover; }
 .grant-group { display: block; margin-top: 8px; font-size: 12px; }
+
+/* 彩色方块皮肤：静态网格，一行的个数按设备定：手机 3 个、平板 4 个、电脑 6 个，方块跟着屏幕宽度等比缩放。
+   方块里的图形、名称胶囊、阴影都按方块边长（cqw）算，方块变大变小时一起缩放。圆角取边长的 22%，和 joypixels.com 的应用图标一样。 */
+.app-tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 28px 24px; padding-top: 8px; }
+@media (max-width: 991px) { .app-tiles { grid-template-columns: repeat(4, 1fr); gap: 24px 20px; } }
+@media (max-width: 575px) { .app-tiles { grid-template-columns: repeat(3, 1fr); gap: 16px 14px; } }
+.app-tile { display: block; min-width: 0; color: inherit; }
+.app-tile-square { display: block; position: relative; container-type: inline-size; width: 100%; aspect-ratio: 1; transition: transform 0.2s; }
+.app-tile:hover .app-tile-square { transform: translateY(-4px); }
+.app-tile:focus-visible { outline: none; }
+.app-tile:focus-visible .app-tile-face { outline: 2px solid var(--accent); outline-offset: 3px; }
+.app-tile-face {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 22%;
+  /* 上沿一圈亮边、下沿微微压暗，像有光从上面照下来。 */
+  box-shadow: inset 0 1.2cqw 0.6cqw rgba(255, 255, 255, 0.45), inset 0 -6cqw 15cqw rgba(0, 0, 0, 0.12);
+}
+/* 光感：左上角一块柔和的光斑，往右下渐暗。 */
+.app-tile-face::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(90% 70% at 22% 8%, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 60%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, 0.12));
+}
+/* 取图标左边缘中间那一小块（圆角和图形都碰不到的地方）放大 8 倍，就是图标的底色。 */
+.app-tile-fill { position: absolute; inset: 0; width: 100%; height: 100%; transform: scale(8); transform-origin: 6% 50%; }
+.app-tile-art { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+/* 图片图标的第二种颜色：色相往前转一点、提亮，从左上往右下淡出。 */
+.app-tile-tint {
+  filter: hue-rotate(-38deg) saturate(1.35) brightness(1.18);
+  -webkit-mask-image: linear-gradient(150deg, #000 10%, transparent 75%);
+  mask-image: linear-gradient(150deg, #000 10%, transparent 75%);
+}
+.app-tile-img { position: relative; width: 68%; height: 68%; margin-bottom: 12%; }
+.app-tile-glyph { color: #fff; font-size: 28cqw; font-weight: 600; line-height: 1; display: flex; margin-bottom: 12%; }
+.app-tile-shadow { position: absolute; inset: 14% 8% -6%; width: 84%; height: 92%; border-radius: 30%; filter: blur(11cqw); opacity: 0.45; object-fit: cover; }
+.app-tile-label {
+  position: absolute; left: 50%; bottom: 8.5%; transform: translateX(-50%); z-index: 1;
+  max-width: 86%; padding: 2.5cqw 7cqw; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #fff; font-size: clamp(10px, 8.5cqw, 16px); font-weight: 600; background: rgba(255, 255, 255, 0.24); backdrop-filter: blur(6px);
+}
+.app-tile.unhealthy .app-tile-face { filter: grayscale(0.85); }
+.app-tile.unhealthy .app-tile-shadow { opacity: 0.2; filter: blur(11cqw) grayscale(1); }
+
+
+/* 主题包设了背景：背景画在 body 上、不随页面滚动，门户的灰底变透明。 */
+html.vb-has-bg body { background: var(--page-bg); background-attachment: fixed; }
+html.vb-has-bg .ant-layout { background: transparent !important; }
+/* 玻璃效果：卡片、顶栏和弹出层的底色由 theme.tsx 改成半透明，这里模糊后面的背景，上沿加一道亮边，像 iOS 的毛玻璃。 */
+html.vb-glass .ant-card,
+html.vb-glass .topbar,
+html.vb-glass .vb-popup,
+html.vb-glass .ant-dropdown-menu,
+html.vb-glass .ant-select-dropdown,
+html.vb-glass .ant-modal-content,
+html.vb-glass .ant-popover-inner,
+html.vb-glass .ant-message-notice-content {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+}
+html.vb-glass .ant-card, html.vb-glass .topbar { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), var(--shadow); }
+/* 主题管理页里的预览图。 */
+.theme-preview { width: 64px; height: 40px; border-radius: 6px; object-fit: cover; flex: none; box-shadow: var(--shadow); }

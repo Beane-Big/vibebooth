@@ -8,6 +8,8 @@ import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
 import Users from "./pages/Users";
+import { useThemeMode } from "./theme";
+import { useActiveTheme } from "./themeHost";
 
 export default function App() {
   const [user, setUser] = useState<Me | null>(null);
@@ -73,6 +75,8 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   const [apps, setApps] = useState<AppInfo[] | null>(null);
   const [error, setError] = useState("");
   const tabs = useAppTabs();
+  const { skin } = useThemeMode();
+  const theme = useActiveTheme();
   // 每个标签被刷新的次数：平台自带的应用用它作 key 重新挂载，首页变了就重新取应用列表。
   const [reloads, setReloads] = useState<Record<string, number>>({});
   const builtins = builtinAppsFor(user);
@@ -126,10 +130,16 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
       tabs={<AppTabBar state={tabs} onRefresh={refresh} />}
       onUserInfo={usersApp && (() => tabs.open({ url: usersApp.url, title: usersApp.name }))}
       onLogout={onLogout}
+      themes={theme.themes}
+      activeTheme={theme.active?.id}
+      // 彩色方块皮肤的首页用卡片的底色（浅色时是纯白），彩色图标更干净；其他页面的卡片还是放在灰底上。
+      plain={skin === "tiles" && tabs.active === PORTAL_TAB}
     >
       <div className="content" style={tabs.active !== PORTAL_TAB ? { display: "none" } : undefined}>
         {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
-        {apps && <Home apps={apps} builtins={builtins} onOpen={tabs.open} />}
+        {apps && (
+          <Home apps={apps} builtins={builtins} user={user} theme={theme.active && theme} onOpen={tabs.open} />
+        )}
       </div>
       {tabs.tabs
         .filter((t) => builtins.some((app) => app.url === t.url))

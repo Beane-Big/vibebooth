@@ -43,6 +43,17 @@ export type App = {
   healthy: boolean;
 };
 
+// 已安装的主题包，字段和 theme.yaml 一样（见 docs/theme-spec.md）；文件在 /api/platform/themes/<id>/<文件名>。
+export type ThemeInfo = {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  script?: string;
+  style?: string;
+  preview?: string;
+};
+
 // 应用管理页：安装器返回的已安装模块。
 export type InstalledModule = {
   id: string;
@@ -150,6 +161,17 @@ export const api = {
   },
   uninstallModule: (id: string, purge: boolean) =>
     request<{ log: string }>(`/api/platform/installer/modules/${id}?purge=${purge}`, { method: "DELETE" }),
+
+  // 主题：所有登录的人都能列出和选用；安装和卸载要有“应用管理”权限。
+  themes: () => request<ThemeInfo[]>("/api/platform/themes"),
+  // 主题带脚本时，安装器先返回 409，管理员确认后带上 allowScript 再装一次。
+  installTheme: (file: File, allowScript = false) => {
+    const form = new FormData();
+    form.append("package", file);
+    if (allowScript) form.append("allowScript", "true");
+    return request<{ theme: ThemeInfo; log: string }>("/api/platform/installer/themes", { method: "POST", body: form });
+  },
+  uninstallTheme: (id: string) => request<{ log: string }>(`/api/platform/installer/themes/${id}`, { method: "DELETE" }),
 
   // 成员和自己的备注（有“成员”权限就能调用），remark 为空表示删除。
   members: () => request<Member[]>("/api/platform/members"),

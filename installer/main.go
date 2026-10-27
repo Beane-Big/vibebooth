@@ -7,6 +7,8 @@
 //	installer install <模块包.zip> [--allow-privileges]
 //	installer uninstall <id> [--purge]
 //	installer list
+//	installer install-theme <主题包.zip> [--allow-script]
+//	installer uninstall-theme <id>
 package main
 
 import (
@@ -58,6 +60,10 @@ func runCLI(in *Installer, args []string) int {
 		_, err = in.Install(ctx, args[1], len(args) == 3, os.Stdout)
 	case args[0] == "uninstall" && (len(args) == 2 || len(args) == 3 && args[2] == "--purge"):
 		err = in.Uninstall(ctx, args[1], len(args) == 3, os.Stdout)
+	case args[0] == "install-theme" && (len(args) == 2 || len(args) == 3 && args[2] == "--allow-script"):
+		_, err = in.InstallTheme(args[1], len(args) == 3, os.Stdout)
+	case args[0] == "uninstall-theme" && len(args) == 2:
+		err = in.UninstallTheme(args[1], os.Stdout)
 	case args[0] == "list" && len(args) == 1:
 		var list []Installed
 		if list, err = in.List(ctx); err == nil {
@@ -66,12 +72,17 @@ func runCLI(in *Installer, args []string) int {
 			enc.Encode(list)
 		}
 	default:
-		fmt.Fprintln(os.Stderr, "用法: installer pack <模块目录> <images.tar> <输出.zip> | install <模块包.zip> [--allow-privileges] | uninstall <id> [--purge] | list")
+		fmt.Fprintln(os.Stderr, "用法: installer pack <模块目录> <images.tar> <输出.zip> | install <模块包.zip> [--allow-privileges] | uninstall <id> [--purge] | list | install-theme <主题包.zip> [--allow-script] | uninstall-theme <id>")
 		return 2
 	}
 	var priv *PrivilegeError
 	if errors.As(err, &priv) {
 		fmt.Fprintf(os.Stderr, "错误: %v。确认要安装的话，加上 --allow-privileges 再运行一次\n", err)
+		return 1
+	}
+	var script *ScriptError
+	if errors.As(err, &script) {
+		fmt.Fprintf(os.Stderr, "错误: %v。确认要安装的话，加上 --allow-script 再运行一次\n", err)
 		return 1
 	}
 	if err != nil {
