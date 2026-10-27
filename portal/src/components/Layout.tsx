@@ -1,4 +1,4 @@
-import { cloneElement, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { cloneElement, useEffect, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { Button, Dropdown, Grid, Layout as AntLayout, Segmented, Typography, theme } from "antd";
 import { IdcardOutlined, LogoutOutlined } from "@ant-design/icons";
 import { api, type Me } from "../api";
@@ -31,6 +31,7 @@ export default function Layout({
   // 手机上只显示头像，名字收进下拉菜单；平台名称也不显示，给标签栏腾地方。
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
+  const topbarCollapsed = useCollapsibleTopbar();
 
   async function logout() {
     await api.logout();
@@ -39,7 +40,7 @@ export default function Layout({
 
   return (
     <AntLayout className={skinClass(skin, activeTheme)} style={{ minHeight: "100vh", background: plain ? "var(--surface)" : undefined }}>
-      <AntLayout.Header className="topbar">
+      <AntLayout.Header className={topbarCollapsed ? "topbar topbar-collapsed" : "topbar"}>
         {screens.sm && <span className="brand">Vibebooth</span>}
         {tabs}
         <Dropdown
@@ -91,6 +92,116 @@ export default function Layout({
       <div className="layout-content">{children}</div>
     </AntLayout>
   );
+}
+
+// 页面向下滚动时收起顶栏，向上滚动或回到顶部时恢复。模块在同源 iframe 里滚动，
+// 它的 scroll 事件不会冒泡到门户，所以加载后也监听 iframe 文档中的滚动容器。
+function useCollapsibleTopbar() {
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const frameCleanups = new Map<HTMLIFrameElement, () => void>();
+
+    function watchDocument(doc: Document, view: Window, active: () => boolean) {
+      const positions = new WeakMap<EventTarget, { y: number; direction: number; distance: number }>();
+
+      function onScroll(e: Event) {
+        if (!active()) return;
+        const target = e.target;
+        if (!target) return;
+        const y = target === doc ? view.scrollY : (target as HTMLElement).scrollTop;
+        if (typeof y !== "number") return;
+
+        const previous = positions.get(target);
+        if (!previous) {
+          positions.set(target, { y, direction: 0, distance: 0 });
+          if (y <= 0) setCollapsed(false);
+          return;
+        }
+
+        const delta = y - previous.y;
+        previous.y = y;
+        if (y <= 0) {
+          previous.direction = 0;
+          previous.distance = 0;
+          setCollapsed(false);
+          return;
+        }
+        if (Math.abs(delta) < 1) return;
+
+        const direction = Math.sign(delta);
+        previous.distance = previous.direction === direction ? previous.distance + Math.abs(delta) : Math.abs(delta);
+        previous.direction = direction;
+        if (previous.distance < 12) return;
+
+        setCollapsed(direction > 0);
+        previous.distance = 0;
+      }
+
+      doc.addEventListener("scroll", onScroll, true);
+      return () => doc.removeEventListener("scroll", onScroll, true);
+    }
+
+    const stopWatchingPage = watchDocument(document, window, () => true);
+
+    function watchFrame(frame: HTMLIFrameElement) {
+      if (frameCleanups.has(frame)) return;
+      let stopWatchingFrame = () => {};
+
+      function onLoad() {
+        stopWatchingFrame();
+        try {
+          if (frame.contentDocument && frame.contentWindow) {
+            stopWatchingFrame = watchDocument(frame.contentDocument, frame.contentWindow, () => frame.getClientRects().length > 0);
+          }
+        } catch {
+          // 非同源模块不能读取文档；它仍可正常使用，只是不参与顶栏的自动收起。
+        }
+      }
+
+      frame.addEventListener("load", onLoad);
+      onLoad();
+      frameCleanups.set(frame, () => {
+        frame.removeEventListener("load", onLoad);
+        stopWatchingFrame();
+      });
+    }
+
+    function refreshFrames() {
+      document.querySelectorAll<HTMLIFrameElement>(".app-frames iframe").forEach(watchFrame);
+      frameCleanups.forEach((cleanup, frame) => {
+        if (!frame.isConnected) {
+          cleanup();
+          frameCleanups.delete(frame);
+        }
+      });
+    }
+
+    refreshFrames();
+    const content = document.querySelector(".layout-content");
+    const observer = new MutationObserver((records) => {
+      const activeTabChanged = records.some((record) => {
+        if (record.type === "attributes") {
+          const target = record.target as HTMLElement;
+          return target.parentElement === content || target.matches(".app-frames iframe");
+        }
+        return Array.from(record.addedNodes).some(
+          (node) => node instanceof HTMLElement && (node.matches(".app-frames, .app-frames iframe") || node.querySelector(".app-frames iframe")),
+        );
+      });
+      if (activeTabChanged) setCollapsed(false);
+      refreshFrames();
+    });
+    if (content) observer.observe(content, { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] });
+
+    return () => {
+      observer.disconnect();
+      stopWatchingPage();
+      frameCleanups.forEach((cleanup) => cleanup());
+    };
+  }, []);
+
+  return collapsed;
 }
 
 // skinClass 是顶层的 class：内置皮肤是 skin-classic / skin-tiles，主题包是 skin-theme theme-<id>，主题的样式表可以据此写规则。
