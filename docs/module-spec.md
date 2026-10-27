@@ -47,6 +47,6 @@
 - 不写登录代码。后端用 SDK `github.com/Beane-Big/vibebooth/packages/sdk-go/auth` 校验网关注入的令牌（`go.mod` 里按版本引用，例如 `v0.1.0`，对应平台仓库的标签 `packages/sdk-go/v0.1.0`），不自己解析请求头里的用户信息；其他语言要按同样的规则用 JWKS 公钥验签（RS256，`iss` 是 `home-platform`，`aud` 是模块 id）。
 - 接口权限用令牌里的功能权限判断（Go 里是 `auth.UserFrom(ctx).Has("<权限 id>")`，要 SDK `v0.2.0` 以上）；没有声明功能权限的模块用菜单判断（`HasMenu("<菜单 id>")`）。都不要用角色判断。前端可以让后端返回令牌里的权限，据此隐藏按钮，但真正的检查在后端。
 - 跨模块只调用对方 `/api/<id>/ext/v1/` 下的对外接口，不 import 其他模块的代码，也不读别人的数据。对外接口的契约写在 `contracts/openapi.yaml`，不兼容的改动新开 v2。
-- 人员（家庭成员等）由平台保存，不要在模块里另建人员表：用平台的对外接口 `http://core:8080/api/platform/ext/v1/` 读取人员名单（只读，模块不能改人员资料，头像只有管理员或本人在门户里换），模块只保存人员 id；要知道当前登录的是哪个人，用令牌里的 `sub`（账号 id）查 `users/{id}/person`。契约见平台仓库的 `contracts/openapi.yaml`。
+- 人员（家庭成员等）由平台保存，不要在模块里另建人员表：用平台的对外接口 `http://core:8080/api/platform/ext/v1/` 读取人员名单（只读，模块不能改人员资料，头像只有管理员或本人在门户里换），模块只保存人员 id；显示人员时带上 `?viewer=<令牌里的 sub>` 并用 `displayName`，这样每个人看到的是自己写的备注（没写时是姓名）；要知道当前登录的是哪个人，用令牌里的 `sub`（账号 id）查 `users/{id}/person`。契约见平台仓库的 `contracts/openapi.yaml`。
 - 前端沿用脚手架生成的 `styles.css` 里的样式变量；共享 UI 组件包做出来后优先用它。页面要适配手机和平板。
 - 门户在自己的标签页里以内嵌页（iframe）打开应用，按住 Ctrl / Cmd 点击时在浏览器新标签页打开，两种都要能用。不要设置禁止被嵌入的响应头（`X-Frame-Options`、CSP 的 `frame-ancestors`）。应用里不放回门户的链接，回门户用门户的标签栏；应用内部页面之间的返回由应用自己实现。前端的 `index.html` 要带 `Cache-Control: no-cache`（静态资源文件名带哈希，可以长期缓存），否则升级后浏览器可能一直用旧页面，标签栏的“刷新”也拿不到新版本。

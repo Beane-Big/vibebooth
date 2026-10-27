@@ -18,8 +18,8 @@ export type Person = {
 
 export type PersonInput = Pick<Person, "name" | "note" | "photo">;
 
-// 有“成员”权限的人看到的成员：没有管理员的备注，remark 是他自己写的、只有自己看得到的备注。
-export type Member = Pick<Person, "id" | "name" | "photo"> & { remark: string };
+// 有“成员”权限的人看到的成员：没有管理员的备注，remark 是他自己写的、只有自己看得到的备注；self 表示是不是他自己。
+export type Member = Pick<Person, "id" | "name" | "photo"> & { remark: string; self: boolean };
 
 export const isAdmin = (user: User) => user.roles.includes("admin");
 
@@ -124,6 +124,8 @@ export const api = {
   // 换自己的头像（改账号关联的成员的照片），photo 为空表示去掉照片。
   setMyPhoto: (photo: string) =>
     request<{ photo: string }>("/api/platform/me/photo", { method: "PUT", body: JSON.stringify({ photo }) }),
+  // 改自己的姓名（账号关联的成员的姓名）。
+  setMyName: (name: string) => put("/api/platform/me/name", { name }),
   apps: () => request<App[]>("/api/platform/apps"),
   login: (username: string, password: string) =>
     request<Me>("/api/platform/auth/login", {

@@ -26,6 +26,7 @@ import {
 } from "antd";
 import { AppstoreOutlined, ArrowLeftOutlined, HomeOutlined, PlusOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
 import { api, isAdmin, type AppGrant, type Grant, type Member, type Person, type PersonInput, type User, type UserMenus } from "../api";
+import MyPhoto from "../components/MyPhoto";
 import PersonAvatar from "../components/PersonAvatar";
 import { resizePhoto } from "../photo";
 
@@ -75,7 +76,7 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
   );
 }
 
-// MemberRemarks 是普通用户看到的成员列表：左边是成员和自己写的备注，右边改备注。没有账号、权限和管理员的备注。
+// MemberRemarks 是普通用户看到的成员列表：左边是成员和自己写的备注，右边看资料、写备注，自己的资料可以改。没有账号、权限和管理员的备注。
 function MemberRemarks() {
   const [members, setMembers] = useState<Member[] | null>(null);
   const [error, setError] = useState("");
@@ -107,6 +108,7 @@ function MemberRemarks() {
           avatar={<PersonAvatar person={m} />}
           title={m.name}
           subtitle={m.remark || "没有备注"}
+          tags={m.self && <Tag color="blue">我</Tag>}
           active={m.id === selected}
           onClick={() => setSelected(m.id)}
         />
@@ -115,25 +117,28 @@ function MemberRemarks() {
   );
 
   const detail = current ? (
-    <RemarkDetail key={current.id} member={current} onSaved={load} />
+    <MemberDetail key={current.id} member={current} onSaved={load} />
   ) : (
     <Card>
-      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择一个成员，给他写备注。" />
+      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择一个成员，查看资料或给他写备注。" />
     </Card>
   );
 
   return <ListDetail list={list} detail={detail} selected={!!current} onBack={() => setSelected(null)} />;
 }
 
-// RemarkDetail 改自己给一个成员写的备注，清空后保存就是删除。
-function RemarkDetail({ member, onSaved }: { member: Member; onSaved: () => void }) {
+// MemberDetail 是普通用户看到的一个成员：别人的姓名只能看，可以写只有自己看得到的备注；
+// 自己的姓名和头像可以改，改的是自己关联的成员，各个应用里都会看到。
+function MemberDetail({ member, onSaved }: { member: Member; onSaved: () => void }) {
   const { message } = AntApp.useApp();
+  const [name, setName] = useState(member.name);
   const [remark, setRemark] = useState(member.remark);
+  const [photoOpen, setPhotoOpen] = useState(false);
 
-  async function save() {
+  async function act(action: () => Promise<void>, success: string) {
     try {
-      await api.setRemark(member.id, remark);
-      message.success(remark.trim() ? "备注已保存" : "备注已删除");
+      await action();
+      message.success(success);
       onSaved();
     } catch (err) {
       message.error(err instanceof Error ? err.message : "保存失败");
@@ -150,17 +155,45 @@ function RemarkDetail({ member, onSaved }: { member: Member; onSaved: () => void
           </Typography.Title>
           <Typography.Text type="secondary">{member.remark || "没有备注"}</Typography.Text>
         </Flex>
+        {member.self && <Button onClick={() => setPhotoOpen(true)}>更换头像</Button>}
       </Flex>
-      <Form layout="vertical" requiredMark={false} onFinish={save} style={{ marginTop: 24 }}>
-        <Form.Item label="我的备注" extra="只有你自己看得到，别人看不到你写的备注。">
-          <Space.Compact style={{ width: "100%" }}>
-            <Input value={remark} maxLength={200} placeholder="比如：小名、生日、喜好" onChange={(e) => setRemark(e.target.value)} />
-            <Button type="primary" htmlType="submit" disabled={remark.trim() === member.remark}>
-              保存
-            </Button>
-          </Space.Compact>
-        </Form.Item>
-      </Form>
+      <Row gutter={16} style={{ marginTop: 24 }}>
+        <Col xs={24} md={12}>
+          <Form layout="vertical" requiredMark={false} onFinish={() => act(() => api.setMyName(name), "姓名已保存")}>
+            <Form.Item label="姓名" extra={member.self ? "这是你自己，可以改姓名和头像。" : "只有管理员和他本人能改。"}>
+              {member.self ? (
+                <Space.Compact style={{ width: "100%" }}>
+                  <Input value={name} maxLength={30} onChange={(e) => setName(e.target.value)} />
+                  <Button type="primary" htmlType="submit" disabled={!name.trim() || name.trim() === member.name}>
+                    保存
+                  </Button>
+                </Space.Compact>
+              ) : (
+                <Input value={member.name} disabled />
+              )}
+            </Form.Item>
+          </Form>
+        </Col>
+        <Col xs={24} md={12}>
+          <Form
+            layout="vertical"
+            requiredMark={false}
+            onFinish={() => act(() => api.setRemark(member.id, remark), remark.trim() ? "备注已保存" : "备注已删除")}
+          >
+            <Form.Item label="我的备注" extra="只有你自己看得到。写了备注，家庭优化大师等其他应用里给你显示的就是备注，不是姓名。">
+              <Space.Compact style={{ width: "100%" }}>
+                <Input value={remark} maxLength={200} placeholder="比如：老爸、宝贝" onChange={(e) => setRemark(e.target.value)} />
+                <Button type="primary" htmlType="submit" disabled={remark.trim() === member.remark}>
+                  保存
+                </Button>
+              </Space.Compact>
+            </Form.Item>
+          </Form>
+        </Col>
+      </Row>
+      <Modal title="更换头像" open={photoOpen} footer={null} onCancel={() => setPhotoOpen(false)} width={360}>
+        <MyPhoto name={member.name} photo={member.photo} onChange={onSaved} />
+      </Modal>
     </Card>
   );
 }
