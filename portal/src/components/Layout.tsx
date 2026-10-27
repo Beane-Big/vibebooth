@@ -1,4 +1,4 @@
-import { cloneElement, useEffect, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { cloneElement, useEffect, useRef, useState, type MouseEvent, type ReactElement, type ReactNode, type RefObject } from "react";
 import { Button, Dropdown, Grid, Layout as AntLayout, Segmented, Typography, theme } from "antd";
 import { IdcardOutlined, LogoutOutlined } from "@ant-design/icons";
 import { api, type Me } from "../api";
@@ -31,7 +31,8 @@ export default function Layout({
   // 手机上只显示头像，名字收进下拉菜单；平台名称也不显示，给标签栏腾地方。
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
-  const topbarCollapsed = useCollapsibleTopbar();
+  const topbarRef = useRef<HTMLElement>(null);
+  const topbarCollapsed = useCollapsibleTopbar(topbarRef);
 
   async function logout() {
     await api.logout();
@@ -40,7 +41,7 @@ export default function Layout({
 
   return (
     <AntLayout className={skinClass(skin, activeTheme)} style={{ minHeight: "100vh", background: plain ? "var(--surface)" : undefined }}>
-      <AntLayout.Header className={topbarCollapsed ? "topbar topbar-collapsed" : "topbar"}>
+      <AntLayout.Header ref={topbarRef} className={topbarCollapsed ? "topbar topbar-collapsed" : "topbar"}>
         {screens.sm && <span className="brand">Vibebooth</span>}
         {tabs}
         <Dropdown
@@ -96,8 +97,18 @@ export default function Layout({
 
 // 页面向下滚动时收起顶栏，向上滚动或回到顶部时恢复。模块在同源 iframe 里滚动，
 // 它的 scroll 事件不会冒泡到门户，所以加载后也监听 iframe 文档中的滚动容器。
-function useCollapsibleTopbar() {
+// 收起时顶栏要连同占的位置一起让出来，主题包可能改顶栏的高度（headerHeight）和外边距，
+// 所以量出顶栏的实际高度写到 --topbar-height，styles.css 按它算收起时的负外边距。
+function useCollapsibleTopbar(topbarRef: RefObject<HTMLElement | null>) {
   const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const topbar = topbarRef.current;
+    if (!topbar) return;
+    const observer = new ResizeObserver(() => topbar.style.setProperty("--topbar-height", `${topbar.offsetHeight}px`));
+    observer.observe(topbar);
+    return () => observer.disconnect();
+  }, [topbarRef]);
 
   useEffect(() => {
     const frameCleanups = new Map<HTMLIFrameElement, () => void>();
