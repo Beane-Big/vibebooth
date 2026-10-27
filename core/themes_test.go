@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Beane-Big/vibebooth/packages/manifest"
 )
 
 func TestThemeFiles(t *testing.T) {
@@ -38,6 +40,18 @@ func TestThemeFiles(t *testing.T) {
 		}
 		if csp := rec.Header().Get("Content-Security-Policy"); want == 200 && !strings.HasPrefix(csp, "sandbox;") {
 			t.Errorf("%s 应该带 sandbox 的 CSP，实际 %q", url, csp)
+		}
+	}
+}
+
+func TestValidSkin(t *testing.T) {
+	themes := []*manifest.Theme{{ID: "aurora"}}
+	for skin, want := range map[string]bool{
+		"classic": true, "tiles": true, "theme:aurora": true,
+		"theme:other": false, "aurora": false, "": false, "theme:": false,
+	} {
+		if got := validSkin(skin, themes); got != want {
+			t.Errorf("validSkin(%q) = %v，应为 %v", skin, got, want)
 		}
 	}
 }

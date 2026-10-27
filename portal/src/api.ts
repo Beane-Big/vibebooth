@@ -1,3 +1,5 @@
+import type { Skin } from "./theme";
+
 export type User = {
   id: number;
   username: string;
@@ -164,6 +166,9 @@ export const api = {
 
   // 主题：所有登录的人都能列出和选用；安装和卸载要有“应用管理”权限。
   themes: () => request<ThemeInfo[]>("/api/platform/themes"),
+  // 平台默认的皮肤：没自己选过的人用它。设置要有“应用管理”权限。
+  appearance: () => request<{ defaultSkin: Skin }>("/api/platform/appearance"),
+  setDefaultSkin: (defaultSkin: Skin) => put("/api/platform/appearance", { defaultSkin }),
   // 主题带脚本时，安装器先返回 409，管理员确认后带上 allowScript 再装一次。
   installTheme: (file: File, allowScript = false) => {
     const form = new FormData();

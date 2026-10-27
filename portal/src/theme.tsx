@@ -146,7 +146,11 @@ function baseConfig(colors: Colors, cardShadow: string, popupShadow: string, dar
 }
 
 const storageKey = "vb-theme";
+// 自己选的皮肤；没有这一项表示跟随平台默认。
 const skinKey = "vb-skin";
+// 上次读到的平台默认皮肤，打开页面时先用它，免得从经典闪成默认主题。
+const defaultSkinKey = "vb-default-skin";
+const validSkin = (v: string) => v === "classic" || v === "tiles" || /^theme:[a-z][a-z0-9-]{1,30}$/.test(v);
 
 function saved<T extends string>(key: string, valid: (v: string) => boolean, fallback: T): T {
   try {
@@ -166,6 +170,14 @@ function save(key: string, value: string) {
   }
 }
 
+function remove(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // 同上。
+  }
+}
+
 function useSystemDark() {
   const query = "(prefers-color-scheme: dark)";
   const [dark, setDark] = useState(() => matchMedia(query).matches);
@@ -181,8 +193,14 @@ function useSystemDark() {
 const ModeContext = createContext<{
   mode: ThemeMode;
   setMode: (m: ThemeMode) => void;
+  // 正在用的皮肤：自己选的，没选过时是平台默认的。
   skin: Skin;
-  setSkin: (s: Skin) => void;
+  // 自己选的皮肤，null 表示跟随平台默认；setSkin(null) 改回跟随默认。
+  ownSkin: Skin | null;
+  setSkin: (s: Skin | null) => void;
+  // 平台默认的皮肤，由管理员在“主题”应用里设置；门户从平台读到后交给这里。
+  defaultSkin: Skin;
+  setDefaultSkin: (s: Skin) => void;
   dark: boolean;
   // 选用的主题包加载好以后，由门户把它的外观设置交给这里；null 表示不改。
   setOverrides: (o: ThemeOverrides | null) => void;
@@ -190,7 +208,10 @@ const ModeContext = createContext<{
   mode: "system",
   setMode: () => {},
   skin: "classic",
+  ownSkin: null,
   setSkin: () => {},
+  defaultSkin: "classic",
+  setDefaultSkin: () => {},
   dark: false,
   setOverrides: () => {},
 });
@@ -202,9 +223,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(() =>
     saved(storageKey, (v) => ["light", "dark", "system"].includes(v), "system"),
   );
-  const [skin, setSkinState] = useState<Skin>(() =>
-    saved(skinKey, (v) => v === "classic" || v === "tiles" || /^theme:[a-z][a-z0-9-]{1,30}$/.test(v), "classic"),
-  );
+  const [ownSkin, setOwnSkin] = useState<Skin | null>(() => {
+    const v = saved<string>(skinKey, validSkin, "");
+    return v ? (v as Skin) : null;
+  });
+  const [defaultSkin, setDefaultSkinState] = useState<Skin>(() => saved(defaultSkinKey, validSkin, "classic"));
+  const skin = ownSkin ?? defaultSkin;
   const [overrides, setOverrides] = useState<ThemeOverrides | null>(null);
   const systemDark = useSystemDark();
   const dark = mode === "dark" || (mode === "system" && systemDark);
@@ -215,13 +239,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     save(storageKey, m);
   }
 
-  function setSkin(s: Skin) {
-    setSkinState(s);
-    save(skinKey, s);
+  function setSkin(s: Skin | null) {
+    setOwnSkin(s);
+    if (s) save(skinKey, s);
+    else remove(skinKey);
+  }
+
+  function setDefaultSkin(s: Skin) {
+    setDefaultSkinState(s);
+    save(defaultSkinKey, s);
   }
 
   return (
-    <ModeContext.Provider value={{ mode, setMode, skin, setSkin, dark, setOverrides }}>
+    <ModeContext.Provider value={{ mode, setMode, skin, ownSkin, setSkin, defaultSkin, setDefaultSkin, dark, setOverrides }}>
       {/* 关掉按钮文字自动加空格，“保存”不会显示成“保 存”。 */}
       <ConfigProvider locale={zhCN} theme={themeConfig(p, dark, overrides ?? undefined)} button={{ autoInsertSpace: false }}>
         <CssVars dark={dark} p={p} o={overrides ?? undefined} />

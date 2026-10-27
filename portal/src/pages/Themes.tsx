@@ -8,18 +8,21 @@ import { THEMES_CHANGED_EVENT } from "../themeHost";
 import classicShot from "../assets/skin-classic.jpg";
 import tilesShot from "../assets/skin-tiles.jpg";
 
-// 平台自带的“主题”应用：每个人在这里给自己选皮肤，选择存在自己的浏览器里。皮肤有内置的两种和管理员安装的主题包。
-// 有“应用管理”权限的人还能上传主题包安装或升级，以及卸载主题。
+// 平台自带的“主题”应用：每个人在这里给自己选皮肤，选择存在自己的浏览器里；没选过的人用平台默认皮肤。
+// 皮肤有内置的两种和管理员安装的主题包。有“应用管理”权限的人还能设平台默认皮肤、上传主题包安装或升级，以及卸载主题。
 // 主题包的格式见 docs/theme-spec.md，用 create-vibebooth-theme 生成。
 export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) {
-  const { skin, setSkin } = useThemeMode();
+  const { skin, ownSkin, setSkin, defaultSkin } = useThemeMode();
   const canManage = hasPerm(me, "modules");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<OperationResult | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
 
   // 选用的主题被卸载了，按经典皮肤显示，这里也标经典为使用中。
-  const current: Skin = themeID(skin) && !themes.some((t) => t.id === themeID(skin)) ? "classic" : skin;
+  const installed = (s: Skin) => !themeID(s) || themes.some((t) => t.id === themeID(s));
+  const current: Skin = installed(skin) ? skin : "classic";
+  const platformDefault: Skin = installed(defaultSkin) ? defaultSkin : "classic";
+  const following = ownSkin === null;
   const skins: SkinItem[] = [
     { skin: "classic", name: "经典", description: "带名称和说明的卡片", preview: classicShot },
     { skin: "tiles", name: "彩色方块", description: "大圆角的彩色图标，名称写在图标底部", preview: tilesShot },
@@ -52,12 +55,33 @@ export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) 
 
   function uninstall(t: ThemeInfo) {
     setRemoving(null);
-    run(() => api.uninstallTheme(t.id), `${t.name} 已卸载，正在用它的人会换回经典皮肤。`);
+    const fallback = platformDefault === `theme:${t.id}` ? "平台默认皮肤换回经典，" : "";
+    run(() => api.uninstallTheme(t.id), `${t.name} 已卸载，${fallback}自己选了它的人会改用平台默认皮肤。`);
+  }
+
+  function makeDefault(item: SkinItem) {
+    run(
+      () => api.setDefaultSkin(item.skin).then(() => ({ log: "" })),
+      `平台默认皮肤已设为${item.name}，没有自己选皮肤的人都会用它。`,
+    );
+  }
+
+  // 正在用的是平台默认皮肤时，“使用”默认皮肤就是改回跟随默认，管理员以后改默认时跟着变。
+  function use(item: SkinItem) {
+    setSkin(item.skin === platformDefault ? null : item.skin);
   }
 
   return (
     <Flex vertical gap={16}>
       {result && <ResultAlert result={result} />}
+      <Flex align="center" gap={12} wrap>
+        <Typography.Text type="secondary">
+          {following
+            ? "你没有自己选皮肤，用的是平台默认皮肤，管理员改了默认会跟着变。"
+            : "你自己选了皮肤，不跟随平台默认。"}
+        </Typography.Text>
+        {!following && <Button onClick={() => setSkin(null)}>跟随平台默认</Button>}
+      </Flex>
       <Row gutter={[16, 16]}>
         {skins.map((item) => (
           <Col key={item.skin} xs={12} lg={8}>
@@ -77,6 +101,7 @@ export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) 
                 <Flex vertical gap={4}>
                   <Space size={8} wrap>
                     <Typography.Text strong>{item.name}</Typography.Text>
+                    {platformDefault === item.skin && <Tag color="processing">默认</Tag>}
                     {item.theme && <Tag>{item.theme.version}</Tag>}
                     {item.theme?.script && <Tag color="warning">带脚本</Tag>}
                   </Space>
@@ -88,8 +113,13 @@ export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) 
                       使用中
                     </Button>
                   ) : (
-                    <Button type="primary" onClick={() => setSkin(item.skin)}>
+                    <Button type="primary" onClick={() => use(item)}>
                       使用
+                    </Button>
+                  )}
+                  {canManage && platformDefault !== item.skin && (
+                    <Button disabled={busy} onClick={() => makeDefault(item)}>
+                      设为默认
                     </Button>
                   )}
                   {canManage &&

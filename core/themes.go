@@ -71,3 +71,49 @@ func (s *Server) handleThemeFile(w http.ResponseWriter, r *http.Request, _ *User
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	http.ServeFile(w, r, file)
 }
+
+// 平台默认的皮肤：没有自己选过的人用它。值和门户的皮肤一样：classic、tiles 或 theme:<主题 id>。
+const defaultSkinKey = "default_skin"
+
+type appearance struct {
+	DefaultSkin string `json:"defaultSkin"`
+}
+
+// validSkin 判断一个皮肤能不能用：内置的两种，或者已安装的主题。
+func validSkin(skin string, themes []*manifest.Theme) bool {
+	if skin == "classic" || skin == "tiles" {
+		return true
+	}
+	id, ok := strings.CutPrefix(skin, "theme:")
+	return ok && slices.ContainsFunc(themes, func(t *manifest.Theme) bool { return t.ID == id })
+}
+
+// handleAppearance 返回平台默认的皮肤。设成默认的主题被卸载了，或者从没设过，按经典皮肤。
+func (s *Server) handleAppearance(w http.ResponseWriter, r *http.Request, _ *User) {
+	skin, err := s.store.Setting(r.Context(), defaultSkinKey)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	if !validSkin(skin, s.themes()) {
+		skin = "classic"
+	}
+	writeJSON(w, http.StatusOK, appearance{DefaultSkin: skin})
+}
+
+// handleSetAppearance 设置平台默认的皮肤，要有“应用管理”权限，和安装主题一样。
+func (s *Server) handleSetAppearance(w http.ResponseWriter, r *http.Request, _ *User) {
+	var req appearance
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !validSkin(req.DefaultSkin, s.themes()) {
+		writeError(w, http.StatusBadRequest, "没有这个皮肤")
+		return
+	}
+	if err := s.store.SetSetting(r.Context(), defaultSkinKey, req.DefaultSkin); err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, req)
+}

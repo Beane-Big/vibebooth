@@ -86,6 +86,11 @@ CREATE TABLE IF NOT EXISTS person_remarks (
 	remark    TEXT NOT NULL,
 	PRIMARY KEY (user_id, person_id)
 );
+-- 平台级的设置，例如默认主题 default_skin。
+CREATE TABLE IF NOT EXISTS settings (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
 -- 关联了人员的账号，显示名称就是人员姓名。改姓名、关联账号时会一起改；这里把以前不一致的数据对齐一次。
 UPDATE users u SET display_name = p.name FROM persons p WHERE p.id = u.person_id AND u.display_name <> p.name;
 `
@@ -366,6 +371,23 @@ func (s *Store) SetRemark(ctx context.Context, userID, personID int64, remark st
 	if isForeignKeyViolation(err) {
 		return errPersonNotFound
 	}
+	return err
+}
+
+// Setting 读一项平台设置，没设过时返回空字符串。
+func (s *Store) Setting(ctx context.Context, key string) (string, error) {
+	var value string
+	err := s.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = $1`, key).Scan(&value)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return value, err
+}
+
+func (s *Store) SetSetting(ctx context.Context, key, value string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO settings (key, value) VALUES ($1, $2)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, key, value)
 	return err
 }
 
