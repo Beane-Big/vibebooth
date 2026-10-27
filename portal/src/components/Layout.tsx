@@ -88,7 +88,7 @@ export default function Layout({
           </Button>
         </Dropdown>
       </AntLayout.Header>
-      {children}
+      <div className="layout-content">{children}</div>
     </AntLayout>
   );
 }
