@@ -160,7 +160,7 @@ function MemberDetail({ member, onSaved }: { member: Member; onSaved: () => void
       <Row gutter={16} style={{ marginTop: 24 }}>
         <Col xs={24} md={12}>
           <Form layout="vertical" requiredMark={false} onFinish={() => act(() => api.setMyName(name), "姓名已保存")}>
-            <Form.Item label="姓名" extra={member.self ? "这是你自己，可以改姓名和头像。" : "只有管理员和他本人能改。"}>
+            <Form.Item label="姓名" extra={member.self && "这是你自己，可以改姓名和头像。"}>
               {member.self ? (
                 <Space.Compact style={{ width: "100%" }}>
                   <Input value={name} maxLength={30} onChange={(e) => setName(e.target.value)} />
