@@ -102,6 +102,7 @@ func (s *Server) routes() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /api/platform/me", s.requireUser(s.handleMe))
+	mux.HandleFunc("PUT /api/platform/me/photo", s.requireUser(s.handleSetMyPhoto))
 	mux.HandleFunc("GET /api/platform/apps", s.requirePlatform(s.handleApps))
 	mux.HandleFunc("GET /api/platform/apps/{id}/icon", s.requireUser(s.handleAppIcon))
 	mux.HandleFunc("GET /api/platform/apps/{id}/menus", s.requireUser(s.handleAppMenus))
@@ -125,7 +126,6 @@ func (s *Server) routes() http.Handler {
 	// 和模块的对外接口一样目前没有服务令牌，只返回模块需要的字段（不含备注）。契约见 contracts/openapi.yaml。
 	mux.HandleFunc("GET /api/platform/ext/v1/persons", s.handleExtPersons)
 	mux.HandleFunc("GET /api/platform/ext/v1/persons/{id}", s.handleExtPerson)
-	mux.HandleFunc("PUT /api/platform/ext/v1/persons/{id}/photo", s.handleExtSetPhoto)
 	mux.HandleFunc("GET /api/platform/ext/v1/users/{id}/person", s.handleExtUserPerson)
 	return mux
 }

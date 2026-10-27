@@ -26,6 +26,7 @@ import {
 } from "antd";
 import { AppstoreOutlined, ArrowLeftOutlined, HomeOutlined, PlusOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
 import { api, isAdmin, type AppGrant, type Grant, type Member, type Person, type PersonInput, type User, type UserMenus } from "../api";
+import PersonAvatar from "../components/PersonAvatar";
 import { resizePhoto } from "../photo";
 
 // 选中的是一个成员，还是一个没关联成员的账号。
@@ -331,15 +332,6 @@ function MemberRow({
 }
 
 
-function PersonAvatar({ person, size = 40 }: { person: Pick<Person, "name" | "photo">; size?: number }) {
-  return person.photo ? (
-    <Avatar size={size} src={person.photo} />
-  ) : (
-    <Avatar size={size} style={{ backgroundColor: "var(--accent)", flex: "none" }}>
-      {person.name.slice(0, 1) || "?"}
-    </Avatar>
-  );
-}
 
 
 // PersonForm 填写人员的姓名、备注和照片；点头像选择照片，会自动裁成正方形。新增和修改共用。
