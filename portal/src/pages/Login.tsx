@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Alert, Button, Card, Form, Input, Typography } from "antd";
 import { api, type Me } from "../api";
+import wordmark from "../assets/wordmark.svg";
 
 export default function Login({ onLogin }: { onLogin: (user: Me) => void }) {
   const [error, setError] = useState("");
@@ -22,7 +23,7 @@ export default function Login({ onLogin }: { onLogin: (user: Me) => void }) {
     <div className="center">
       <Card style={{ width: "100%", maxWidth: 380 }} styles={{ body: { padding: 32 } }}>
         <Typography.Title level={3} style={{ textAlign: "center", marginTop: 0, marginBottom: 24 }}>
-          Vibebooth
+          <img src={wordmark} alt="Vibebooth" style={{ height: 44, verticalAlign: "top" }} />
         </Typography.Title>
         <Form layout="vertical" requiredMark={false} onFinish={submit}>
           <Form.Item label="用户名" name="username" rules={[{ required: true, message: "请输入用户名" }]}>
