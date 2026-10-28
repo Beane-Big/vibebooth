@@ -95,6 +95,8 @@ export type AppTabsState = ReturnType<typeof useAppTabs>;
 
 // AppTabBar 是顶栏中间的标签栏：第一个固定是首页，后面是打开的应用。右侧是当前标签的“刷新”和“在新窗口打开”，
 // 右键点标签也能刷新或关闭。
+// 首页不放进 Tabs 的标签里，而是放在标签栏左侧：应用开多了放不下时，Tabs 会把放不下的标签收进“…”菜单，首页要一直露在外面。
+// 它借用标签的 class，样式和其他标签（包括主题包对 .app-tabbar .ant-tabs-tab 的改动）保持一致。
 export function AppTabBar({ state, onRefresh }: { state: AppTabsState; onRefresh: (key: string) => void }) {
   const current = state.tabs.find((t) => t.url === state.active);
   // 右键菜单包住标签文字；只有应用标签能关闭，首页只能刷新。
@@ -120,38 +122,51 @@ export function AppTabBar({ state, onRefresh }: { state: AppTabsState; onRefresh
       activeKey={state.active}
       onChange={state.activate}
       onEdit={(key, action) => action === "remove" && typeof key === "string" && state.close(key)}
-      items={[
-        {
-          key: PORTAL_TAB,
-          label: withMenu(PORTAL_TAB, <HomeOutlined aria-label="首页" style={{ marginInlineEnd: 0 }} />, false),
-          closable: false,
-        },
-        ...state.tabs.map((t) => ({ key: t.url, label: withMenu(t.url, t.title, true) })),
-      ]}
-      tabBarExtraContent={
-        <span className="app-tabbar-tools">
-          <Tooltip title="刷新">
-            <Button
-              type="text"
-              size="small"
-              icon={<ReloadOutlined />}
-              aria-label="刷新"
-              onClick={() => onRefresh(state.active)}
-            />
-          </Tooltip>
-          {current && (
-            <Tooltip title="在新窗口打开">
+      items={state.tabs.map((t) => ({ key: t.url, label: withMenu(t.url, t.title, true) }))}
+      tabBarExtraContent={{
+        left: (
+          <div
+            role="tab"
+            aria-selected={state.active === PORTAL_TAB}
+            tabIndex={0}
+            className={state.active === PORTAL_TAB ? "ant-tabs-tab ant-tabs-tab-active app-tabbar-home" : "ant-tabs-tab app-tabbar-home"}
+            onClick={() => state.activate(PORTAL_TAB)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              state.activate(PORTAL_TAB);
+            }}
+          >
+            <div className="ant-tabs-tab-btn">
+              {withMenu(PORTAL_TAB, <HomeOutlined aria-label="首页" style={{ marginInlineEnd: 0 }} />, false)}
+            </div>
+          </div>
+        ),
+        right: (
+          <span className="app-tabbar-tools">
+            <Tooltip title="刷新">
               <Button
                 type="text"
                 size="small"
-                icon={<ExportOutlined />}
-                aria-label="在新窗口打开"
-                onClick={() => window.open(currentURL(current), "_blank")}
+                icon={<ReloadOutlined />}
+                aria-label="刷新"
+                onClick={() => onRefresh(state.active)}
               />
             </Tooltip>
-          )}
-        </span>
-      }
+            {current && (
+              <Tooltip title="在新窗口打开">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ExportOutlined />}
+                  aria-label="在新窗口打开"
+                  onClick={() => window.open(currentURL(current), "_blank")}
+                />
+              </Tooltip>
+            )}
+          </span>
+        ),
+      }}
     />
   );
 }

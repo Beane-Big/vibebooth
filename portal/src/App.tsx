@@ -129,6 +129,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
     <Layout
       user={user}
       tabs={<AppTabBar state={tabs} onRefresh={refresh} />}
+      onHome={() => tabs.activate(PORTAL_TAB)}
       onUserInfo={usersApp && (() => tabs.open({ url: usersApp.url, title: usersApp.name }))}
       onLogout={onLogout}
       activeTheme={theme.active?.id}
