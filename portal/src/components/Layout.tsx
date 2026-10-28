@@ -6,12 +6,13 @@ import PersonAvatar from "./PersonAvatar";
 import wordmark from "../assets/wordmark.svg";
 import { useThemeMode, type Skin, type ThemeMode } from "../theme";
 
-// 门户各页面共用的顶栏，只有一行：左边是平台字标，中间是标签栏（第一个固定是首页），右边是头像。
+// 门户各页面共用的顶栏，只有一行：左边是平台字标（点它回到首页），中间是标签栏（第一个固定是首页），右边是头像。
 // 用户、设置、主题都是平台自带的应用，从首页打开（应用管理在设置里，皮肤在主题里选）；点头像可以切换浅色深色、打开“用户”应用看自己的资料和账号、退出登录。
-// onUserInfo 为空表示他不能用“用户”应用，菜单里就没有“用户信息”。
+// onUserInfo 为空表示他不能用“用户”应用，菜单里就没有“用户信息”。onHome 切回首页标签。
 export default function Layout({
   user,
   tabs,
+  onHome,
   onUserInfo,
   onLogout,
   activeTheme,
@@ -20,6 +21,7 @@ export default function Layout({
 }: {
   user: Me;
   tabs: ReactNode;
+  onHome: () => void;
   onUserInfo?: () => void;
   onLogout: () => void;
   // 正在用的主题包（没有时为空）。
@@ -47,9 +49,17 @@ export default function Layout({
         className={topbarHidden === "frame" ? "topbar topbar-hidden topbar-collapsed" : topbarHidden ? "topbar topbar-hidden" : "topbar"}
       >
         {screens.sm && (
-          <span className="brand">
+          <a
+            className="brand"
+            href="/"
+            onClick={(e) => {
+              if (!inPlace(e)) return;
+              e.preventDefault();
+              onHome();
+            }}
+          >
             <img src={wordmark} alt="Vibebooth" />
-          </span>
+          </a>
         )}
         {tabs}
         <Dropdown
