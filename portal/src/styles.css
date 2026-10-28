@@ -23,7 +23,7 @@ body {
 
 .topbar { display: flex; align-items: center; flex: none; gap: 12px; position: sticky; top: 0; z-index: 10; box-shadow: var(--shadow); line-height: normal; transition: margin-top 0.22s ease, transform 0.22s ease, opacity 0.16s ease; }
 .layout-content { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-top: 16px; transition: padding-top 0.22s ease; }
-.brand { font-weight: 600; font-size: 16px; color: var(--text); white-space: nowrap; }
+.brand { font-weight: 600; font-size: 16px; color: var(--text); white-space: nowrap; text-decoration: none; }
 /* 按钮文字加粗是 Fluent 的做法，链接按钮和顶栏的用户名保持常规字重。 */
 .ant-btn-link, .topbar .ant-btn-text { font-weight: 400; }
 
