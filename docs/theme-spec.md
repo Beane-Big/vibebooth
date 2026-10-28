@@ -94,7 +94,7 @@ preview: preview.png
 选用主题时门户加载它的样式表，换掉或不用时移走；门户顶层有 class `skin-theme theme-<id>`。
 
 - 规则以 `.theme-<id>` 开头，或者只用在主题自己的 class 上，不写会影响其他主题的全局规则。
-- 门户里能改的元素只有这几个，其他 class 随时会改：`.topbar`（顶栏）、`.brand`（平台名称）、`.app-tabbar`（标签栏）、`.content`（内容区）。表单、卡片等组件用 `antd` 参数调，不要覆盖 `.ant-*`。
+- 门户里能改的元素只有这几个，其他 class 随时会改：`.topbar`（顶栏）、`.brand`（平台字标，里面是一张图片，能改大小和间距，改不了颜色）、`.app-tabbar`（标签栏）、`.content`（内容区）。表单、卡片等组件用 `antd` 参数调，不要覆盖 `.ant-*`。
 - 颜色用门户的 CSS 变量，深浅色切换时自动跟着变：`--accent`（主色）、`--text`、`--muted`（次要文字）、`--bg`（页面底色）、`--surface`（卡片底色，玻璃效果下是半透明的）、`--border`、`--danger`、`--radius`、`--shadow`、`--float-shadow`、`--glass-blur`。
 - 样式表里引用 `assets/` 下的文件用相对路径。
 

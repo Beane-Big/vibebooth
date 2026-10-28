@@ -23,7 +23,9 @@ body {
 
 .topbar { display: flex; align-items: center; flex: none; gap: 12px; position: sticky; top: 0; z-index: 10; box-shadow: var(--shadow); line-height: normal; transition: margin-top 0.22s ease, transform 0.22s ease, opacity 0.16s ease; }
 .layout-content { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-top: 16px; transition: padding-top 0.22s ease; }
-.brand { font-weight: 600; font-size: 16px; color: var(--text); white-space: nowrap; }
+/* 平台字标是一张 SVG 图片（src/assets/wordmark.svg），主题可以改它的大小和间距，改不了颜色。 */
+.brand { display: flex; flex: none; }
+.brand img { display: block; height: 26px; }
 /* 按钮文字加粗是 Fluent 的做法，链接按钮和顶栏的用户名保持常规字重。 */
 .ant-btn-link, .topbar .ant-btn-text { font-weight: 400; }
 
@@ -59,15 +61,13 @@ body {
 .app-frames iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
 
 /* 彩色方块皮肤的顶栏：照 joypixels.com，悬浮在页面上的圆角长条，和下面的内容一样宽、阴影更柔更散；
-   平台名称用渐变色，选中的标签是一个描边的胶囊。 */
+   平台字标稍大一点，选中的标签是一个描边的胶囊。 */
 .skin-tiles .topbar {
   top: 12px; margin: 12px max(16px, (100% - 1088px) / 2) 0; border-radius: 20px;
   box-shadow: var(--float-shadow);
 }
-.skin-tiles .brand {
-  font-size: 18px; font-weight: 700; padding-inline: 4px 8px;
-  background: linear-gradient(120deg, #2f8cff, #9b4dff); -webkit-background-clip: text; background-clip: text; color: transparent;
-}
+.skin-tiles .brand { padding-inline: 4px 8px; }
+.skin-tiles .brand img { height: 28px; }
 .skin-tiles .app-tabbar .ant-tabs-tab { border-radius: 999px !important; border: 1.5px solid transparent !important; padding: 5px 14px !important; }
 .skin-tiles .app-tabbar .ant-tabs-tab-active { background: transparent !important; border-color: var(--text) !important; }
 .skin-tiles .topbar .ant-btn { border-radius: 999px; }
