@@ -3,9 +3,10 @@ import { Button, Dropdown, Grid, Layout as AntLayout, Segmented, Typography, the
 import { IdcardOutlined, LogoutOutlined } from "@ant-design/icons";
 import { api, type Me } from "../api";
 import PersonAvatar from "./PersonAvatar";
+import wordmark from "../assets/wordmark.svg";
 import { useThemeMode, type Skin, type ThemeMode } from "../theme";
 
-// 门户各页面共用的顶栏，只有一行：左边是平台名称（点它回到首页），中间是标签栏（第一个固定是首页），右边是头像。
+// 门户各页面共用的顶栏，只有一行：左边是平台字标（点它回到首页），中间是标签栏（第一个固定是首页），右边是头像。
 // 用户、设置、主题都是平台自带的应用，从首页打开（应用管理在设置里，皮肤在主题里选）；点头像可以切换浅色深色、打开“用户”应用看自己的资料和账号、退出登录。
 // onUserInfo 为空表示他不能用“用户”应用，菜单里就没有“用户信息”。onHome 切回首页标签。
 export default function Layout({
@@ -30,7 +31,7 @@ export default function Layout({
   children: ReactNode;
 }) {
   const { mode, setMode, skin } = useThemeMode();
-  // 手机上只显示头像，名字收进下拉菜单；平台名称也不显示，给标签栏腾地方。
+  // 手机上只显示头像，名字收进下拉菜单；平台字标也不显示，给标签栏腾地方。
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
   const topbarRef = useRef<HTMLElement>(null);
@@ -57,7 +58,7 @@ export default function Layout({
               onHome();
             }}
           >
-            Vibebooth
+            <img src={wordmark} alt="Vibebooth" />
           </a>
         )}
         {tabs}
