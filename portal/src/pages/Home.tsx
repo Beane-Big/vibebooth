@@ -2,6 +2,7 @@ import type { MouseEvent, ReactNode } from "react";
 import { Card, Col, Empty, Row, Spin, Tag, Typography } from "antd";
 import type { App, Me, ThemeInfo } from "../api";
 import type { BuiltinApp } from "../builtin";
+import AppIcon from "../components/AppIcon";
 import type { AppTab } from "../components/AppTabs";
 import { inPlace } from "../components/Layout";
 import { useThemeMode } from "../theme";
@@ -70,6 +71,8 @@ function themeApps({ apps, builtins, onOpen }: Props): ThemeApp[] {
       description: app.description,
       url: app.url,
       icon: app.icon,
+      mask: app.glyph,
+      color: app.color,
       healthy: app.healthy,
       builtin: false,
       link: link({ url: app.url, title: app.name }),
@@ -114,7 +117,7 @@ function ClassicHome({ apps, builtins, onOpen }: Props) {
         <AppCard
           key={app.id}
           tab={{ url: app.url, title: app.name }}
-          icon={<IconBox>{app.icon}</IconBox>}
+          icon={<AppIcon app={{ name: app.name, glyph: app.icon, tint: app.tint }} />}
           description={app.description}
           onOpen={onOpen}
         />
@@ -123,7 +126,7 @@ function ClassicHome({ apps, builtins, onOpen }: Props) {
         <AppCard
           key={app.id}
           tab={{ url: app.url, title: app.name }}
-          icon={app.icon ? <img className="app-icon" src={app.icon} alt="" /> : <IconBox>{app.name.slice(0, 1)}</IconBox>}
+          icon={<AppIcon app={{ name: app.name, icon: app.icon, mask: app.glyph, color: app.color }} />}
           description={app.description || " "}
           unhealthy={!app.healthy}
           onOpen={onOpen}
@@ -241,25 +244,5 @@ function AppTile({
         </span>
       </span>
     </a>
-  );
-}
-
-// 没有图片图标的应用：模块用名称的第一个字，平台自带的应用用图标。
-function IconBox({ children }: { children: ReactNode }) {
-  return (
-    <span
-      className="app-icon"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg)",
-        color: "var(--accent)",
-        fontSize: 20,
-        fontWeight: 600,
-      }}
-    >
-      {children}
-    </span>
   );
 }

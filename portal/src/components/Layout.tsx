@@ -3,7 +3,7 @@ import { Button, Dropdown, Grid, Layout as AntLayout, Segmented, Typography, the
 import { IdcardOutlined, LogoutOutlined } from "@ant-design/icons";
 import { api, type Me } from "../api";
 import PersonAvatar from "./PersonAvatar";
-import wordmark from "../assets/wordmark.svg";
+import Wordmark from "./Wordmark";
 import { useThemeMode, type Skin, type ThemeMode } from "../theme";
 
 // 门户各页面共用的顶栏，只有一行：左边是平台字标（点它回到首页），中间是标签栏（第一个固定是首页），右边是头像。
@@ -58,7 +58,7 @@ export default function Layout({
               onHome();
             }}
           >
-            <img src={wordmark} alt="Vibebooth" />
+            <Wordmark />
           </a>
         )}
         {tabs}

@@ -23,7 +23,7 @@ body {
 
 .topbar { display: flex; align-items: center; flex: none; gap: 12px; position: sticky; top: 0; z-index: 10; box-shadow: var(--shadow); line-height: normal; transition: margin-top 0.22s ease, transform 0.22s ease, opacity 0.16s ease; }
 .layout-content { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-top: 16px; transition: padding-top 0.22s ease; }
-/* 平台字标是一张 SVG 图片（src/assets/wordmark.svg），主题可以改它的大小和间距，改不了颜色。 */
+/* 平台字标是一张 SVG 图片（components/Wordmark.tsx），主题可以改它的大小和间距；颜色由主题的 wordmark 指定。 */
 .brand { display: flex; flex: none; }
 .brand img { display: block; height: 26px; }
 /* 按钮文字加粗是 Fluent 的做法，链接按钮和顶栏的用户名保持常规字重。 */
@@ -44,6 +44,13 @@ body {
 /* 应用卡片：图标在左，名称和说明在右。 */
 .app-card { display: flex; align-items: center; gap: 14px; }
 .app-icon { width: 48px; height: 48px; border-radius: 12px; flex: none; object-fit: cover; }
+/* 没有图片的应用：浅底上一个主色的图标或名称的第一个字。 */
+.app-icon-plain, .app-icon-themed { display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 600; }
+.app-icon-plain { background: var(--bg); color: var(--accent); }
+/* 主题给图标上色（components/AppIcon.tsx）：主题没写 --icon-bg、--icon-fg 的那一项，用应用自己的底色、白色图形。
+   模块的图形是一张去掉底色的 SVG，当蒙版用，和图标原图一样大小，图形的位置不变。 */
+.app-icon-themed { background: var(--icon-bg, var(--app-color)); color: var(--icon-fg, #fff); }
+.app-icon-mask { width: 100%; height: 100%; background: currentColor; -webkit-mask: no-repeat center / 100% 100%; mask: no-repeat center / 100% 100%; }
 .app-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .app-text .ant-typography { margin: 0; }
 

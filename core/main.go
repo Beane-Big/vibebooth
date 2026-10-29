@@ -107,6 +107,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("PUT /api/platform/me/password", s.requireUser(s.handleSetMyPassword))
 	mux.HandleFunc("GET /api/platform/apps", s.requirePlatform(s.handleApps))
 	mux.HandleFunc("GET /api/platform/apps/{id}/icon", s.requireUser(s.handleAppIcon))
+	mux.HandleFunc("GET /api/platform/apps/{id}/glyph", s.requireUser(s.handleAppGlyph))
 	mux.HandleFunc("GET /api/platform/apps/{id}/menus", s.requireUser(s.handleAppMenus))
 	mux.HandleFunc("GET /api/platform/themes", s.requireUser(s.handleThemes))
 	mux.HandleFunc("GET /api/platform/themes/{id}/{path...}", s.requireUser(s.handleThemeFile))
