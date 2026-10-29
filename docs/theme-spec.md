@@ -66,6 +66,7 @@ preview: preview.png
 | `platform` | 门户支持的主题规范版本 |
 | `React`、`jsxRuntime` | 门户自己的 React，主题必须用这一份，组件才能和门户的组件互相嵌套 |
 | `antd` | 门户共享的 Ant Design 组件：`Alert Avatar Badge Button Card Checkbox Col Empty Flex Form Grid Input Row Segmented Select Space Spin Tag Tooltip Typography theme`，跟着门户的主题参数显示 |
+| `AppIcon` | 门户的应用图标组件，按主题的 `icons` 上色。主题自己的首页用 `<AppIcon app={app} />` 画图标，不用自己处理图片和颜色 |
 | `registerTheme(def)` | 主题的脚本加载时同步调用一次，门户从当前 `<script>` 的 `data-theme` 认出是哪个主题 |
 
 脚手架生成的主题在构建时把 `react`、`react/jsx-runtime`、`antd` 指向这几个全局变量，不打进主题。类型定义在主题仓库的 `src/vibebooth.d.ts`，和门户的 `portal/src/themeHost.tsx`、`portal/src/theme.tsx` 一致。
@@ -78,13 +79,30 @@ preview: preview.png
 | `antd` | Ant Design 的参数，深浅色各一份：`token` 是全局的（字号、圆角、控件高度、字体……），`components` 按组件调（`Input`、`Select`、`Button`、`Card`、`Typography`……）。在门户默认参数上合并 |
 | `background` | 页面背景，CSS `background` 写法，深浅色各一份。图片用主题包里的 `assets/` 文件 |
 | `glass` | 玻璃效果，`true` 或 `{blur, opacity}`：卡片、顶栏、弹出层、菜单的底色变半透明（`opacity` 默认 0.6），并模糊后面的背景（`blur` 默认 20px）。和 `background` 一起用效果才明显 |
+| `icons` | 首页应用图标的颜色，深浅色各一份，`{bg, fg}`：`bg` 是图标的底色，CSS `background` 写法（颜色或渐变），不写用应用自己的底色；`fg` 是图形的颜色，只能是颜色，不写是白色。写了这一项图标就按主题上色，见下 |
+| `wordmark` | 顶栏平台字标的颜色，深浅色各一份，每份是 1 到 4 个颜色，从左到右渐变；投影和描边跟着中间的颜色。只认 `#rrggbb`、颜色名和 `rgb()`、`hsl()`、`oklch()` 这类写法。不写是原来的蓝紫粉渐变 |
 | `Home` | 替换首页应用列表的 React 组件，见下 |
+
+### 图标怎么跟着主题换颜色
+
+平台加载模块时把它的 `icon.svg` 拆成底色和单色的图形（规则见[模块规范](module-spec.md)的“图标”）。主题写了 `icons` 时，门户用 `bg` 画底、把图形当蒙版涂成 `fg`；平台自带的应用和没有图标的模块，图形就是 Ant Design 图标或名称的第一个字。拆不开的图标（PNG、图形有好几种颜色）照原样显示。
+
+```ts
+registerTheme({
+  icons: {
+    light: { bg: "linear-gradient(150deg, #fdf2ff, #e9ddff)", fg: "#7c4ddb" },
+    dark: { bg: "rgba(255, 255, 255, 0.12)", fg: "#e4d7ff" },
+  },
+  wordmark: { light: ["#7c4ddb", "#e978d8"], dark: ["#c7b4ff", "#ffb3d9"] },
+});
+```
 
 ### 首页组件
 
 `Home` 收到 `{apps, dark, user}`：
 
-- `apps`：首页上的应用，平台自带的应用（用户、设置）和模块统一成一种，已按当前用户的权限过滤。每个有 `id name description url healthy builtin link`；模块有 `icon`（图片网址），平台自带的应用有 `glyph`（图标元素）和建议的渐变底色 `tint`。
+- `apps`：首页上的应用，平台自带的应用（用户、设置）和模块统一成一种，已按当前用户的权限过滤。每个有 `id name description url healthy builtin link`；模块有 `icon`（图片网址），图标能拆开时还有图形的网址 `mask` 和底色 `color`；平台自带的应用有 `glyph`（图标元素）和建议的渐变底色 `tint`。
+- 图标交给 `window.vibebooth.AppIcon` 画，它会按 `icons` 上色、照顾到没有图片和拆不开的图标。
 - `link` 原样展开到 `<a>` 上：普通点击在门户里以标签页打开，按住 Ctrl / Cmd 或中键在浏览器新标签页打开。不要自己拼网址或另写跳转。
 - `healthy` 为 false 的应用要看得出不可用。
 - `dark` 是当前是否深色，`user.displayName` 是当前用户的名字。
@@ -94,8 +112,8 @@ preview: preview.png
 选用主题时门户加载它的样式表，换掉或不用时移走；门户顶层有 class `skin-theme theme-<id>`。
 
 - 规则以 `.theme-<id>` 开头，或者只用在主题自己的 class 上，不写会影响其他主题的全局规则。
-- 门户里能改的元素只有这几个，其他 class 随时会改：`.topbar`（顶栏）、`.brand`（平台字标，里面是一张图片，能改大小和间距，改不了颜色）、`.app-tabbar`（标签栏）、`.content`（内容区）。表单、卡片等组件用 `antd` 参数调，不要覆盖 `.ant-*`。
-- 颜色用门户的 CSS 变量，深浅色切换时自动跟着变：`--accent`（主色）、`--text`、`--muted`（次要文字）、`--bg`（页面底色）、`--surface`（卡片底色，玻璃效果下是半透明的）、`--border`、`--danger`、`--radius`、`--shadow`、`--float-shadow`、`--glass-blur`。
+- 门户里能改的元素只有这几个，其他 class 随时会改：`.topbar`（顶栏）、`.brand`（平台字标，里面是一张图片，能改大小和间距，颜色用 `wordmark` 改）、`.app-icon`（经典皮肤和 `AppIcon` 的图标，能改大小、圆角和阴影）、`.app-tabbar`（标签栏）、`.content`（内容区）。表单、卡片等组件用 `antd` 参数调，不要覆盖 `.ant-*`。
+- 颜色用门户的 CSS 变量，深浅色切换时自动跟着变：`--accent`（主色）、`--text`、`--muted`（次要文字）、`--bg`（页面底色）、`--surface`（卡片底色，玻璃效果下是半透明的）、`--border`、`--danger`、`--radius`、`--shadow`、`--float-shadow`、`--glass-blur`；写了 `icons` 时还有 `--icon-bg`、`--icon-fg`。
 - 样式表里引用 `assets/` 下的文件用相对路径。
 
 ## 平台怎么加载主题

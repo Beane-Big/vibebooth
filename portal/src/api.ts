@@ -42,6 +42,9 @@ export type App = {
   version: string;
   url: string;
   icon?: string;
+  // 图标能拆成底色和图形时才有（见 core/icons.go）：glyph 是图形的网址，color 是底色。主题给图标换颜色时用。
+  glyph?: string;
+  color?: string;
   healthy: boolean;
 };
 
