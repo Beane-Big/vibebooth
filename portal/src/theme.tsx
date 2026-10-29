@@ -70,6 +70,11 @@ export type ThemeOverrides = {
   background?: PerMode<string>;
   // 玻璃效果：卡片、顶栏、弹出层变成半透明并模糊后面的背景，和 iOS 的毛玻璃一样。opacity 是底色不透明度。
   glass?: boolean | { blur?: number; opacity?: number };
+  // 首页应用图标的颜色：bg 是底色，CSS background 写法（颜色或渐变），不写用应用自己的底色；fg 是图形的颜色，不写是白色。
+  // 写了就按主题上色，见 components/AppIcon.tsx。
+  icons?: PerMode<{ bg?: string; fg?: string }>;
+  // 顶栏平台字标的渐变颜色，从左到右，1 到 4 个颜色。见 components/Wordmark.tsx。
+  wordmark?: PerMode<string[]>;
 };
 
 const pick = <T,>(v: PerMode<T> | undefined, dark: boolean) => (dark ? v?.dark : v?.light);
@@ -202,6 +207,10 @@ const ModeContext = createContext<{
   defaultSkin: Skin;
   setDefaultSkin: (s: Skin) => void;
   dark: boolean;
+  // 当前主题有没有给首页图标指定颜色（ThemeOverrides.icons）。
+  themedIcons: boolean;
+  // 当前主题给平台字标指定的颜色，没指定时为空。
+  wordmark: string[] | undefined;
   // 选用的主题包加载好以后，由门户把它的外观设置交给这里；null 表示不改。
   setOverrides: (o: ThemeOverrides | null) => void;
 }>({
@@ -213,6 +222,8 @@ const ModeContext = createContext<{
   defaultSkin: "classic",
   setDefaultSkin: () => {},
   dark: false,
+  themedIcons: false,
+  wordmark: undefined,
   setOverrides: () => {},
 });
 
@@ -233,6 +244,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const systemDark = useSystemDark();
   const dark = mode === "dark" || (mode === "system" && systemDark);
   const p = paletteFor(dark, overrides ?? undefined);
+  const themedIcons = !!pick(overrides?.icons, dark);
+  const wordmark = pick(overrides?.wordmark, dark);
 
   function setMode(m: ThemeMode) {
     setModeState(m);
@@ -251,7 +264,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <ModeContext.Provider value={{ mode, setMode, skin, ownSkin, setSkin, defaultSkin, setDefaultSkin, dark, setOverrides }}>
+    <ModeContext.Provider
+      value={{ mode, setMode, skin, ownSkin, setSkin, defaultSkin, setDefaultSkin, dark, themedIcons, wordmark, setOverrides }}
+    >
       {/* 关掉按钮文字自动加空格，“保存”不会显示成“保 存”。 */}
       <ConfigProvider locale={zhCN} theme={themeConfig(p, dark, overrides ?? undefined)} button={{ autoInsertSpace: false }}>
         <CssVars dark={dark} p={p} o={overrides ?? undefined} />
@@ -266,6 +281,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 function CssVars({ dark, p, o }: { dark: boolean; p: Palette; o?: ThemeOverrides }) {
   const background = pick(o?.background, dark) ?? "";
   const glass = glassOf(o);
+  const icons = pick(o?.icons, dark);
   const { token } = antTheme.useToken();
   useEffect(() => {
     const vars: Record<string, string> = {
@@ -285,9 +301,14 @@ function CssVars({ dark, p, o }: { dark: boolean; p: Palette; o?: ThemeOverrides
     };
     const root = document.documentElement;
     for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+    // 主题没指定图标颜色时去掉变量，AppIcon 用应用自己的底色和白色图形。
+    for (const [k, v] of [["--icon-bg", icons?.bg], ["--icon-fg", icons?.fg]] as const) {
+      if (v) root.style.setProperty(k, v);
+      else root.style.removeProperty(k);
+    }
     root.style.colorScheme = dark ? "dark" : "light";
     root.classList.toggle("vb-has-bg", !!background);
     root.classList.toggle("vb-glass", !!glass);
-  }, [token, dark, p.inputBottom, p.floatShadow, background, glass?.blur]);
+  }, [token, dark, p.inputBottom, p.floatShadow, background, glass?.blur, icons?.bg, icons?.fg]);
   return null;
 }

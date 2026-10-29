@@ -25,6 +25,7 @@ import {
   theme,
 } from "antd";
 import { api, type ThemeInfo } from "./api";
+import AppIcon from "./components/AppIcon";
 import { themeID, useThemeMode, type ThemeOverrides } from "./theme";
 
 // 安装的主题包（规范见 docs/theme-spec.md）在门户里运行：门户把自己的 React 和一部分 Ant Design 组件放在 window.vibebooth 上，
@@ -42,6 +43,9 @@ export type ThemeApp = {
   url: string;
   // 模块的图片图标网址，没有时为空。
   icon?: string;
+  // 模块图标拆出来的图形（去掉底色的 SVG）网址和底色，图标拆不开时为空。主题给图标换颜色时用，一般直接交给 AppIcon。
+  mask?: string;
+  color?: string;
   // 平台自带的应用的图标（Ant Design 图标），模块没有。
   glyph?: ReactNode;
   // 平台自带的应用建议的渐变底色，从左上到右下。
@@ -82,6 +86,8 @@ window.vibebooth = {
     Alert, Avatar, Badge, Button, Card, Checkbox, Col, Empty, Flex, Form, Grid, Input, Row, Segmented, Select,
     Space, Spin, Tag, Tooltip, Typography, theme,
   },
+  // 门户的应用图标，按主题的 icons 上色，主题自己的首页用它画图标：<AppIcon app={app} />。
+  AppIcon,
   // 主题的脚本在加载时同步调用它，门户从当前 <script> 上的 data-theme 认出是哪个主题。
   registerTheme(def: ThemeDefinition) {
     const id = (document.currentScript as HTMLScriptElement | null)?.dataset.theme;
