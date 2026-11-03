@@ -13,10 +13,18 @@ body {
 .center {
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 16px;
 }
+/* 居中的内容上下留出同样多的空白，底部的备案号贴着页面底边。 */
+.center > * { margin-block: auto; }
+.center > .beian { margin-block: 0; }
+
+/* 页面底部的备案号（components/Beian.tsx）：小字、次要颜色，窄屏上自动换行。 */
+.beian { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; padding: 12px 16px 16px; font-size: 12px; }
+.layout-content > .beian { margin-top: auto; }
 
 /* 内容区限宽居中，手机上两边留 16px。 */
 .content { width: 100%; max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
