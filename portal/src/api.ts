@@ -106,6 +106,9 @@ export type UserInput = {
   personId?: number;
 };
 
+// 站点的公开信息：ICP 备案号和公安备案号，没配置时为空；policeCode 是公安备案号里的数字。
+export type SiteInfo = { icp: string; police: string; policeCode: string };
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -136,6 +139,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const put = (path: string, body: unknown) => request<void>(path, { method: "PUT", body: JSON.stringify(body) });
 
 export const api = {
+  // 不用登录，登录页也能取到。
+  site: () => request<SiteInfo>("/api/platform/site"),
   me: () => request<Me>("/api/platform/me"),
   // 换自己的头像（改账号关联的成员的照片），photo 为空表示去掉照片。
   setMyPhoto: (photo: string) =>

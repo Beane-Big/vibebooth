@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,6 +21,8 @@ type config struct {
 	AdminUser     string
 	AdminPassword string
 	CookieSecure  bool
+	ICPBeian      string
+	PoliceBeian   string
 }
 
 func loadConfig() config {
@@ -31,6 +34,8 @@ func loadConfig() config {
 		AdminUser:     env("ADMIN_USERNAME", "admin"),
 		AdminPassword: os.Getenv("ADMIN_PASSWORD"),
 		CookieSecure:  os.Getenv("COOKIE_SECURE") == "true",
+		ICPBeian:      strings.TrimSpace(os.Getenv("ICP_BEIAN")),
+		PoliceBeian:   strings.TrimSpace(os.Getenv("POLICE_BEIAN")),
 	}
 }
 
@@ -101,6 +106,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	// 站点的公开信息（备案号），登录页也要用，不用登录。
+	mux.HandleFunc("GET /api/platform/site", s.handleSite)
 	mux.HandleFunc("GET /api/platform/me", s.requireUser(s.handleMe))
 	mux.HandleFunc("PUT /api/platform/me/photo", s.requireUser(s.handleSetMyPhoto))
 	mux.HandleFunc("PUT /api/platform/me/name", s.requireUser(s.handleSetMyName))

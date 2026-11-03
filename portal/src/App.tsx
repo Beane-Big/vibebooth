@@ -3,6 +3,7 @@ import { Alert, Button, Result, Spin } from "antd";
 import { api, ApiError, type App as AppInfo, type Me } from "./api";
 import { builtinAliases, builtinAppsFor, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
+import Beian from "./components/Beian";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
@@ -53,6 +54,7 @@ export default function App() {
           subTitle="这个账号只能直接打开管理员给他开通的应用。"
           extra={<Button onClick={() => api.logout().finally(() => setUser(null))}>退出登录</Button>}
         />
+        <Beian />
       </div>
     );
   }
@@ -124,6 +126,8 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
 
   // 头像菜单里的“用户信息”打开“用户”应用，自己排在第一个；没有“用户”应用的人没有这一项。
   const usersApp = builtins.find((app) => app.id === "users");
+  // 备案号放在首页和自带应用的底部；模块应用的内嵌页占满顶栏下面的区域，不放。
+  const frameActive = tabs.active !== PORTAL_TAB && !isBuiltinURL(tabs.active);
 
   return (
     <Layout
@@ -156,6 +160,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
           </div>
         ))}
       <AppFrames state={tabs} onEmbeddedPortal={onEmbeddedPortal} />
+      {!frameActive && <Beian />}
     </Layout>
   );
 }
