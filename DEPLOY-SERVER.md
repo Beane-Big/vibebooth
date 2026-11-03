@@ -88,6 +88,20 @@ docker compose ps
 3. **设置镜像源。** 在门户“设置”页进入构建器的设置，Go 代理填 `https://goproxy.cn,direct`，npm 镜像源填 `https://registry.npmmirror.com`，然后保存。不设置的话，构建会卡在下载 Go 依赖（日志里能看到 `proxy.golang.org ... i/o timeout`）。
 4. **安装其他模块。** 在 GitHub 上打开模块仓库，点 Code → Download ZIP（或者直接下载 `https://github.com/<用户>/<模块仓库>/archive/refs/heads/main.zip`），上传到构建器。构建成功后点“安装到本平台”。有 `requires` 的模块要先装它依赖的模块。
 
+## 显示备案号
+
+用域名对外开放后，国内服务器要在网页底部显示备案号。在 `.env` 里填上，门户所有页面（含登录页）的底部会显示它，点击在新标签页打开备案查询网站；留空就不显示。
+
+```bash
+cd ~/vibebooth
+sed -i "s/^ICP_BEIAN=.*/ICP_BEIAN=京ICP备00000000号-1/" .env
+docker compose up -d
+```
+
+- ICP 备案号填**网站备案号**（主体备案号后面带 `-1` 之类的那个），以腾讯云备案控制台显示的为准。
+- 公安备案通过后，同样填 `POLICE_BEIAN`，照公安备案系统上的写，例如 `京公网安备11010000000000号`。
+- 只改 `.env` 不用加 `--build`，`up -d` 会重建平台核心的容器读到新值，刷新网页就能看到。
+
 ## 代码更新后重新部署
 
 - **平台本体：** `cd ~/vibebooth && git pull && docker compose up -d --build`。只重建平台本体，模块不受影响。

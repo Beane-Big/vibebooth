@@ -132,6 +132,10 @@ flowchart TB
 
 > 已知限制：安装器只检查 `images.tar` 里 `manifest.json` 列出的镜像名。新版 Docker 导入时也可能读取 `index.json` 里的镜像名，理论上一个特意构造的包能借此覆盖别的镜像。因为只有有“应用管理”权限的人能上传，模块包也是自己打的，目前没有处理；以后要安装别人做的模块包时需要补上这项检查。
 
+## 备案号
+
+`.env` 的 `ICP_BEIAN`（ICP 备案号）和 `POLICE_BEIAN`（公安备案号）交给 `core`，`GET /api/platform/site` 不用登录就能取到。门户在登录页、首页和自带应用的底部显示它们（`portal/src/components/Beian.tsx`），分别链接到工信部和公安的备案查询网站；模块的内嵌页占满顶栏下面的区域，不显示。都留空时什么也不显示。
+
 ## 门户主题
 
 主题换门户的颜色、背景、组件样式、玻璃效果和首页，规范见 [docs/theme-spec.md](docs/theme-spec.md)。主题只有前端文件，没有容器：
