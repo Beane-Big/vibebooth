@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Alert, Button, Card, Form, Input, Typography } from "antd";
 import { api, type Me } from "../api";
+import Beian from "../components/Beian";
 import wordmark from "../assets/wordmark.svg";
 
 export default function Login({ onLogin }: { onLogin: (user: Me) => void }) {
@@ -38,6 +39,7 @@ export default function Login({ onLogin }: { onLogin: (user: Me) => void }) {
           </Button>
         </Form>
       </Card>
+      <Beian />
     </div>
   );
 }
