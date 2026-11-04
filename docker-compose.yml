@@ -13,8 +13,8 @@ services:
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=platform
       - --entrypoints.web.address=:80
-      # 默认 60 秒内要读完整个请求，上传几百 MB 的模块包可能不够。
-      - --entrypoints.web.transport.respondingTimeouts.readTimeout=10m
+      # 默认 60 秒内要读完整个请求。带宽小的时候上传一个上 GB 的模块包要一个多小时，和安装器（installer/main.go）一样放宽到 2 小时。
+      - --entrypoints.web.transport.respondingTimeouts.readTimeout=2h
       - --log.level=INFO
     ports:
       - "${PUBLIC_PORT:-8080}:80"

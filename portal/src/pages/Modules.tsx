@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Checkbox, Flex, List, Space, Tag, Typography } from "antd";
-import { api, ApiError, privilegeInfo, type InstalledModule } from "../api";
+import { Alert, Button, Card, Checkbox, Flex, List, Progress, Space, Tag, Typography } from "antd";
+import { api, ApiError, maxPackageMB, privilegeInfo, type InstalledModule } from "../api";
 import { PackageDragger, ResultAlert, type OperationResult } from "../components/PackageUpload";
 
 // 应用管理：上传模块包安装或升级，卸载模块。安装和卸载都不会重启平台和其他应用。
@@ -15,6 +15,8 @@ export default function Modules() {
   const [purge, setPurge] = useState(false);
   // 模块声明了特权时，安装器先拒绝并列出特权，管理员确认后再带上 allowPrivileges 装一次。
   const [confirming, setConfirming] = useState<string[] | null>(null);
+  // 上传进度（0～1），没在上传时为 null。大的模块包要传很久。
+  const [uploaded, setUploaded] = useState<number | null>(null);
 
   function load() {
     api
@@ -48,8 +50,16 @@ export default function Modules() {
   function install(allowPrivileges = false) {
     if (!file) return;
     setConfirming(null);
-    run(() => api.installModule(file, allowPrivileges), `${file.name} 已安装，几秒后出现在应用列表里。`).then(
-      (done) => done && setFile(null),
+    if (file.size > maxPackageMB * 1024 * 1024) {
+      setResult({ ok: false, message: `模块包不能超过 ${maxPackageMB} MB`, log: "" });
+      return;
+    }
+    setUploaded(0);
+    run(() => api.installModule(file, allowPrivileges, setUploaded), `${file.name} 已安装，几秒后出现在应用列表里。`).then(
+      (done) => {
+        setUploaded(null);
+        if (done) setFile(null);
+      },
     );
   }
 
@@ -80,7 +90,14 @@ export default function Modules() {
               {busy ? "处理中" : "安装"}
             </Button>
           </div>
-          {busy && <Typography.Text type="secondary">正在导入镜像并启动，可能需要一两分钟。关掉页面也不会中断安装。</Typography.Text>}
+          {busy && uploaded !== null && uploaded < 1 ? (
+            <Flex vertical gap={4}>
+              <Progress percent={Math.floor(uploaded * 100)} />
+              <Typography.Text type="secondary">正在上传模块包，传完之前不要关掉页面。</Typography.Text>
+            </Flex>
+          ) : (
+            busy && <Typography.Text type="secondary">正在导入镜像并启动，可能需要一两分钟。关掉页面也不会中断安装。</Typography.Text>
+          )}
           {confirming && (
             <Alert
               type="warning"
