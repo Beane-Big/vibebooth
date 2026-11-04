@@ -36,9 +36,9 @@ func main() {
 		Addr:              ":8000",
 		Handler:           (&server{installer: in}).routes(verifier),
 		ReadHeaderTimeout: 10 * time.Second,
-		// 上传模块包和启动容器都可能要几分钟。
-		ReadTimeout:  10 * time.Minute,
-		WriteTimeout: 10 * time.Minute,
+		// 带宽小的时候上传一个上 GB 的模块包要一个多小时，导入镜像、启动容器还要几分钟。
+		ReadTimeout:  2 * time.Hour,
+		WriteTimeout: 2*time.Hour + 15*time.Minute,
 	}
 	slog.Info("模块安装器已启动", "addr", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil {

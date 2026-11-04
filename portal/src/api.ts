@@ -136,6 +136,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.status === 204 ? (undefined as T) : res.json();
 }
 
+// upload 和 request 一样，只是用 XMLHttpRequest 发送表单，能报告上传进度（0～1）。fetch 拿不到上传进度。
+// 大的模块包要传很久，管理员要能看到还在传、传了多少。
+function upload<T>(path: string, form: FormData, onProgress?: (fraction: number) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", path);
+    xhr.responseType = "json";
+    if (onProgress) xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () => {
+      const body = xhr.response ?? {};
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body as T);
+      else reject(new ApiError(xhr.status, body.error ?? "请求失败", body.log, body.privileges));
+    };
+    xhr.onerror = () => reject(new ApiError(0, "上传中断，请检查网络后重试"));
+    xhr.send(form);
+  });
+}
+
+// 模块包上限，和安装器的 maxPackageSize（installer/server.go）一致；超过的在浏览器里就拦下，不用传完才被拒。
+export const maxPackageMB = 2048;
+
 const put = (path: string, body: unknown) => request<void>(path, { method: "PUT", body: JSON.stringify(body) });
 
 export const api = {
@@ -160,14 +181,12 @@ export const api = {
 
   // 应用管理（要有平台的“应用管理”权限）
   modules: () => request<InstalledModule[]>("/api/platform/installer/modules"),
-  installModule: (file: File, allowPrivileges = false) => {
+  // onProgress 报告上传进度；传完以后安装器还要导入镜像、启动容器，接口要等装好才返回。
+  installModule: (file: File, allowPrivileges = false, onProgress?: (fraction: number) => void) => {
     const form = new FormData();
     form.append("package", file);
     if (allowPrivileges) form.append("allowPrivileges", "true");
-    return request<{ module: InstalledModule; log: string }>("/api/platform/installer/modules", {
-      method: "POST",
-      body: form,
-    });
+    return upload<{ module: InstalledModule; log: string }>("/api/platform/installer/modules", form, onProgress);
   },
   uninstallModule: (id: string, purge: boolean) =>
     request<{ log: string }>(`/api/platform/installer/modules/${id}?purge=${purge}`, { method: "DELETE" }),

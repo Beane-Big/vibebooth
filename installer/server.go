@@ -9,16 +9,19 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/Beane-Big/vibebooth/packages/manifest"
 	"github.com/Beane-Big/vibebooth/packages/modpkg"
 	"github.com/Beane-Big/vibebooth/packages/sdk-go/auth"
 )
 
-// 模块包上限。一个模块的镜像一般几十 MB，留足余量。
-const maxPackageSize = 500 << 20
+// 模块包上限。一般的模块几十 MB，带模型的模块（例如背单词的语音）有几百 MB，留足余量。
+// 上传这么大的包要很久，网关和安装器读请求的超时也相应放宽了（docker-compose.yml、main.go）。
+const maxPackageSize = 2 << 30
 
 type server struct {
 	installer *Installer
@@ -57,38 +60,153 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
-// install 接收 multipart 表单里的 package 文件，先存成临时文件再安装。返回安装日志，失败时也返回日志。
-// 模块声明了特权时，表单里要有 allowPrivileges=true，否则返回 409 和需要的特权，由门户请管理员确认。
+// install 安装或升级模块，multipart 表单里二选一：
+//   - package：上传的模块包文件，边收边存成临时文件；
+//   - url：模块包的下载地址，由安装器自己去下载。构建器用它把服务器上构建好的软件包直接交给安装器，不经过浏览器。
+//
+// 返回安装日志，失败时也返回日志。模块声明了特权时，表单里要有 allowPrivileges=true，
+// 否则返回 409 和需要的特权，由门户请管理员确认。
 func (s *server) install(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxPackageSize)
-	file, _, err := r.FormFile("package")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "请上传模块包（zip，不超过 500 MB）", "")
-		return
+	r.Body = http.MaxBytesReader(w, r.Body, maxPackageSize+1<<20)
+	path, allow, status, err := s.receivePackage(r)
+	if path != "" {
+		defer os.Remove(path)
 	}
-	defer file.Close()
-	tmp, err := os.CreateTemp("", "package-*.zip")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "保存模块包失败", "")
-		return
-	}
-	defer os.Remove(tmp.Name())
-	_, err = io.Copy(tmp, file)
-	tmp.Close()
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "上传中断，请重试", "")
+		writeError(w, status, err.Error(), "")
 		return
 	}
 
 	var log bytes.Buffer
 	// 关掉页面或断网时不能中断安装：docker 命令被杀掉后，模块会停在半装好的状态，回滚也跑不了。
-	allow := r.FormValue("allowPrivileges") == "true"
-	m, err := s.installer.Install(context.WithoutCancel(r.Context()), tmp.Name(), allow, &log)
+	m, err := s.installer.Install(context.WithoutCancel(r.Context()), path, allow, &log)
 	if err != nil {
 		s.fail(w, err, log.String())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"module": installedView(m), "log": log.String()})
+}
+
+// receivePackage 读安装表单，把模块包存成临时文件，返回文件路径和是否允许特权。出错时返回给管理员看的错误和状态码；
+// 返回的路径不为空时，由调用方删除临时文件。用 MultipartReader 边收边写，几百 MB 的包不会先整个缓存一遍。
+func (s *server) receivePackage(r *http.Request) (path string, allow bool, status int, err error) {
+	usage := fmt.Errorf("请上传模块包（zip，不超过 %d MB），或者给出模块包的下载地址", maxPackageSize>>20)
+	mr, err := r.MultipartReader()
+	if err != nil {
+		return "", false, http.StatusBadRequest, usage
+	}
+	var url string
+	for {
+		part, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return path, false, uploadStatus(err), uploadError(err)
+		}
+		switch part.FormName() {
+		case "package":
+			if path != "" {
+				return path, false, http.StatusBadRequest, usage
+			}
+			if path, err = saveTemp(part); err != nil {
+				return path, false, uploadStatus(err), uploadError(err)
+			}
+		case "url", "allowPrivileges":
+			v, err := io.ReadAll(io.LimitReader(part, 4<<10))
+			if err != nil {
+				return path, false, uploadStatus(err), uploadError(err)
+			}
+			if part.FormName() == "url" {
+				url = strings.TrimSpace(string(v))
+			} else {
+				allow = string(v) == "true"
+			}
+		}
+	}
+	switch {
+	case path != "" && url == "":
+		return path, allow, 0, nil
+	case path == "" && url != "":
+		path, err = fetchPackage(r.Context(), url)
+		if err != nil {
+			return path, false, http.StatusBadRequest, err
+		}
+		return path, allow, 0, nil
+	}
+	return path, false, http.StatusBadRequest, usage
+}
+
+// fetchPackage 下载模块包到临时文件。只有管理员能调用安装接口，管理员本来就能装任意模块，所以不限制下载地址的主机。
+func fetchPackage(ctx context.Context, rawURL string) (string, error) {
+	if u, err := neturl.Parse(rawURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", errors.New("模块包的下载地址要以 http:// 或 https:// 开头")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", errors.New("模块包的下载地址不对")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("下载模块包失败：%v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("下载模块包失败：%s", resp.Status)
+	}
+	path, err := saveTemp(&limitedReader{r: resp.Body, n: maxPackageSize})
+	if err != nil {
+		if errors.Is(err, errTooLarge) {
+			return path, fmt.Errorf("模块包不能超过 %d MB", maxPackageSize>>20)
+		}
+		return path, fmt.Errorf("下载模块包中断：%v", err)
+	}
+	return path, nil
+}
+
+// saveTemp 把 r 的内容存成临时文件。出错时也返回已经建好的文件路径，由调用方删除。
+func saveTemp(r io.Reader) (string, error) {
+	tmp, err := os.CreateTemp("", "package-*.zip")
+	if err != nil {
+		return "", err
+	}
+	_, err = io.Copy(tmp, r)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	return tmp.Name(), err
+}
+
+var errTooLarge = errors.New("模块包太大")
+
+// limitedReader 读到超过 n 字节时报 errTooLarge，而不是像 io.LimitReader 那样悄悄截断。
+type limitedReader struct {
+	r io.Reader
+	n int64
+}
+
+func (l *limitedReader) Read(p []byte) (int, error) {
+	n, err := l.r.Read(p)
+	if l.n -= int64(n); l.n < 0 {
+		return n, errTooLarge
+	}
+	return n, err
+}
+
+func uploadStatus(err error) int {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return http.StatusRequestEntityTooLarge
+	}
+	return http.StatusBadRequest
+}
+
+func uploadError(err error) error {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return fmt.Errorf("模块包不能超过 %d MB", maxPackageSize>>20)
+	}
+	return errors.New("上传中断，请重试")
 }
 
 func (s *server) uninstall(w http.ResponseWriter, r *http.Request) {
