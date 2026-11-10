@@ -61,6 +61,7 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       ICP_BEIAN: ${ICP_BEIAN:-}
       POLICE_BEIAN: ${POLICE_BEIAN:-}
+      STATS_TIMEZONE: ${STATS_TIMEZONE:-Asia/Shanghai}
     volumes:
       - core-data:/data
       # 已安装模块的清单和图标，由安装器写入；平台核心每 5 秒扫描一次。

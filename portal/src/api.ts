@@ -27,8 +27,8 @@ export const isAdmin = (user: User) => user.roles.includes("admin");
 
 // 当前登录的人：登录和 /me 接口在账号信息之外还带上平台自己的功能权限（管理员总有全部）。
 // platform 为 false 表示不能用门户：门户只显示“没有权限”，他只能直接打开自己能用的应用。
-// photo 是账号关联的成员的照片，没有时为空。
-export type Me = User & { perms: string[]; platform: boolean; photo: string };
+// photo 是账号关联的成员的照片，没有时为空。stats 表示活跃度统计开着，门户要告诉他会记录使用时间。
+export type Me = User & { perms: string[]; platform: boolean; photo: string; stats: boolean };
 
 // 平台自己的功能权限，和 core/menus.go 里的 platformModule 一致。
 export type PlatformPerm = "settings" | "modules" | "members";
@@ -108,6 +108,25 @@ export type UserInput = {
 
 // 站点的公开信息：ICP 备案号和公安备案号，没配置时为空；policeCode 是公安备案号里的数字。
 export type SiteInfo = { icp: string; police: string; policeCode: string };
+
+// 活跃度统计（只有管理员能看），见 core/stats.go。app 是 portal（首页）、portal:<自带应用 id> 或模块 id；
+// name 只有已安装的模块才有，自带应用的名称由门户自己填，已卸载的模块显示 id。日期都按服务器设置的时区算。
+export type StatsDays = 7 | 30 | 90;
+export type StatsReport = {
+  enabled: boolean;
+  days: StatsDays;
+  todayUsers: number;
+  todayMinutes: number;
+  weekUsers: number;
+  monthUsers: number;
+  loginsOk: number;
+  loginsFailed: number;
+  daily: { day: string; users: number; minutes: number }[];
+  apps: { app: string; name: string; users: number; minutes: number; opens: number }[];
+  // 所有账号，lastActive 超过 90 天时为空。
+  people: { userId: number; displayName: string; disabled: boolean; minutes: number; activeDays: number; lastActive: string | null }[];
+  devices: { device: "phone" | "tablet" | "desktop"; minutes: number }[];
+};
 
 export class ApiError extends Error {
   constructor(
@@ -204,6 +223,13 @@ export const api = {
     return request<{ theme: ThemeInfo; log: string }>("/api/platform/installer/themes", { method: "POST", body: form });
   },
   uninstallTheme: (id: string) => request<{ log: string }>(`/api/platform/installer/themes/${id}`, { method: "DELETE" }),
+
+  // 活跃度统计：所有人都发心跳（统计关着时服务器不记）；看统计、开关和清空只有管理员能调用。
+  statsBeat: (app: string, open: boolean, touch: boolean) =>
+    request<void>("/api/platform/stats/beat", { method: "POST", body: JSON.stringify({ app, open, touch }) }),
+  stats: (days: StatsDays) => request<StatsReport>(`/api/platform/stats?days=${days}`),
+  setStatsEnabled: (enabled: boolean) => put("/api/platform/stats/settings", { enabled }),
+  clearStats: () => request<void>("/api/platform/stats", { method: "DELETE" }),
 
   // 成员和自己的备注（有“成员”权限就能调用），remark 为空表示删除。
   members: () => request<Member[]>("/api/platform/members"),

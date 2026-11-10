@@ -91,6 +91,31 @@ CREATE TABLE IF NOT EXISTS settings (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
 );
+-- 活跃度统计（见 stats.go），默认关闭。activity 是每人每个应用每分钟一行，保留 90 天；
+-- activity_daily 是按天（按 STATS_TIMEZONE 算日期）的汇总，长期保留；login_events 是登录成功和失败，保留 90 天，
+-- 用户名不存在的登录失败 user_id 为空，不记输入的用户名。
+CREATE TABLE IF NOT EXISTS activity (
+	user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	app     TEXT NOT NULL,
+	minute  TIMESTAMPTZ NOT NULL,
+	device  TEXT NOT NULL,
+	PRIMARY KEY (user_id, app, minute)
+);
+CREATE INDEX IF NOT EXISTS activity_minute_idx ON activity (minute);
+CREATE TABLE IF NOT EXISTS activity_daily (
+	day     DATE NOT NULL,
+	user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	app     TEXT NOT NULL,
+	minutes INT NOT NULL,
+	opens   INT NOT NULL,
+	PRIMARY KEY (day, user_id, app)
+);
+CREATE TABLE IF NOT EXISTS login_events (
+	at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+	user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+	ok      BOOLEAN NOT NULL
+);
+CREATE INDEX IF NOT EXISTS login_events_at_idx ON login_events (at);
 -- 关联了人员的账号，显示名称就是人员姓名。改姓名、关联账号时会一起改；这里把以前不一致的数据对齐一次。
 UPDATE users u SET display_name = p.name FROM persons p WHERE p.id = u.person_id AND u.display_name <> p.name;
 `
@@ -108,6 +133,12 @@ func (s *Store) Migrate(ctx context.Context) error {
 		return err
 	}
 	_, err = s.pool.Exec(ctx, schema)
+	return err
+}
+
+// CheckTimezone 确认 Postgres 认得这个时区名，免得统计在每次记录时才报错。
+func (s *Store) CheckTimezone(ctx context.Context, tz string) error {
+	_, err := s.pool.Exec(ctx, `SELECT now() AT TIME ZONE $1`, tz)
 	return err
 }
 
@@ -557,4 +588,207 @@ func (s *Store) UserBySession(ctx context.Context, tokenHash []byte) (*User, err
 func (s *Store) DeleteExpiredSessions(ctx context.Context) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at <= now()`)
 	return err
+}
+
+// ---- 活跃度统计 ----
+
+// RecordBeat 记一次心跳：同一个人、同一个应用、同一分钟只算一分钟，open 为 true 时打开次数加一。
+func (s *Store) RecordBeat(ctx context.Context, userID int64, app, device string, open bool, tz string) error {
+	opens := 0
+	if open {
+		opens = 1
+	}
+	_, err := s.pool.Exec(ctx, `
+		WITH ins AS (
+			INSERT INTO activity (user_id, app, minute, device) VALUES ($1, $2, date_trunc('minute', now()), $3)
+			ON CONFLICT DO NOTHING RETURNING 1
+		)
+		INSERT INTO activity_daily (day, user_id, app, minutes, opens)
+		VALUES ((now() AT TIME ZONE $4)::date, $1, $2, (SELECT count(*) FROM ins), $5)
+		ON CONFLICT (day, user_id, app) DO UPDATE
+		SET minutes = activity_daily.minutes + EXCLUDED.minutes, opens = activity_daily.opens + EXCLUDED.opens`,
+		userID, app, device, tz, opens)
+	return err
+}
+
+// RecordLogin 记一次登录结果。用户名不存在时 user_id 为空。
+func (s *Store) RecordLogin(ctx context.Context, username string, ok bool) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO login_events (user_id, ok) VALUES ((SELECT id FROM users WHERE username = $1), $2)`, username, ok)
+	return err
+}
+
+func (s *Store) DeleteOldStats(ctx context.Context, before time.Time) error {
+	if _, err := s.pool.Exec(ctx, `DELETE FROM activity WHERE minute < $1`, before); err != nil {
+		return err
+	}
+	_, err := s.pool.Exec(ctx, `DELETE FROM login_events WHERE at < $1`, before)
+	return err
+}
+
+func (s *Store) ClearStats(ctx context.Context) error {
+	_, err := s.pool.Exec(ctx, `TRUNCATE activity, activity_daily, login_events`)
+	return err
+}
+
+type statsDay struct {
+	Day     string `json:"day"`
+	Users   int    `json:"users"`
+	Minutes int    `json:"minutes"`
+}
+
+type statsApp struct {
+	App     string `json:"app"`
+	Name    string `json:"name"`
+	Users   int    `json:"users"`
+	Minutes int    `json:"minutes"`
+	Opens   int    `json:"opens"`
+}
+
+type statsPerson struct {
+	UserID      int64      `json:"userId"`
+	DisplayName string     `json:"displayName"`
+	Disabled    bool       `json:"disabled"`
+	Minutes     int        `json:"minutes"`
+	ActiveDays  int        `json:"activeDays"`
+	LastActive  *time.Time `json:"lastActive"`
+}
+
+type statsDevice struct {
+	Device  string `json:"device"`
+	Minutes int    `json:"minutes"`
+}
+
+type statsReport struct {
+	Enabled bool `json:"enabled"`
+	Days    int  `json:"days"`
+	// 今天、最近 7 天、最近 30 天用过平台的人数，今天的使用分钟数。
+	TodayUsers   int `json:"todayUsers"`
+	TodayMinutes int `json:"todayMinutes"`
+	WeekUsers    int `json:"weekUsers"`
+	MonthUsers   int `json:"monthUsers"`
+	// 所选时间段里登录成功和失败的次数。
+	LoginsOK     int           `json:"loginsOk"`
+	LoginsFailed int           `json:"loginsFailed"`
+	Daily        []statsDay    `json:"daily"`
+	Apps         []statsApp    `json:"apps"`
+	People       []statsPerson `json:"people"`
+	Devices      []statsDevice `json:"devices"`
+}
+
+// StatsReport 汇总最近 days 天（含今天）的统计。日期按 tz 算。
+func (s *Store) StatsReport(ctx context.Context, days int, tz string) (*statsReport, error) {
+	r := &statsReport{Days: days, Daily: []statsDay{}, Apps: []statsApp{}, People: []statsPerson{}, Devices: []statsDevice{}}
+	var today time.Time
+	if err := s.pool.QueryRow(ctx, `SELECT (now() AT TIME ZONE $1)::date`, tz).Scan(&today); err != nil {
+		return nil, err
+	}
+	// 日期都用字符串传给数据库再转成 date，不受数据库会话时区的影响。
+	date := func(t time.Time) string { return t.Format(time.DateOnly) }
+	from := date(today.AddDate(0, 0, -(days - 1)))
+	// 汇总按天的表时，从哪天开始算有多少不同的人。
+	users := func(since string) (int, error) {
+		var n int
+		err := s.pool.QueryRow(ctx, `SELECT count(DISTINCT user_id) FROM activity_daily WHERE day >= $1::date`, since).Scan(&n)
+		return n, err
+	}
+	var err error
+	if r.TodayUsers, err = users(date(today)); err != nil {
+		return nil, err
+	}
+	if r.WeekUsers, err = users(date(today.AddDate(0, 0, -6))); err != nil {
+		return nil, err
+	}
+	if r.MonthUsers, err = users(date(today.AddDate(0, 0, -29))); err != nil {
+		return nil, err
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT coalesce(sum(minutes), 0) FROM activity_daily WHERE day = $1::date`, date(today)).
+		Scan(&r.TodayMinutes); err != nil {
+		return nil, err
+	}
+	if err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE ok), count(*) FILTER (WHERE NOT ok) FROM login_events
+		WHERE (at AT TIME ZONE $2)::date >= $1::date`, from, tz).Scan(&r.LoginsOK, &r.LoginsFailed); err != nil {
+		return nil, err
+	}
+
+	// 每天一行，没人用的日子也有，人数和分钟数为 0。
+	rows, err := s.pool.Query(ctx, `
+		SELECT to_char(d, 'YYYY-MM-DD'), count(DISTINCT a.user_id), coalesce(sum(a.minutes), 0)
+		FROM generate_series($1::date, $2::date, interval '1 day') d
+		LEFT JOIN activity_daily a ON a.day = d::date
+		GROUP BY d ORDER BY d`, from, date(today))
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var d statsDay
+		if err := rows.Scan(&d.Day, &d.Users, &d.Minutes); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		r.Daily = append(r.Daily, d)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	rows, err = s.pool.Query(ctx, `
+		SELECT app, count(DISTINCT user_id), sum(minutes), sum(opens) FROM activity_daily
+		WHERE day >= $1::date GROUP BY app ORDER BY sum(minutes) DESC, sum(opens) DESC, app`, from)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var a statsApp
+		if err := rows.Scan(&a.App, &a.Users, &a.Minutes, &a.Opens); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		r.Apps = append(r.Apps, a)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// 所有账号都列出来，好看出谁很久没来了。最近活跃时间来自明细，超过保留期的为空。
+	rows, err = s.pool.Query(ctx, `
+		SELECT u.id, u.display_name, u.disabled,
+			coalesce((SELECT sum(minutes) FROM activity_daily a WHERE a.user_id = u.id AND a.day >= $1::date), 0),
+			(SELECT count(DISTINCT day) FROM activity_daily a WHERE a.user_id = u.id AND a.day >= $1::date),
+			(SELECT max(minute) FROM activity a WHERE a.user_id = u.id)
+		FROM users u ORDER BY 4 DESC, u.id`, from)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var p statsPerson
+		if err := rows.Scan(&p.UserID, &p.DisplayName, &p.Disabled, &p.Minutes, &p.ActiveDays, &p.LastActive); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		r.People = append(r.People, p)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	rows, err = s.pool.Query(ctx, `
+		SELECT device, count(*) FROM activity WHERE (minute AT TIME ZONE $2)::date >= $1::date
+		GROUP BY device ORDER BY count(*) DESC`, from, tz)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d statsDevice
+		if err := rows.Scan(&d.Device, &d.Minutes); err != nil {
+			return nil, err
+		}
+		r.Devices = append(r.Devices, d)
+	}
+	return r, rows.Err()
 }

@@ -112,6 +112,13 @@ pre.log {
 .section { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
 .switch-row { padding: 10px 0; }
 .switch-row + .switch-row { border-top: 1px solid var(--border); }
+
+/* 统计应用的每日柱状图：柱子从底部长出来，顶端圆角；整列都能悬停，细柱子也好指。 */
+.stats-bars { display: flex; align-items: flex-end; height: 140px; border-bottom: 1px solid var(--border); }
+.stats-bar-slot { flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-end; }
+.stats-bar { width: 100%; border-radius: 4px 4px 0 0; }
+.stats-meter { height: 8px; border-radius: 4px; margin-top: 4px; overflow: hidden; }
+.stats-meter > div { height: 100%; border-radius: 4px; }
 /* 权限：每个应用一张卡片，展开后是功能权限和页面。 */
 .app-grants { background: transparent; }
 .app-grants > .ant-collapse-item { margin-bottom: 8px; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; background: var(--surface); overflow: hidden; }

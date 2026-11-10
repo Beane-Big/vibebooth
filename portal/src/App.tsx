@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Result, Spin } from "antd";
+import { useActivityBeat } from "./activity";
 import { api, ApiError, type App as AppInfo, type Me } from "./api";
 import { builtinAliases, builtinAppsFor, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
@@ -8,6 +9,7 @@ import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
+import Stats from "./pages/Stats";
 import Themes from "./pages/Themes";
 import Users from "./pages/Users";
 import { useThemeMode } from "./theme";
@@ -84,6 +86,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   const [reloads, setReloads] = useState<Record<string, number>>({});
   const builtins = builtinAppsFor(user);
   const findBuiltin = (path: string) => builtins.find((app) => app.url === (builtinAliases[path] ?? path));
+  useActivityBeat(tabs.active);
 
   useEffect(() => {
     const builtin = findBuiltin(location.pathname);
@@ -157,6 +160,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
             {t.url === "/admin/users" && <Users me={user} onMeChanged={onMeChanged} />}
             {t.url === "/settings" && <Settings me={user} />}
             {t.url === "/themes" && <Themes me={user} themes={theme.themes} />}
+            {t.url === "/stats" && <Stats onChanged={onMeChanged} />}
           </div>
         ))}
       <AppFrames state={tabs} onEmbeddedPortal={onEmbeddedPortal} />

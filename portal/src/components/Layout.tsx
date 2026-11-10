@@ -80,6 +80,11 @@ export default function Layout({
               <Typography.Text strong style={{ display: "block", padding: "4px 8px" }}>
                 {user.displayName}
               </Typography.Text>
+              {user.stats && (
+                <Typography.Text type="secondary" style={{ display: "block", padding: "0 8px 8px", fontSize: 12 }}>
+                  平台正在记录你使用各应用的时间，只有管理员能看到。
+                </Typography.Text>
+              )}
               <Typography.Text type="secondary" style={{ display: "block", padding: "0 8px 8px" }}>
                 外观
               </Typography.Text>

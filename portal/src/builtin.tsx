@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { SettingOutlined, SkinOutlined, TeamOutlined } from "@ant-design/icons";
+import { BarChartOutlined, SettingOutlined, SkinOutlined, TeamOutlined } from "@ant-design/icons";
 import { hasPerm, isAdmin, type Me, type PlatformPerm } from "./api";
 
 // 平台自带的应用：代码在门户里，交互和模块一样，出现在应用页，点开是一个标签页。
@@ -46,6 +46,15 @@ export const builtinApps: BuiltinApp[] = [
     icon: <SkinOutlined />,
     tint: ["#ffc75f", "#ff5f8f"],
     perm: "everyone",
+  },
+  // 活跃度统计只给管理员：谁在什么时候用了哪个应用属于每个人的隐私。
+  {
+    id: "stats",
+    name: "统计",
+    description: "谁在用平台、用哪些应用、用了多久",
+    url: "/stats",
+    icon: <BarChartOutlined />,
+    tint: ["#5ee7b0", "#0f9f8f"],
   },
 ];
 
