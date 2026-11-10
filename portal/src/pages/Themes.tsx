@@ -102,8 +102,6 @@ export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) 
                   <Space size={8} wrap>
                     <Typography.Text strong>{item.name}</Typography.Text>
                     {platformDefault === item.skin && <Tag color="processing">默认</Tag>}
-                    {item.theme && <Tag>{item.theme.version}</Tag>}
-                    {item.theme?.script && <Tag color="warning">带脚本</Tag>}
                   </Space>
                   <Typography.Text type="secondary">{item.description || " "}</Typography.Text>
                 </Flex>
