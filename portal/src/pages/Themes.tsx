@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Alert, Button, Card, Col, Flex, Row, Space, Tag, Typography } from "antd";
-import { CheckOutlined, SkinOutlined } from "@ant-design/icons";
+import { CheckOutlined, DownloadOutlined, SkinOutlined } from "@ant-design/icons";
 import { api, ApiError, hasPerm, type Me, type ThemeInfo } from "../api";
 import { PackageDragger, ResultAlert, type OperationResult } from "../components/PackageUpload";
 import { themeID, useThemeMode, type Skin } from "../theme";
@@ -9,7 +9,7 @@ import classicShot from "../assets/skin-classic.jpg";
 import tilesShot from "../assets/skin-tiles.jpg";
 
 // 平台自带的“主题”应用：每个人在这里给自己选皮肤，选择存在自己的浏览器里；没选过的人用平台默认皮肤。
-// 皮肤有内置的两种和管理员安装的主题包。有“应用管理”权限的人还能设平台默认皮肤、上传主题包安装或升级，以及卸载主题。
+// 皮肤有内置的两种和管理员安装的主题包。有“应用管理”权限的人还能设平台默认皮肤、上传主题包安装或升级、导出主题包，以及卸载主题。
 // 主题包的格式见 docs/theme-spec.md，用 create-vibebooth-theme 生成。
 export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) {
   const { skin, ownSkin, setSkin, defaultSkin } = useThemeMode();
@@ -120,6 +120,16 @@ export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) 
                   {canManage && platformDefault !== item.skin && (
                     <Button disabled={busy} onClick={() => makeDefault(item)}>
                       设为默认
+                    </Button>
+                  )}
+                  {canManage && item.theme && (
+                    // 导出成和上传时一样的主题包，能装到别的平台，或者在源码丢了时拿回装着的版本。
+                    <Button
+                      icon={<DownloadOutlined />}
+                      href={`/api/platform/themes/${item.theme.id}/export`}
+                      download={`${item.theme.id}-${item.theme.version}.zip`}
+                    >
+                      导出
                     </Button>
                   )}
                   {canManage &&
