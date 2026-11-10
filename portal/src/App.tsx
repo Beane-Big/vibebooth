@@ -140,6 +140,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
       onUserInfo={usersApp && (() => tabs.open({ url: usersApp.url, title: usersApp.name }))}
       onLogout={onLogout}
       activeTheme={theme.active?.id}
+      TopbarBackground={theme.def?.TopbarBackground}
       // 彩色方块皮肤的首页用卡片的底色（浅色时是纯白），彩色图标更干净；其他页面的卡片还是放在灰底上。
       plain={skin === "tiles" && tabs.active === PORTAL_TAB}
     >

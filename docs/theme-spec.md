@@ -89,6 +89,7 @@ preview: preview.png
 | `wordmark` | 顶栏平台字标的颜色，深浅色各一份，每份是 1 到 4 个颜色，从左到右渐变；投影和描边跟着中间的颜色。只认 `#rrggbb`、颜色名和 `rgb()`、`hsl()`、`oklch()` 这类写法。不写时跟着主题的主色（`colorPrimary`）：主色和色相往两边各偏 60 度的颜色组成渐变 |
 | `wallpaper` | `true` 表示使用平台壁纸（见上面的“壁纸”）：有人选了壁纸时，页面背景（`--page-bg`）换成 `url(壁纸) center / cover no-repeat` 加页面底色，代替 `background` |
 | `Home` | 替换首页应用列表的 React 组件，见下 |
+| `TopbarBackground` | 顶栏背景的 React 组件，见下 |
 
 ### 图标怎么跟着主题换颜色
 
@@ -114,6 +115,13 @@ registerTheme({
 - `healthy` 为 false 的应用要看得出不可用。
 - `dark` 是当前是否深色，`user.displayName` 是当前用户的名字。
 - `wallpaper` 是正在用的平台壁纸的网址，主题写了 `wallpaper: true`、又选了壁纸时才有，否则为空。页面背景已经是它了，首页要自己再画一份时用（比如给玻璃折射）。
+
+### 顶栏背景
+
+`TopbarBackground` 收到 `{dark, wallpaper}`（和 `Home` 的同名参数一样），画在顶栏里面、字标和标签的后面：门户把它放进一个铺满顶栏、跟着顶栏圆角裁切、不接收点击的容器（`.topbar-bg`）。顶栏的内容、布局和交互还是门户的，主题只换背景，比如画一块折射壁纸的玻璃。
+
+- 用它的主题一般要在样式表里把 `.topbar` 自己的底色和模糊去掉，否则会盖在背景上面。
+- 组件出错时门户不显示它，也不提示，顶栏照常能用。
 
 ## 样式表
 

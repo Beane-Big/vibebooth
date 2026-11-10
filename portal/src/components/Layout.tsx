@@ -1,10 +1,11 @@
-import { cloneElement, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { cloneElement, type ComponentType, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { Button, Dropdown, Grid, Layout as AntLayout, Segmented, Typography, theme } from "antd";
 import { IdcardOutlined, LogoutOutlined } from "@ant-design/icons";
 import { api, type Me } from "../api";
 import PersonAvatar from "./PersonAvatar";
 import Wordmark from "./Wordmark";
-import { useThemeMode, type Skin, type ThemeMode } from "../theme";
+import { useThemeMode, wallpaperURL, type Skin, type ThemeMode } from "../theme";
+import { ThemeBoundary, type TopbarProps } from "../themeHost";
 
 // 门户各页面共用的顶栏，只有一行：左边是平台字标（点它回到首页），中间是标签栏（第一个固定是首页），右边是头像。
 // 用户、设置、主题都是平台自带的应用，从首页打开（应用管理在设置里，皮肤在主题里选）；点头像可以切换浅色深色、打开“用户”应用看自己的资料和账号、退出登录。
@@ -16,6 +17,7 @@ export default function Layout({
   onUserInfo,
   onLogout,
   activeTheme,
+  TopbarBackground,
   plain = false,
   children,
 }: {
@@ -26,11 +28,13 @@ export default function Layout({
   onLogout: () => void;
   // 正在用的主题包（没有时为空）。
   activeTheme?: string;
+  // 主题包给顶栏画的背景（ThemeDefinition.TopbarBackground），没有时为空。
+  TopbarBackground?: ComponentType<TopbarProps>;
   // 页面底色用卡片的颜色，不用灰底。
   plain?: boolean;
   children: ReactNode;
 }) {
-  const { mode, setMode, skin } = useThemeMode();
+  const { mode, setMode, skin, dark, wallpaper, wallpaperSupported } = useThemeMode();
   // 手机上只显示头像，名字收进下拉菜单；平台字标也不显示，给标签栏腾地方。
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
@@ -43,6 +47,14 @@ export default function Layout({
   return (
     <AntLayout className={skinClass(skin, activeTheme)} style={{ minHeight: "100vh", background: plain ? "var(--surface)" : undefined }}>
       <AntLayout.Header className="topbar">
+        {TopbarBackground && activeTheme && (
+          // 主题的背景出错时不显示它，顶栏照常能用。
+          <ThemeBoundary key={activeTheme} name={activeTheme} fallback={null} quiet>
+            <div className="topbar-bg">
+              <TopbarBackground dark={dark} wallpaper={wallpaperSupported ? wallpaperURL(wallpaper) : ""} />
+            </div>
+          </ThemeBoundary>
+        )}
         {screens.sm && (
           <a
             className="brand"
