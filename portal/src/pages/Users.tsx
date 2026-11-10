@@ -29,6 +29,7 @@ import { api, isAdmin, type AppGrant, type Grant, type Member, type Person, type
 import MyPassword from "../components/MyPassword";
 import MyPhoto from "../components/MyPhoto";
 import PersonAvatar from "../components/PersonAvatar";
+import SwitchRow from "../components/SwitchRow";
 import { confirmRules, passwordRules } from "../password";
 import { resizePhoto } from "../photo";
 
@@ -975,38 +976,6 @@ function AccountSettings({ user, me, onSaved, link }: { user: User; me: User; on
         <Typography.Text strong>所属成员</Typography.Text>
         <div style={{ marginTop: 8 }}>{link}</div>
       </div>
-    </Flex>
-  );
-}
-
-// SwitchRow 是一行开关：左边是名称和说明，右边是开关。账号设置和权限都用它。
-function SwitchRow({
-  title,
-  description,
-  checked,
-  disabled,
-  onChange,
-  extra,
-}: {
-  title: ReactNode;
-  description?: ReactNode;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (checked: boolean) => void;
-  extra?: ReactNode;
-}) {
-  return (
-    <Flex align="center" gap={12} className="switch-row">
-      <Flex vertical style={{ flex: 1, minWidth: 0 }}>
-        <Typography.Text>{title}</Typography.Text>
-        {description && (
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {description}
-          </Typography.Text>
-        )}
-      </Flex>
-      {extra}
-      <Switch checked={checked} disabled={disabled} onChange={onChange} />
     </Flex>
   );
 }

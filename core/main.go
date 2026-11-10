@@ -23,6 +23,8 @@ type config struct {
 	CookieSecure  bool
 	ICPBeian      string
 	PoliceBeian   string
+	// 活跃度统计按哪个时区算日期，Postgres 能识别的时区名，例如 Asia/Shanghai。
+	StatsTimezone string
 }
 
 func loadConfig() config {
@@ -36,6 +38,7 @@ func loadConfig() config {
 		CookieSecure:  os.Getenv("COOKIE_SECURE") == "true",
 		ICPBeian:      strings.TrimSpace(os.Getenv("ICP_BEIAN")),
 		PoliceBeian:   strings.TrimSpace(os.Getenv("POLICE_BEIAN")),
+		StatsTimezone: env("STATS_TIMEZONE", "Asia/Shanghai"),
 	}
 }
 
@@ -60,6 +63,9 @@ func main() {
 	if err := store.Migrate(ctx); err != nil {
 		fatal("数据库迁移失败", err)
 	}
+	if err := store.CheckTimezone(ctx, cfg.StatsTimezone); err != nil {
+		fatal("STATS_TIMEZONE 不是有效的时区", err)
+	}
 	if err := store.EnsureAdmin(ctx, cfg.AdminUser, cfg.AdminPassword); err != nil {
 		fatal("初始化管理员失败", err)
 	}
@@ -80,6 +86,7 @@ func main() {
 		limiter:  newLoginLimiter(10, 15*time.Minute),
 	}
 	go s.cleanupSessions(ctx)
+	go s.cleanupStats(ctx)
 	go registry.Watch(ctx, 5*time.Second)
 
 	srv := &http.Server{
@@ -120,6 +127,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/themes/{id}/{path...}", s.requireUser(s.handleThemeFile))
 	mux.HandleFunc("GET /api/platform/appearance", s.requireUser(s.handleAppearance))
 	mux.HandleFunc("PUT /api/platform/appearance", s.requirePerm(permModules, s.handleSetAppearance))
+	// 活跃度统计：所有登录的人都会发心跳（统计关着时不记），看统计、开关和清空只给管理员。
+	mux.HandleFunc("POST /api/platform/stats/beat", s.requireUser(s.handleStatsBeat))
+	mux.HandleFunc("GET /api/platform/stats", s.requireRole("admin", s.handleStats))
+	mux.HandleFunc("PUT /api/platform/stats/settings", s.requireRole("admin", s.handleSetStats))
+	mux.HandleFunc("DELETE /api/platform/stats", s.requireRole("admin", s.handleClearStats))
 	mux.HandleFunc("GET /api/platform/users", s.requireRole("admin", s.handleListUsers))
 	mux.HandleFunc("POST /api/platform/users", s.requireRole("admin", s.handleCreateUser))
 	mux.HandleFunc("PUT /api/platform/users/{id}", s.requireRole("admin", s.handleUpdateUser))

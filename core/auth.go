@@ -57,11 +57,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
-	user, err := s.store.CheckPassword(r.Context(), strings.TrimSpace(req.Username), req.Password)
+	username := strings.TrimSpace(req.Username)
+	user, err := s.store.CheckPassword(r.Context(), username, req.Password)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
+	s.recordLogin(r.Context(), username, user != nil)
 	if user == nil {
 		s.limiter.Fail(ip)
 		writeError(w, http.StatusUnauthorized, "用户名或密码错误")
@@ -115,7 +117,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user *User) {
 	s.writeMe(w, r, user)
 }
 
-// writeMe 返回当前用户，附上平台自己的功能权限（门户据此显示“设置”和“应用管理”）和自己的头像。登录接口也返回同样的内容。
+// writeMe 返回当前用户，附上平台自己的功能权限（门户据此显示“设置”和“应用管理”）、自己的头像和统计是否开着。登录接口也返回同样的内容。
 // Platform 为 false 表示不能用门户，门户只显示“没有权限”，他只能直接打开自己能用的应用。
 func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user *User) {
 	g, err := s.store.Grants(r.Context(), user.ID)
@@ -139,12 +141,19 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user *User) {
 			photo = p.Photo
 		}
 	}
+	// Stats 表示活跃度统计开着，门户据此告诉他会记录使用时间。
+	stats, err := s.statsEnabled(r.Context())
+	if err != nil {
+		internalError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, struct {
 		*User
 		Perms    []string `json:"perms"`
 		Platform bool     `json:"platform"`
 		Photo    string   `json:"photo"`
-	}{user, perms, appAllowed(user, platformModule, g), photo})
+		Stats    bool     `json:"stats"`
+	}{user, perms, appAllowed(user, platformModule, g), photo, stats})
 }
 
 func (s *Server) currentUser(r *http.Request) (*User, error) {
