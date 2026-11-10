@@ -39,7 +39,7 @@ export default function Home({
             apps={themeApps(props)}
             dark={dark}
             user={{ displayName: user.displayName }}
-            wallpaper={theme.def.wallpaper ? wallpaperURL(wallpaper) : ""}
+            wallpaper={wallpaperURL(wallpaper)}
           />
         </ThemeBoundary>
       );

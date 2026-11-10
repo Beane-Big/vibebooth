@@ -155,7 +155,7 @@ flowchart TB
 - `core` 的 `GET /api/platform/themes` 列出主题，`GET /api/platform/themes/<id>/<文件>` 只发清单声明的文件和 `assets/` 下的文件，都要登录。
 - `core` 的 `GET /api/platform/themes/<id>/export` 把已安装的主题打回主题包（zip）下载，要“应用管理”权限：包里是 `theme.yaml`、它声明的文件和 `assets/` 下的合法文件，能直接再上传安装。“主题”应用里每个主题的“导出”按钮用它。
 - 平台默认皮肤和默认壁纸存在数据库 `settings` 表（`default_skin`、`default_wallpaper`），`GET/PUT /api/platform/appearance` 读写，改要“应用管理”权限。每个人自己选的皮肤和壁纸存在自己的浏览器里，没选过的用默认的。
-- 壁纸（`core/wallpapers.go`）存在 `core-data` 卷的 `wallpapers/` 下，每张一份大图（最宽 2560px）和一份缩略图（宽 480px），都是 JPEG。管理员上传的图片在上传时解码、按拍摄方向转正、缩小后重新编码，不原样保存。必应每日壁纸在有人请求它时才去取：存着的超过 6 小时就向 `cn.bing.com` 要今天的图，取不到时继续用存着的、一刻钟后再试，所以 `core` 要能连外网（它在 `platform` 网络上，能连）。只有声明了 `wallpaper: true` 的主题显示壁纸。
+- 壁纸（`core/wallpapers.go`）存在 `core-data` 卷的 `wallpapers/` 下，每张一份大图（最宽 2560px）和一份缩略图（宽 480px），都是 JPEG。管理员上传的图片在上传时解码、按拍摄方向转正、缩小后重新编码，不原样保存。必应每日壁纸在有人请求它时才去取：存着的超过 6 小时就向 `cn.bing.com` 要今天的图，取不到时继续用存着的、一刻钟后再试，所以 `core` 要能连外网（它在 `platform` 网络上，能连）。选了壁纸时，所有皮肤和主题都用它当页面背景。
 - 门户把自己的 React 和一部分 Ant Design 组件放在 `window.vibebooth` 上，加载选用的主题脚本，主题调用 `registerTheme` 注册颜色参数、背景、玻璃效果和首页组件（`portal/src/themeHost.tsx`）。内置皮肤“经典”和“彩色方块”不是主题包，在门户代码里。
 - 模块的页面在 iframe 里，不受主题影响。
 
