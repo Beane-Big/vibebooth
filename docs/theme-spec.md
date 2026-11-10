@@ -49,6 +49,12 @@ preview: preview.png
 
 平台有一个默认皮肤（没设过时是“经典”），有“应用管理”权限的人在“主题”应用里点“设为默认”修改。没有自己选皮肤的人用默认皮肤，管理员改了默认会跟着变；自己选过的人可以点“跟随平台默认”改回来。卸载主题时，自己选了它的人改用平台默认皮肤；它正好是默认皮肤时，默认换回“经典”。
 
+### 壁纸
+
+壁纸由平台保存，不在主题包里，主题写 `wallpaper: true` 才用。“主题”应用里有一块“壁纸”：“不用壁纸”、必应每日壁纸（平台每天自动取必应首页的图）和管理员上传的图片（JPEG、PNG、WebP，不超过 25 MB，平台缩到最宽 2560px 存成 JPEG）。和皮肤一样，每个人自己选、存在自己的浏览器里，没选过的用平台默认壁纸（没设过时是不用壁纸）；有“应用管理”权限的人能上传、删除和设默认。删掉的壁纸正好是默认时，默认改成不用壁纸；自己选了它的人改用平台默认。
+
+用壁纸的主题里，选了壁纸时页面背景换成壁纸（铺满、居中裁切），没选时用主题自己的 `background`。不用壁纸的主题和内置皮肤不显示壁纸。
+
 ## 安全
 
 主题的脚本在门户里以使用者的身份运行，能看到和操作他在平台上能看到的一切，和门户自己的代码没有区别。所以：
@@ -81,6 +87,7 @@ preview: preview.png
 | `glass` | 玻璃效果，`true` 或 `{blur, opacity}`：卡片、顶栏、弹出层、菜单的底色变半透明（`opacity` 默认 0.6），并模糊后面的背景（`blur` 默认 20px）。和 `background` 一起用效果才明显 |
 | `icons` | 首页应用图标的颜色，深浅色各一份，`{bg, fg}`：`bg` 是图标的底色，CSS `background` 写法（颜色或渐变），不写用应用自己的底色；`fg` 是图形的颜色，只能是颜色，不写是白色。写了这一项图标就按主题上色，见下 |
 | `wordmark` | 顶栏平台字标的颜色，深浅色各一份，每份是 1 到 4 个颜色，从左到右渐变；投影和描边跟着中间的颜色。只认 `#rrggbb`、颜色名和 `rgb()`、`hsl()`、`oklch()` 这类写法。不写时跟着主题的主色（`colorPrimary`）：主色和色相往两边各偏 60 度的颜色组成渐变 |
+| `wallpaper` | `true` 表示使用平台壁纸（见上面的“壁纸”）：有人选了壁纸时，页面背景（`--page-bg`）换成 `url(壁纸) center / cover no-repeat` 加页面底色，代替 `background` |
 | `Home` | 替换首页应用列表的 React 组件，见下 |
 
 ### 图标怎么跟着主题换颜色
@@ -99,13 +106,14 @@ registerTheme({
 
 ### 首页组件
 
-`Home` 收到 `{apps, dark, user}`：
+`Home` 收到 `{apps, dark, user, wallpaper}`：
 
 - `apps`：首页上的应用，平台自带的应用（用户、设置）和模块统一成一种，已按当前用户的权限过滤。每个有 `id name description url healthy builtin link`；模块有 `icon`（图片网址），图标能拆开时还有图形的网址 `mask` 和底色 `color`；平台自带的应用有 `glyph`（图标元素）和建议的渐变底色 `tint`。
 - 图标交给 `window.vibebooth.AppIcon` 画，它会按 `icons` 上色、照顾到没有图片和拆不开的图标。
 - `link` 原样展开到 `<a>` 上：普通点击在门户里以标签页打开，按住 Ctrl / Cmd 或中键在浏览器新标签页打开。不要自己拼网址或另写跳转。
 - `healthy` 为 false 的应用要看得出不可用。
 - `dark` 是当前是否深色，`user.displayName` 是当前用户的名字。
+- `wallpaper` 是正在用的平台壁纸的网址，主题写了 `wallpaper: true`、又选了壁纸时才有，否则为空。页面背景已经是它了，首页要自己再画一份时用（比如给玻璃折射）。
 
 ## 样式表
 
@@ -119,5 +127,5 @@ registerTheme({
 ## 平台怎么加载主题
 
 1. 安装器把主题解压到 `modules-data` 卷的 `.themes/<id>/`（先解到暂存目录再换上，升级时不会半新半旧）。
-2. 平台核心 `GET /api/platform/themes` 列出已安装的主题，`GET /api/platform/themes/<id>/<文件>` 发主题包里的文件（只发清单声明的文件和 `assets/` 下的文件），都要登录。`GET /api/platform/themes/<id>/export` 把主题打回主题包下载，要“应用管理”权限。`GET /api/platform/appearance` 返回平台默认皮肤 `{defaultSkin}`，`PUT` 同一地址修改，要“应用管理”权限。主题文件带 `Content-Security-Policy: sandbox` 响应头，直接在浏览器里打开时（比如嵌了脚本的 SVG）不会运行脚本。
+2. 平台核心 `GET /api/platform/themes` 列出已安装的主题，`GET /api/platform/themes/<id>/<文件>` 发主题包里的文件（只发清单声明的文件和 `assets/` 下的文件），都要登录。`GET /api/platform/themes/<id>/export` 把主题打回主题包下载，要“应用管理”权限。`GET /api/platform/appearance` 返回平台默认皮肤和壁纸 `{defaultSkin, defaultWallpaper}`，`PUT` 同一地址修改其中带了的项，要“应用管理”权限。壁纸：`GET /api/platform/wallpapers` 列出、`GET /api/platform/wallpapers/<id>/image|thumb` 发大图和缩略图，要登录；`POST /api/platform/wallpapers`（表单字段 `image`）上传、`DELETE /api/platform/wallpapers/<id>` 删除，要“应用管理”权限。主题文件带 `Content-Security-Policy: sandbox` 响应头，直接在浏览器里打开时（比如嵌了脚本的 SVG）不会运行脚本。
 3. 门户的当前皮肤是自己选的皮肤，没选过就是平台默认皮肤。读到当前皮肤是 `theme:<id>` 时，插入 `<script data-theme="<id>">` 加载脚本，拿到注册的内容后套上颜色参数、背景、玻璃效果和首页组件，再挂上样式表。
