@@ -59,6 +59,12 @@ export type ThemeInfo = {
   preview?: string;
 };
 
+// 平台的壁纸（见 core/wallpapers.go）：id 是 bing 时是必应每日壁纸，带标题和版权说明；其他是管理员上传的。
+export type Wallpaper = { id: string; title?: string; copyright?: string };
+
+// 壁纸上限，和 core/wallpapers.go 的 maxWallpaperUpload 一致。
+export const maxWallpaperMB = 25;
+
 // 应用管理页：安装器返回的已安装模块。
 export type InstalledModule = {
   id: string;
@@ -212,9 +218,18 @@ export const api = {
 
   // 主题：所有登录的人都能列出和选用；安装和卸载要有“应用管理”权限。
   themes: () => request<ThemeInfo[]>("/api/platform/themes"),
-  // 平台默认的皮肤：没自己选过的人用它。设置要有“应用管理”权限。
-  appearance: () => request<{ defaultSkin: Skin }>("/api/platform/appearance"),
+  // 平台默认的皮肤和壁纸：没自己选过的人用它。设置要有“应用管理”权限。defaultWallpaper 为空表示不用壁纸。
+  appearance: () => request<{ defaultSkin: Skin; defaultWallpaper: string }>("/api/platform/appearance"),
   setDefaultSkin: (defaultSkin: Skin) => put("/api/platform/appearance", { defaultSkin }),
+  setDefaultWallpaper: (defaultWallpaper: string) => put("/api/platform/appearance", { defaultWallpaper }),
+  // 壁纸：所有登录的人都能列出和选用；上传和删除要有“应用管理”权限。图片在 wallpaperURL（theme.tsx）。
+  wallpapers: () => request<Wallpaper[]>("/api/platform/wallpapers"),
+  uploadWallpaper: (file: File) => {
+    const form = new FormData();
+    form.append("image", file);
+    return request<Wallpaper>("/api/platform/wallpapers", { method: "POST", body: form });
+  },
+  deleteWallpaper: (id: string) => request<void>(`/api/platform/wallpapers/${id}`, { method: "DELETE" }),
   // 主题带脚本时，安装器先返回 409，管理员确认后带上 allowScript 再装一次。
   installTheme: (file: File, allowScript = false) => {
     const form = new FormData();

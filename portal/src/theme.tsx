@@ -75,6 +75,9 @@ export type ThemeOverrides = {
   icons?: PerMode<{ bg?: string; fg?: string }>;
   // 顶栏平台字标的渐变颜色，从左到右，1 到 4 个颜色。见 components/Wordmark.tsx。
   wordmark?: PerMode<string[]>;
+  // 使用平台壁纸：写成 true 时，有人选了壁纸（或者平台设了默认壁纸），页面背景就换成壁纸，铺满整个屏幕，
+  // 没选时用上面的 background。壁纸由平台保存，在“主题”应用里选，见 docs/theme-spec.md。
+  wallpaper?: boolean;
 };
 
 const pick = <T,>(v: PerMode<T> | undefined, dark: boolean) => (dark ? v?.dark : v?.light);
@@ -157,6 +160,22 @@ const skinKey = "vb-skin";
 const defaultSkinKey = "vb-default-skin";
 const validSkin = (v: string) => v === "classic" || v === "tiles" || /^theme:[a-z][a-z0-9-]{1,30}$/.test(v);
 
+// 壁纸：bing 是必应每日壁纸，12 位十六进制是管理员上传的，空表示不用壁纸。和皮肤一样，自己选的记在浏览器里，
+// 没有这一项表示跟随平台默认；平台默认也记一份，打开页面时先用。
+const wallpaperKey = "vb-wallpaper";
+const defaultWallpaperKey = "vb-default-wallpaper";
+const validWallpaper = (v: string) => v === "" || v === "bing" || /^[0-9a-f]{12}$/.test(v);
+
+// wallpaperURL 返回壁纸大图（image）或缩略图（thumb）的网址，不用壁纸时为空。
+// 必应壁纸每天换，网址带上日期，浏览器缓存过了一天就重新取。
+export function wallpaperURL(id: string, size: "image" | "thumb" = "image") {
+  if (!id) return "";
+  const url = `/api/platform/wallpapers/${id}/${size}`;
+  if (id !== "bing") return url;
+  const d = new Date();
+  return `${url}?d=${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
 function saved<T extends string>(key: string, valid: (v: string) => boolean, fallback: T): T {
   try {
     const v = localStorage.getItem(key);
@@ -213,6 +232,16 @@ const ModeContext = createContext<{
   wordmark: string[] | undefined;
   // 选用的主题包加载好以后，由门户把它的外观设置交给这里；null 表示不改。
   setOverrides: (o: ThemeOverrides | null) => void;
+  // 正在用的壁纸 id：自己选的，没选过时是平台默认的；空表示不用壁纸。
+  wallpaper: string;
+  // 自己选的壁纸，null 表示跟随平台默认，空字符串表示自己选了不用壁纸。
+  ownWallpaper: string | null;
+  setWallpaper: (id: string | null) => void;
+  // 平台默认的壁纸，由管理员在“主题”应用里设置。
+  defaultWallpaper: string;
+  setDefaultWallpaper: (id: string) => void;
+  // 当前主题用不用平台壁纸（ThemeOverrides.wallpaper）。不用的主题和内置皮肤不显示壁纸。
+  wallpaperSupported: boolean;
 }>({
   mode: "system",
   setMode: () => {},
@@ -225,6 +254,12 @@ const ModeContext = createContext<{
   themedIcons: false,
   wordmark: undefined,
   setOverrides: () => {},
+  wallpaper: "",
+  ownWallpaper: null,
+  setWallpaper: () => {},
+  defaultWallpaper: "",
+  setDefaultWallpaper: () => {},
+  wallpaperSupported: false,
 });
 
 export const useThemeMode = () => useContext(ModeContext);
@@ -241,6 +276,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [defaultSkin, setDefaultSkinState] = useState<Skin>(() => saved(defaultSkinKey, validSkin, "classic"));
   const skin = ownSkin ?? defaultSkin;
   const [overrides, setOverrides] = useState<ThemeOverrides | null>(null);
+  const [ownWallpaper, setOwnWallpaper] = useState<string | null>(() => {
+    try {
+      const v = localStorage.getItem(wallpaperKey);
+      if (v !== null && validWallpaper(v)) return v;
+    } catch {
+      // 浏览器禁用了本地存储时跟随平台默认。
+    }
+    return null;
+  });
+  const [defaultWallpaper, setDefaultWallpaperState] = useState(() => saved<string>(defaultWallpaperKey, validWallpaper, ""));
+  const wallpaper = ownWallpaper ?? defaultWallpaper;
+  const wallpaperSupported = !!overrides?.wallpaper;
   const systemDark = useSystemDark();
   const dark = mode === "dark" || (mode === "system" && systemDark);
   const p = paletteFor(dark, overrides ?? undefined);
@@ -263,13 +310,27 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     save(defaultSkinKey, s);
   }
 
+  function setWallpaper(id: string | null) {
+    setOwnWallpaper(id);
+    if (id !== null) save(wallpaperKey, id);
+    else remove(wallpaperKey);
+  }
+
+  function setDefaultWallpaper(id: string) {
+    setDefaultWallpaperState(id);
+    save(defaultWallpaperKey, id);
+  }
+
   return (
     <ModeContext.Provider
-      value={{ mode, setMode, skin, ownSkin, setSkin, defaultSkin, setDefaultSkin, dark, themedIcons, wordmark, setOverrides }}
+      value={{
+        mode, setMode, skin, ownSkin, setSkin, defaultSkin, setDefaultSkin, dark, themedIcons, wordmark, setOverrides,
+        wallpaper, ownWallpaper, setWallpaper, defaultWallpaper, setDefaultWallpaper, wallpaperSupported,
+      }}
     >
       {/* 关掉按钮文字自动加空格，“保存”不会显示成“保 存”。 */}
       <ConfigProvider locale={zhCN} theme={themeConfig(p, dark, overrides ?? undefined)} button={{ autoInsertSpace: false }}>
-        <CssVars dark={dark} p={p} o={overrides ?? undefined} />
+        <CssVars dark={dark} p={p} o={overrides ?? undefined} wallpaper={wallpaperSupported ? wallpaperURL(wallpaper) : ""} />
         <AntApp>{children}</AntApp>
       </ConfigProvider>
     </ModeContext.Provider>
@@ -278,11 +339,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
 // CssVars 把当前主题的颜色写到 :root 上，变量名沿用门户和模块原来那一套（--bg、--surface 等）。
 // 主题包设了背景或玻璃效果时，再在 <html> 上加 vb-has-bg、vb-glass，styles.css 据此让页面透出背景。
-function CssVars({ dark, p, o }: { dark: boolean; p: Palette; o?: ThemeOverrides }) {
-  const background = pick(o?.background, dark) ?? "";
+// wallpaper 是主题用平台壁纸、又选了壁纸时的壁纸网址，它代替主题的背景，底下垫一层页面底色，图片没加载出来时不至于透明。
+function CssVars({ dark, p, o, wallpaper }: { dark: boolean; p: Palette; o?: ThemeOverrides; wallpaper: string }) {
+  const { token } = antTheme.useToken();
+  const background = wallpaper
+    ? `url("${wallpaper}") center / cover no-repeat, ${token.colorBgLayout}`
+    : (pick(o?.background, dark) ?? "");
   const glass = glassOf(o);
   const icons = pick(o?.icons, dark);
-  const { token } = antTheme.useToken();
   useEffect(() => {
     const vars: Record<string, string> = {
       "--bg": token.colorBgLayout,

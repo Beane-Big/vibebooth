@@ -60,6 +60,9 @@ export type HomeProps = {
   apps: ThemeApp[];
   dark: boolean;
   user: { displayName: string };
+  // 正在用的平台壁纸的网址：主题声明了 wallpaper: true、又有人选了壁纸时才有，否则为空。
+  // 页面背景已经换成了它；首页要自己再画一份壁纸时（比如给玻璃折射）用。
+  wallpaper?: string;
 };
 
 // ThemeDefinition 是主题注册的内容：外观设置（颜色参数、Ant Design 参数、背景、玻璃效果，见 theme.tsx 的 ThemeOverrides）
@@ -126,7 +129,8 @@ export const THEMES_CHANGED_EVENT = "vb-themes-changed";
 // useActiveTheme 读出已安装的主题和平台默认的皮肤，加载当前皮肤对应的主题包：套上它的颜色参数和样式表，返回它注册的内容。
 // 自己选的主题被卸载了就改回跟随平台默认；加载失败时返回错误，由首页提示并退回经典皮肤。
 export function useActiveTheme() {
-  const { skin, ownSkin, setSkin, setDefaultSkin, setOverrides } = useThemeMode();
+  const { skin, ownSkin, setSkin, setDefaultSkin, setOverrides, ownWallpaper, setWallpaper, setDefaultWallpaper } =
+    useThemeMode();
   const [themes, setThemes] = React.useState<ThemeInfo[]>([]);
   const [loaded, setLoaded] = React.useState<{ key: string; def?: ThemeDefinition; error?: string } | null>(null);
   // 读到过主题列表没有。列表回来之前它是空的，不能据此判断自己选的主题被卸载了。
@@ -141,7 +145,13 @@ export function useActiveTheme() {
         },
         () => setThemes([]),
       );
-      api.appearance().then((a) => setDefaultSkin(a.defaultSkin), () => {});
+      api.appearance().then(
+        (a) => {
+          setDefaultSkin(a.defaultSkin);
+          setDefaultWallpaper(a.defaultWallpaper ?? "");
+        },
+        () => {},
+      );
     };
     reload();
     window.addEventListener(THEMES_CHANGED_EVENT, reload);
@@ -153,6 +163,19 @@ export function useActiveTheme() {
     const own = ownSkin && themeID(ownSkin);
     if (own && !themes.some((t) => t.id === own)) setSkin(null);
   }, [themes, listed]);
+
+  // 自己选的上传壁纸被管理员删了，也改回跟随平台默认。
+  React.useEffect(() => {
+    if (!ownWallpaper || ownWallpaper === "bing") return;
+    let current = true;
+    api.wallpapers().then(
+      (list) => current && !list.some((w) => w.id === ownWallpaper) && setWallpaper(null),
+      () => {},
+    );
+    return () => {
+      current = false;
+    };
+  }, [ownWallpaper, themes]);
 
   const active = themes.find((t) => t.id === themeID(skin)) ?? null;
   const key = active ? `${active.id}@${active.version}` : "";

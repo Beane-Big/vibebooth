@@ -133,8 +133,12 @@ func (s *Server) handleExportTheme(w http.ResponseWriter, r *http.Request, _ *Us
 // 平台默认的皮肤：没有自己选过的人用它。值和门户的皮肤一样：classic、tiles 或 theme:<主题 id>。
 const defaultSkinKey = "default_skin"
 
+// 平台默认的壁纸：没有自己选过的人用它。值是壁纸 id（见 wallpapers.go），空表示不用壁纸。
+const defaultWallpaperKey = "default_wallpaper"
+
 type appearance struct {
-	DefaultSkin string `json:"defaultSkin"`
+	DefaultSkin      string `json:"defaultSkin"`
+	DefaultWallpaper string `json:"defaultWallpaper"`
 }
 
 // validSkin 判断一个皮肤能不能用：内置的两种，或者已安装的主题。
@@ -146,7 +150,8 @@ func validSkin(skin string, themes []*manifest.Theme) bool {
 	return ok && slices.ContainsFunc(themes, func(t *manifest.Theme) bool { return t.ID == id })
 }
 
-// handleAppearance 返回平台默认的皮肤。设成默认的主题被卸载了，或者从没设过，按经典皮肤。
+// handleAppearance 返回平台默认的皮肤和壁纸。设成默认的主题被卸载了，或者从没设过，按经典皮肤；
+// 默认壁纸被删了时按不用壁纸。
 func (s *Server) handleAppearance(w http.ResponseWriter, r *http.Request, _ *User) {
 	skin, err := s.store.Setting(r.Context(), defaultSkinKey)
 	if err != nil {
@@ -156,22 +161,43 @@ func (s *Server) handleAppearance(w http.ResponseWriter, r *http.Request, _ *Use
 	if !validSkin(skin, s.themes()) {
 		skin = "classic"
 	}
-	writeJSON(w, http.StatusOK, appearance{DefaultSkin: skin})
-}
-
-// handleSetAppearance 设置平台默认的皮肤，要有“应用管理”权限，和安装主题一样。
-func (s *Server) handleSetAppearance(w http.ResponseWriter, r *http.Request, _ *User) {
-	var req appearance
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	if !validSkin(req.DefaultSkin, s.themes()) {
-		writeError(w, http.StatusBadRequest, "没有这个皮肤")
-		return
-	}
-	if err := s.store.SetSetting(r.Context(), defaultSkinKey, req.DefaultSkin); err != nil {
+	wp, err := s.store.Setting(r.Context(), defaultWallpaperKey)
+	if err != nil {
 		internalError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, req)
+	if wp != "" && !s.wallpaperExists(wp) {
+		wp = ""
+	}
+	writeJSON(w, http.StatusOK, appearance{DefaultSkin: skin, DefaultWallpaper: wp})
+}
+
+// handleSetAppearance 设置平台默认的皮肤和壁纸，要有“应用管理”权限，和安装主题一样。
+// 只改请求里带了的那一项。
+func (s *Server) handleSetAppearance(w http.ResponseWriter, r *http.Request, u *User) {
+	var req struct {
+		DefaultSkin      *string `json:"defaultSkin"`
+		DefaultWallpaper *string `json:"defaultWallpaper"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.DefaultSkin != nil && !validSkin(*req.DefaultSkin, s.themes()) {
+		writeError(w, http.StatusBadRequest, "没有这个皮肤")
+		return
+	}
+	if req.DefaultWallpaper != nil && *req.DefaultWallpaper != "" && !s.wallpaperExists(*req.DefaultWallpaper) {
+		writeError(w, http.StatusBadRequest, "没有这张壁纸")
+		return
+	}
+	for key, v := range map[string]*string{defaultSkinKey: req.DefaultSkin, defaultWallpaperKey: req.DefaultWallpaper} {
+		if v == nil {
+			continue
+		}
+		if err := s.store.SetSetting(r.Context(), key, *v); err != nil {
+			internalError(w, err)
+			return
+		}
+	}
+	s.handleAppearance(w, r, u)
 }

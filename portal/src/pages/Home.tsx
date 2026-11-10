@@ -5,7 +5,7 @@ import type { BuiltinApp } from "../builtin";
 import AppIcon from "../components/AppIcon";
 import type { AppTab } from "../components/AppTabs";
 import { inPlace } from "../components/Layout";
-import { useThemeMode } from "../theme";
+import { useThemeMode, wallpaperURL } from "../theme";
 import { ThemeBoundary, ThemeFallback, type ThemeApp, type ThemeDefinition } from "../themeHost";
 
 type Props = {
@@ -25,7 +25,7 @@ export default function Home({
   user: Me;
   theme: { active: ThemeInfo | null; def: ThemeDefinition | null; error: string } | null;
 }) {
-  const { skin, dark } = useThemeMode();
+  const { skin, dark, wallpaper } = useThemeMode();
   if (props.apps.length === 0 && props.builtins.length === 0) return <Empty description="还没有可用的应用。" />;
   if (theme?.active) {
     const { name } = theme.active;
@@ -35,7 +35,12 @@ export default function Home({
     if (ThemeHome) {
       return (
         <ThemeBoundary key={name} name={name} fallback={<ClassicHome {...props} />}>
-          <ThemeHome apps={themeApps(props)} dark={dark} user={{ displayName: user.displayName }} />
+          <ThemeHome
+            apps={themeApps(props)}
+            dark={dark}
+            user={{ displayName: user.displayName }}
+            wallpaper={theme.def.wallpaper ? wallpaperURL(wallpaper) : ""}
+          />
         </ThemeBoundary>
       );
     }

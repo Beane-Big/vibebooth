@@ -128,6 +128,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/themes/{id}/export", s.requirePerm(permModules, s.handleExportTheme))
 	mux.HandleFunc("GET /api/platform/appearance", s.requireUser(s.handleAppearance))
 	mux.HandleFunc("PUT /api/platform/appearance", s.requirePerm(permModules, s.handleSetAppearance))
+	mux.HandleFunc("GET /api/platform/wallpapers", s.requireUser(s.handleWallpapers))
+	mux.HandleFunc("GET /api/platform/wallpapers/{id}/{size}", s.requireUser(s.handleWallpaperFile))
+	mux.HandleFunc("POST /api/platform/wallpapers", s.requirePerm(permModules, s.handleUploadWallpaper))
+	mux.HandleFunc("DELETE /api/platform/wallpapers/{id}", s.requirePerm(permModules, s.handleDeleteWallpaper))
 	// 活跃度统计：所有登录的人都会发心跳（统计关着时不记），看统计、开关和清空只给管理员。
 	mux.HandleFunc("POST /api/platform/stats/beat", s.requireUser(s.handleStatsBeat))
 	mux.HandleFunc("GET /api/platform/stats", s.requireRole("admin", s.handleStats))
