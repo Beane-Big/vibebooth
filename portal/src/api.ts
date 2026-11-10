@@ -75,6 +75,7 @@ export type InstalledModule = {
 // 模块能声明的特权，以及安装前给管理员看的说明。
 export const privilegeInfo: Record<string, string> = {
   "docker-build": "在服务器上构建镜像。它碰不到平台自己的程序，但能替换其他应用的镜像，只安装你信任的模块。",
+  "public-share": "应用里 /s/ 开头的分享页不需要登录，拿到链接的人都能打开。链接的有效期和提取码由应用自己负责，其他页面照常要登录。",
 };
 
 // 用户页：某个人对一项功能权限或一个菜单的默认值、单独设置和最终结果。override 为 null 表示跟随默认。

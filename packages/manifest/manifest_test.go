@@ -1,6 +1,9 @@
 package manifest
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const base = "id: demo\nname: 演示\nversion: 0.1.0\nservices:\n  frontend: {port: 80}\n  backend: {port: 8000}\n" +
 	"menus:\n  - {id: home, name: 首页, path: /apps/demo/}\n  - {id: settings, name: 设置, path: /apps/demo/settings/, default: [admin], settings: true}\n"
@@ -152,5 +155,22 @@ func TestOptionalAndPrivileges(t *testing.T) {
 	}
 	if !m.HasPrivilege(PrivilegeDockerBuild) {
 		t.Error("应声明 docker-build 特权")
+	}
+}
+
+func TestPublicSharePrivilege(t *testing.T) {
+	m, err := Parse([]byte(base + "privileges: [public-share]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.HasPrivilege(PrivilegePublicShare) || m.PublicFrontendPath() != "/apps/demo/s/" || m.PublicAPIPath() != "/api/demo/s/" {
+		t.Errorf("公开路径不对：%s %s", m.PublicFrontendPath(), m.PublicAPIPath())
+	}
+	shareMenu := strings.Replace(base, "path: /apps/demo/settings/", "path: /apps/demo/s/settings/", 1)
+	if _, err := Parse([]byte(shareMenu + "privileges: [public-share]\n")); err == nil {
+		t.Error("菜单放在公开路径下应被拒绝")
+	}
+	if _, err := Parse([]byte(shareMenu)); err != nil {
+		t.Errorf("没有 public-share 特权时 s/ 只是普通子路径：%v", err)
 	}
 }

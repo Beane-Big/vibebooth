@@ -118,7 +118,7 @@ flowchart TB
 不管是在门户“应用管理”页上传，在构建器里点“安装”，还是在命令行运行 `npm run install:local` 或 `scripts/module install <模块包.zip>`，最后都由安装器完成，步骤相同。安装接口 `POST /api/platform/installer/modules` 的表单里二选一：`package` 是上传的模块包；`url` 是模块包的下载地址，由安装器自己去下载。构建器用 `url` 把服务器上构建好的软件包在内部网络里直接交给安装器，不经过浏览器。模块包最大 2 GB，网关和安装器读请求的超时放宽到 2 小时，带宽小的时候也能传完。
 
 1. **打开模块包**：zip 里只能有 `module.yaml`、`compose.yaml`、`images.tar` 和图标。安装器校验清单（规范版本 `platform`、id、版本、服务、菜单、依赖），按白名单检查 `compose.yaml`（不允许端口映射、特权、宿主机网络、挂载宿主机目录、自己写标签等），并确认 `images.tar` 里的镜像正好是 `vb-<id>-<服务>:<版本>`，不能借机覆盖别的镜像。`requires` 里的模块必须已经装好，写了版本（如 `contacts>=0.2`）时版本也要满足；`optional` 里的模块可以没装，装了就要满足版本；反过来，已经被依赖的模块（可选依赖也算）不能装回不满足依赖的旧版本。清单里有 `privileges` 时，要管理员在页面上确认（命令行加 `--allow-privileges`）才继续。
-2. **生成最终的 compose 文件**：在模块的 `compose.yaml` 上补上网络 `platform`、Traefik 路由标签（`/apps/<id>/` 和 `/api/<id>/`，排除 `/api/<id>/ext/`）和 `JWKS_URL`。有 `docker-build` 特权的模块，后端再接上网络 `platform-build`，`DOCKER_HOST` 指向构建代理。路由由安装器按约定生成，模块自己写不了，也就抢不走门户或别的模块的网址。
+2. **生成最终的 compose 文件**：在模块的 `compose.yaml` 上补上网络 `platform`、Traefik 路由标签（`/apps/<id>/` 和 `/api/<id>/`，排除 `/api/<id>/ext/`）和 `JWKS_URL`。有 `docker-build` 特权的模块，后端再接上网络 `platform-build`，`DOCKER_HOST` 指向构建代理。有 `public-share` 特权的模块，再给 `/apps/<id>/s/` 和 `/api/<id>/s/` 各加一条不挂登录校验、优先级更高的路由，没有账号的人也能打开这两个前缀下的分享页。路由由安装器按约定生成，模块自己写不了，也就抢不走门户或别的模块的网址。
 3. **导入镜像并启动**：`docker load`，然后以项目 `mod-<id>` 执行 `docker compose up -d`。网关通过标签自动接上路由，平台本体和其他模块不动。
 4. **等健康检查**：最多 60 秒，后端 `/api/<id>/health` 要返回 2xx，前端端口要能连上。
 5. **登记**：把清单和图标写进 `modules-data` 卷的 `<id>/` 目录。`core` 下一次扫描（最多 5 秒）就会认出它，门户里出现新卡片。

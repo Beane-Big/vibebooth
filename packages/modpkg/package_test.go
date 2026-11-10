@@ -258,3 +258,66 @@ func TestRenderBuildPrivilege(t *testing.T) {
 		t.Errorf("构建网络应声明为外部网络：%v", doc.Networks)
 	}
 }
+
+func TestRenderPublicSharePrivilege(t *testing.T) {
+	labelsOf := func(manifestYAML string) map[string][]string {
+		m, err := manifest.Parse([]byte(manifestYAML))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := ParseCompose(m, []byte(testCompose))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := c.Render()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Services map[string]struct {
+				Labels []string `yaml:"labels"`
+			} `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(out, &doc); err != nil {
+			t.Fatal(err)
+		}
+		return map[string][]string{"web": doc.Services["demo-frontend"].Labels, "api": doc.Services["demo-backend"].Labels}
+	}
+
+	plain := labelsOf(testManifest)
+	for _, l := range append(plain["web"], plain["api"]...) {
+		if strings.Contains(l, "-public") {
+			t.Errorf("没有 public-share 特权时不应生成公开路由：%s", l)
+		}
+	}
+
+	got := labelsOf(testManifest + "privileges: [public-share]\n")
+	want := map[string][]string{
+		"web": {
+			"traefik.http.routers.demo-web-public.rule=PathPrefix(`/apps/demo/s/`)",
+			"traefik.http.routers.demo-web-public.priority=1000",
+			"traefik.http.routers.demo-web-public.service=demo-web",
+		},
+		"api": {
+			"traefik.http.routers.demo-api-public.rule=PathPrefix(`/api/demo/s/`)",
+			"traefik.http.routers.demo-api-public.priority=1000",
+			"traefik.http.routers.demo-api-public.service=demo-api",
+		},
+	}
+	for svc, labels := range want {
+		for _, l := range labels {
+			if !slices.Contains(got[svc], l) {
+				t.Errorf("%s 缺少标签 %s，实际 %v", svc, l, got[svc])
+			}
+		}
+		for _, l := range got[svc] {
+			if strings.HasPrefix(l, "traefik.http.routers.demo-"+svc+"-public.middlewares") {
+				t.Errorf("公开路由不应挂登录校验：%s", l)
+			}
+		}
+		// 普通路由照常挂登录校验。
+		if !slices.Contains(got[svc], "traefik.http.routers.demo-"+svc+".middlewares=platform-auth@docker") {
+			t.Errorf("%s 的普通路由应保留登录校验", svc)
+		}
+	}
+}
