@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Beane-Big/vibebooth/packages/manifest"
@@ -146,6 +147,9 @@ const (
 	BuildNetwork   = "platform-build"
 	BuildProxyHost = "tcp://build-proxy:2375"
 )
+
+// PublicRoutePriority 是公开路由的优先级，要高于同一模块普通路由按规则长度算出的默认值（id 最长 31 个字符，不到 200）。
+const PublicRoutePriority = 1000
 
 // ImagePrefix 是模块镜像名的前缀；LegacyImagePrefix 是改名为 Vibebooth 之前用的前缀，只在清理旧镜像时用到。
 const (
@@ -377,13 +381,20 @@ func (c *Compose) Render() ([]byte, error) {
 			out["environment"] = setEnv(out["environment"], "DOCKER_HOST", BuildProxyHost)
 		}
 		labels := []string{"home-platform.module=" + m.ID}
+		public := m.HasPrivilege(manifest.PrivilegePublicShare)
 		switch name {
 		case m.ContainerName(manifest.Frontend):
 			labels = append(labels, routeLabels(m.ID+"-web", "PathPrefix(`"+m.FrontendPath()+"`)", m.Services[manifest.Frontend].Port)...)
+			if public {
+				labels = append(labels, publicRouteLabels(m.ID+"-web", m.PublicFrontendPath())...)
+			}
 		case m.ContainerName(manifest.Backend):
 			// 对外接口 /api/<id>/ext/ 只给其他模块在内部网络里直接调用，网关不转发。
 			rule := "PathPrefix(`" + m.APIPath() + "`) && !PathPrefix(`" + m.APIPath() + "ext/`)"
 			labels = append(labels, routeLabels(m.ID+"-api", rule, m.Services[manifest.Backend].Port)...)
+			if public {
+				labels = append(labels, publicRouteLabels(m.ID+"-api", m.PublicAPIPath())...)
+			}
 		}
 		out["labels"] = labels
 		services[name] = out
@@ -408,6 +419,18 @@ func routeLabels(router, rule string, port int) []string {
 		"traefik.http.routers." + router + ".rule=" + rule,
 		"traefik.http.routers." + router + ".middlewares=platform-auth@docker",
 		fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%d", router, port),
+	}
+}
+
+// publicRouteLabels 给声明了 public-share 特权的模块多加一条不挂登录校验的路由，只匹配固定的 s/ 前缀。
+// Traefik 默认按规则字符串长度排优先级，后端的普通路由带了排除 ext 的条件反而更长，所以显式调高优先级。
+// 这条路由和普通路由共用同一个服务（同一个容器端口）。
+func publicRouteLabels(service, prefix string) []string {
+	router := service + "-public"
+	return []string{
+		"traefik.http.routers." + router + ".rule=PathPrefix(`" + prefix + "`)",
+		"traefik.http.routers." + router + ".priority=" + strconv.Itoa(PublicRoutePriority),
+		"traefik.http.routers." + router + ".service=" + service,
 	}
 }
 

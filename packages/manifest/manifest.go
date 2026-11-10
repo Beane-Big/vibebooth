@@ -107,7 +107,12 @@ type Manifest struct {
 // 碰不到平台自己的镜像和容器，但能替换其他模块的镜像，所以安装前要管理员确认。
 const PrivilegeDockerBuild = "docker-build"
 
-var privileges = map[string]bool{PrivilegeDockerBuild: true}
+// PrivilegePublicShare 让网关对模块的 /apps/<id>/s/ 和 /api/<id>/s/ 不做登录校验，没有账号的人也能打开，
+// 用于“凭链接查看”一类的分享页。这两个路径下的请求不带平台令牌，访问控制（链接令牌、有效期、限流）由模块自己负责，
+// 所以安装前要管理员确认。其他路径照常要登录。
+const PrivilegePublicShare = "public-share"
+
+var privileges = map[string]bool{PrivilegeDockerBuild: true, PrivilegePublicShare: true}
 
 var (
 	idPattern      = regexp.MustCompile(`^[a-z][a-z0-9-]{1,30}$`)
@@ -189,7 +194,7 @@ func (m *Manifest) validate() error {
 	}
 	for _, p := range m.Privileges {
 		if !privileges[p] {
-			return fmt.Errorf("privileges 里的 %q 不认识，目前只支持 %s", p, PrivilegeDockerBuild)
+			return fmt.Errorf("privileges 里的 %q 不认识，目前只支持 %s、%s", p, PrivilegeDockerBuild, PrivilegePublicShare)
 		}
 	}
 	perms := map[string]bool{}
@@ -225,6 +230,10 @@ func (m *Manifest) validate() error {
 		// 菜单必须在模块自己的前端路径下，防止清单把入口指向别的模块或外部网站。
 		if !strings.HasPrefix(menu.Path, m.FrontendPath()) || strings.Contains(menu.Path, "..") || paths[menu.Path] {
 			return fmt.Errorf("菜单 %s 的 path 必须以 %s 开头且不能重复", menu.ID, m.FrontendPath())
+		}
+		// 公开路径不做登录校验，菜单放在那里就等于绕过了菜单授权。
+		if m.HasPrivilege(PrivilegePublicShare) && strings.HasPrefix(menu.Path, m.PublicFrontendPath()) {
+			return fmt.Errorf("菜单 %s 的 path 不能在公开路径 %s 下", menu.ID, m.PublicFrontendPath())
 		}
 		if menu.Requires != "" && !perms[menu.Requires] {
 			return fmt.Errorf("菜单 %s 的 requires 必须是 permissions 里的 id", menu.ID)
@@ -322,6 +331,11 @@ func (m *Manifest) FrontendPath() string { return "/apps/" + m.ID + "/" }
 
 // APIPath 是模块后端的网址前缀。
 func (m *Manifest) APIPath() string { return "/api/" + m.ID + "/" }
+
+// PublicFrontendPath 和 PublicAPIPath 是声明了 public-share 特权的模块不需要登录的页面和接口前缀。
+func (m *Manifest) PublicFrontendPath() string { return m.FrontendPath() + "s/" }
+
+func (m *Manifest) PublicAPIPath() string { return m.APIPath() + "s/" }
 
 // HealthPath 是后端的健康检查接口，平台核心和安装器在内部网络直接调用。
 func (m *Manifest) HealthPath() string { return m.APIPath() + "health" }
