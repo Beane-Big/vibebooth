@@ -65,11 +65,21 @@ export type HomeProps = {
   wallpaper?: string;
 };
 
+// 顶栏背景组件收到的参数。
+export type TopbarProps = {
+  dark: boolean;
+  // 正在用的平台壁纸的网址，和 HomeProps.wallpaper 一样。
+  wallpaper?: string;
+};
+
 // ThemeDefinition 是主题注册的内容：外观设置（颜色参数、Ant Design 参数、背景、玻璃效果，见 theme.tsx 的 ThemeOverrides）
 // 加上可选的首页组件。每一项都可以不写，不写的部分用经典皮肤的。
 export type ThemeDefinition = ThemeOverrides & {
   // 替换首页的应用列表。
   Home?: ComponentType<HomeProps>;
+  // 顶栏的背景：画在顶栏里面、字标和标签的后面，铺满顶栏。顶栏的内容和布局还是门户的。
+  // 用它的主题一般要在样式表里把 .topbar 自己的底色去掉。
+  TopbarBackground?: ComponentType<TopbarProps>;
 };
 
 const registered = new Map<string, ThemeDefinition>();
@@ -215,8 +225,9 @@ function useThemeStyle(t: ThemeInfo | null) {
 }
 
 // ThemeBoundary 接住主题组件抛出的错误，显示门户自己的内容（fallback），并说明是哪个主题出的错。
+// quiet 为真时出错只显示 fallback，不加提示条（用在顶栏背景这种放不下提示的地方）。
 export class ThemeBoundary extends Component<
-  { name: string; fallback: ReactNode; children: ReactNode },
+  { name: string; fallback: ReactNode; quiet?: boolean; children: ReactNode },
   { error: Error | null }
 > {
   state = { error: null as Error | null };
@@ -231,6 +242,7 @@ export class ThemeBoundary extends Component<
 
   render() {
     if (!this.state.error) return this.props.children;
+    if (this.props.quiet) return this.props.fallback;
     return <ThemeFallback name={this.props.name} error={this.state.error.message} fallback={this.props.fallback} />;
   }
 }

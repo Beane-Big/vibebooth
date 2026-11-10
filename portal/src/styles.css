@@ -30,6 +30,8 @@ body {
 .content { width: 100%; max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
 
 .topbar { display: flex; align-items: center; flex: none; gap: 12px; position: sticky; top: 0; z-index: 10; box-shadow: var(--shadow); line-height: normal; }
+/* 主题给顶栏画的背景（ThemeDefinition.TopbarBackground）：铺满顶栏，在字标和标签的后面，跟着顶栏的圆角裁切，不挡点击。 */
+.topbar-bg { position: absolute; inset: 0; z-index: -1; border-radius: inherit; overflow: hidden; pointer-events: none; }
 .layout-content { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-top: 16px; }
 /* 平台字标是一张 SVG 图片（components/Wordmark.tsx），主题可以改它的大小和间距；颜色由主题的 wordmark 指定。 */
 .brand { display: flex; flex: none; }
