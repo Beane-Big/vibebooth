@@ -125,6 +125,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/apps/{id}/menus", s.requireUser(s.handleAppMenus))
 	mux.HandleFunc("GET /api/platform/themes", s.requireUser(s.handleThemes))
 	mux.HandleFunc("GET /api/platform/themes/{id}/{path...}", s.requireUser(s.handleThemeFile))
+	mux.HandleFunc("GET /api/platform/themes/{id}/export", s.requirePerm(permModules, s.handleExportTheme))
 	mux.HandleFunc("GET /api/platform/appearance", s.requireUser(s.handleAppearance))
 	mux.HandleFunc("PUT /api/platform/appearance", s.requirePerm(permModules, s.handleSetAppearance))
 	// 活跃度统计：所有登录的人都会发心跳（统计关着时不记），看统计、开关和清空只给管理员。

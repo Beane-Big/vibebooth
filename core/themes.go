@@ -1,6 +1,11 @@
 package main
 
 import (
+	"archive/zip"
+	"fmt"
+	"io"
+	"io/fs"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -70,6 +75,59 @@ func (s *Server) handleThemeFile(w http.ResponseWriter, r *http.Request, _ *User
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'")
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	http.ServeFile(w, r, file)
+}
+
+// handleExportTheme 把一个已安装的主题打成主题包（zip）下载，要有“应用管理”权限，和安装、卸载一样。
+// 包里是 theme.yaml、它声明的脚本、样式、预览图和 assets/ 下的文件，和安装时上传的包一样，能直接装到别的平台上。
+// 主题源码丢了的时候，靠它把装在平台上的版本拿回来。
+func (s *Server) handleExportTheme(w http.ResponseWriter, r *http.Request, _ *User) {
+	id := r.PathValue("id")
+	themes := s.themes()
+	i := slices.IndexFunc(themes, func(t *manifest.Theme) bool { return t.ID == id })
+	if i < 0 {
+		writeError(w, http.StatusNotFound, "没有安装这个主题")
+		return
+	}
+	theme := themes[i]
+	root := filepath.Join(s.themesDir(), id)
+	// 先列出要打包的文件，出错时还能返回错误；开始写 zip 以后响应头已经发出去了。
+	files := []string{manifest.ThemeFile}
+	files = append(files, theme.Files()...)
+	err := filepath.WalkDir(filepath.Join(root, manifest.ThemeAssetsDir), func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		rel, _ := filepath.Rel(root, p)
+		if name := filepath.ToSlash(rel); d.Type().IsRegular() && manifest.ValidThemeAsset(name) {
+			files = append(files, name)
+		}
+		return nil
+	})
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.zip"`, theme.ID, theme.Version))
+	zw := zip.NewWriter(w)
+	for _, name := range files {
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
+		if err == nil {
+			var f io.Writer
+			if f, err = zw.Create(name); err == nil {
+				_, err = f.Write(data)
+			}
+		}
+		if err != nil {
+			// 响应已经开始了，只能中断；浏览器会提示下载失败。
+			slog.Warn("导出主题失败", "theme", id, "err", err)
+			panic(http.ErrAbortHandler)
+		}
+	}
+	zw.Close()
 }
 
 // 平台默认的皮肤：没有自己选过的人用它。值和门户的皮肤一样：classic、tiles 或 theme:<主题 id>。

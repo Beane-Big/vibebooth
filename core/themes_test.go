@@ -1,10 +1,13 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -53,5 +56,49 @@ func TestValidSkin(t *testing.T) {
 		if got := validSkin(skin, themes); got != want {
 			t.Errorf("validSkin(%q) = %v，应为 %v", skin, got, want)
 		}
+	}
+}
+
+func TestExportTheme(t *testing.T) {
+	dir := t.TempDir()
+	theme := filepath.Join(dir, ".themes", "aurora")
+	os.MkdirAll(filepath.Join(theme, "assets", "img"), 0o755)
+	os.WriteFile(filepath.Join(theme, "theme.yaml"), []byte("id: aurora\nname: 极光\nversion: 0.2.0\nscript: theme.js\nstyle: theme.css\n"), 0o644)
+	os.WriteFile(filepath.Join(theme, "theme.js"), []byte("1"), 0o644)
+	os.WriteFile(filepath.Join(theme, "theme.css"), []byte("a{}"), 0o644)
+	os.WriteFile(filepath.Join(theme, "assets", "img", "bg.svg"), []byte("<svg/>"), 0o644)
+	os.WriteFile(filepath.Join(theme, "assets", "notes.txt"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(theme, "extra.js"), []byte("x"), 0o644)
+	s := &Server{registry: NewRegistry(dir)}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/platform/themes/{id}/{path...}", func(w http.ResponseWriter, r *http.Request) { s.handleThemeFile(w, r, nil) })
+	mux.HandleFunc("GET /api/platform/themes/{id}/export", func(w http.ResponseWriter, r *http.Request) { s.handleExportTheme(w, r, nil) })
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/platform/themes/aurora/export", nil))
+	if rec.Code != 200 {
+		t.Fatalf("导出返回 %d：%s", rec.Code, rec.Body)
+	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.Contains(cd, `filename="aurora-0.2.0.zip"`) {
+		t.Errorf("文件名不对：%q", cd)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()), int64(rec.Body.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range zr.File {
+		names = append(names, f.Name)
+	}
+	slices.Sort(names)
+	// 只打包安装器认的文件：清单、声明的文件和合法的 assets/，其他文件不带。
+	if want := []string{"assets/img/bg.svg", "theme.css", "theme.js", "theme.yaml"}; !slices.Equal(names, want) {
+		t.Errorf("包里的文件是 %v，应为 %v", names, want)
+	}
+
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/platform/themes/other/export", nil))
+	if rec.Code != 404 {
+		t.Errorf("没装的主题应返回 404，实际 %d", rec.Code)
 	}
 }
