@@ -11,7 +11,7 @@ import tilesShot from "../assets/skin-tiles.jpg";
 // 平台自带的“主题”应用：每个人在这里给自己选皮肤，选择存在自己的浏览器里；没选过的人用平台默认皮肤。
 // 皮肤有内置的两种和管理员安装的主题包。有“应用管理”权限的人还能设平台默认皮肤、上传主题包安装或升级、导出主题包，以及卸载主题。
 // 主题包的格式见 docs/theme-spec.md，用 create-vibebooth-theme 生成。
-// 下面是壁纸：同样每人自己选、没选过的用平台默认；只在声明了使用平台壁纸的主题里显示。管理员能上传、删除壁纸和设默认。
+// 下面是壁纸：同样每人自己选、没选过的用平台默认；选了以后所有皮肤和主题都用它当页面背景。管理员能上传、删除壁纸和设默认。
 export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) {
   const { skin, ownSkin, setSkin, defaultSkin } = useThemeMode();
   const canManage = hasPerm(me, "modules");
@@ -163,7 +163,7 @@ type Run = (action: () => Promise<{ log: string }>, success: string) => Promise<
 
 // Wallpapers 是壁纸区：“不用壁纸”、必应每日壁纸和管理员上传的壁纸，每张一张卡片，和上面的皮肤卡片一样。
 function Wallpapers({ canManage, busy, run }: { canManage: boolean; busy: boolean; run: Run }) {
-  const { wallpaper, ownWallpaper, setWallpaper, defaultWallpaper, wallpaperSupported } = useThemeMode();
+  const { wallpaper, ownWallpaper, setWallpaper, defaultWallpaper } = useThemeMode();
   const [list, setList] = useState<Wallpaper[]>([]);
   const [removing, setRemoving] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
@@ -236,7 +236,6 @@ function Wallpapers({ canManage, busy, run }: { canManage: boolean; busy: boolea
             {following
               ? "你没有自己选壁纸，用的是平台默认壁纸。"
               : "你自己选了壁纸，不跟随平台默认。"}
-            {!wallpaperSupported && "现在的皮肤不显示壁纸，换成支持壁纸的主题才看得到。"}
           </Typography.Text>
           {!following && <Button onClick={() => setWallpaper(null)}>跟随平台默认</Button>}
         </Flex>

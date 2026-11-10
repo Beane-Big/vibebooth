@@ -172,8 +172,9 @@ pre.log {
 .app-tile.unhealthy .app-tile-shadow { opacity: 0.2; filter: blur(11cqw) grayscale(1); }
 
 
-/* 主题包设了背景：背景画在 body 上、不随页面滚动，门户的灰底变透明。 */
-html.vb-has-bg body { background: var(--page-bg); background-attachment: fixed; }
+/* 主题包设了背景或选了壁纸：背景画在一层固定在视口上的伪元素上，不随页面滚动，门户的灰底变透明。
+   不用 background-attachment: fixed，iPad 的 Safari 不支持，背景会跟着滚动、被拉长。 */
+html.vb-has-bg body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--page-bg); }
 html.vb-has-bg .ant-layout { background: transparent !important; }
 /* 玻璃效果：卡片、顶栏和弹出层的底色由 theme.tsx 改成半透明，这里模糊后面的背景，上沿加一道亮边，像 iOS 的毛玻璃。 */
 html.vb-glass .ant-card,

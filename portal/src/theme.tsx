@@ -75,8 +75,7 @@ export type ThemeOverrides = {
   icons?: PerMode<{ bg?: string; fg?: string }>;
   // 顶栏平台字标的渐变颜色，从左到右，1 到 4 个颜色。见 components/Wordmark.tsx。
   wordmark?: PerMode<string[]>;
-  // 使用平台壁纸：写成 true 时，有人选了壁纸（或者平台设了默认壁纸），页面背景就换成壁纸，铺满整个屏幕，
-  // 没选时用上面的 background。壁纸由平台保存，在“主题”应用里选，见 docs/theme-spec.md。
+  // 旧字段，现在不起作用：选了平台壁纸时，所有皮肤和主题都换成壁纸当页面背景，不用主题声明。
   wallpaper?: boolean;
 };
 
@@ -240,8 +239,6 @@ const ModeContext = createContext<{
   // 平台默认的壁纸，由管理员在“主题”应用里设置。
   defaultWallpaper: string;
   setDefaultWallpaper: (id: string) => void;
-  // 当前主题用不用平台壁纸（ThemeOverrides.wallpaper）。不用的主题和内置皮肤不显示壁纸。
-  wallpaperSupported: boolean;
 }>({
   mode: "system",
   setMode: () => {},
@@ -259,7 +256,6 @@ const ModeContext = createContext<{
   setWallpaper: () => {},
   defaultWallpaper: "",
   setDefaultWallpaper: () => {},
-  wallpaperSupported: false,
 });
 
 export const useThemeMode = () => useContext(ModeContext);
@@ -287,7 +283,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   });
   const [defaultWallpaper, setDefaultWallpaperState] = useState(() => saved<string>(defaultWallpaperKey, validWallpaper, ""));
   const wallpaper = ownWallpaper ?? defaultWallpaper;
-  const wallpaperSupported = !!overrides?.wallpaper;
   const systemDark = useSystemDark();
   const dark = mode === "dark" || (mode === "system" && systemDark);
   const p = paletteFor(dark, overrides ?? undefined);
@@ -325,12 +320,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     <ModeContext.Provider
       value={{
         mode, setMode, skin, ownSkin, setSkin, defaultSkin, setDefaultSkin, dark, themedIcons, wordmark, setOverrides,
-        wallpaper, ownWallpaper, setWallpaper, defaultWallpaper, setDefaultWallpaper, wallpaperSupported,
+        wallpaper, ownWallpaper, setWallpaper, defaultWallpaper, setDefaultWallpaper,
       }}
     >
       {/* 关掉按钮文字自动加空格，“保存”不会显示成“保 存”。 */}
       <ConfigProvider locale={zhCN} theme={themeConfig(p, dark, overrides ?? undefined)} button={{ autoInsertSpace: false }}>
-        <CssVars dark={dark} p={p} o={overrides ?? undefined} wallpaper={wallpaperSupported ? wallpaperURL(wallpaper) : ""} />
+        <CssVars dark={dark} p={p} o={overrides ?? undefined} wallpaper={wallpaperURL(wallpaper)} />
         <AntApp>{children}</AntApp>
       </ConfigProvider>
     </ModeContext.Provider>
@@ -339,7 +334,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
 // CssVars 把当前主题的颜色写到 :root 上，变量名沿用门户和模块原来那一套（--bg、--surface 等）。
 // 主题包设了背景或玻璃效果时，再在 <html> 上加 vb-has-bg、vb-glass，styles.css 据此让页面透出背景。
-// wallpaper 是主题用平台壁纸、又选了壁纸时的壁纸网址，它代替主题的背景，底下垫一层页面底色，图片没加载出来时不至于透明。
+// wallpaper 是选了平台壁纸时的壁纸网址，不管哪个皮肤或主题都用它代替背景，底下垫一层页面底色，图片没加载出来时不至于透明。
 function CssVars({ dark, p, o, wallpaper }: { dark: boolean; p: Palette; o?: ThemeOverrides; wallpaper: string }) {
   const { token } = antTheme.useToken();
   const background = wallpaper

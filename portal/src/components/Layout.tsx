@@ -34,7 +34,7 @@ export default function Layout({
   plain?: boolean;
   children: ReactNode;
 }) {
-  const { mode, setMode, skin, dark, wallpaper, wallpaperSupported } = useThemeMode();
+  const { mode, setMode, skin, dark, wallpaper } = useThemeMode();
   // 手机上只显示头像，名字收进下拉菜单；平台字标也不显示，给标签栏腾地方。
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
@@ -51,7 +51,7 @@ export default function Layout({
           // 主题的背景出错时不显示它，顶栏照常能用。
           <ThemeBoundary key={activeTheme} name={activeTheme} fallback={null} quiet>
             <div className="topbar-bg">
-              <TopbarBackground dark={dark} wallpaper={wallpaperSupported ? wallpaperURL(wallpaper) : ""} />
+              <TopbarBackground dark={dark} wallpaper={wallpaperURL(wallpaper)} />
             </div>
           </ThemeBoundary>
         )}
