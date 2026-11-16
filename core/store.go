@@ -38,6 +38,13 @@ CREATE TABLE IF NOT EXISTS users (
 	roles         TEXT[] NOT NULL DEFAULT '{user}',
 	created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS email_auth_codes (
+  purpose TEXT NOT NULL,
+  email TEXT NOT NULL,
+  digest BYTEA NOT NULL,
+  issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (purpose, email)
+);
 CREATE TABLE IF NOT EXISTS sessions (
 	token_hash BYTEA PRIMARY KEY,
 	user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -46,6 +53,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions (expires_at);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
 -- 按人授权菜单：只记录和模块清单里默认值不同的部分，没有记录就按默认值。
 CREATE TABLE IF NOT EXISTS menu_grants (
 	user_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -227,9 +235,9 @@ func (s *Store) UserByID(ctx context.Context, id int64) (*User, error) {
 // 停用时删除这个人的全部会话，让他立即退出。
 func (s *Store) UpdateUser(ctx context.Context, id int64, displayName string, admin, disabled bool) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE users SET display_name = COALESCE((SELECT name FROM persons WHERE id = users.person_id), $2), roles = $3, disabled = $4
+		`UPDATE users SET display_name = COALESCE((SELECT name FROM persons WHERE id = users.person_id), $2), roles = CASE WHEN NOT $5 AND email_verified THEN '{}'::text[] ELSE $3 END, disabled = $4
 		 WHERE id = $1`,
-		id, displayName, rolesFor(admin), disabled)
+		id, displayName, rolesFor(admin), disabled, admin)
 	if err == nil && disabled {
 		_, err = s.pool.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, id)
 	}
@@ -529,6 +537,11 @@ func (s *Store) SetPermGrant(ctx context.Context, userID int64, module, perm str
 
 // CheckPassword 校验用户名和密码，失败时返回 nil。
 func (s *Store) CheckPassword(ctx context.Context, username, password string) (*User, error) {
+	user, _, err := s.checkPassword(ctx, username, password)
+	return user, err
+}
+
+func (s *Store) checkPassword(ctx context.Context, username, password string) (*User, string, error) {
 	var u User
 	var hash string
 	err := s.pool.QueryRow(ctx,
@@ -537,23 +550,28 @@ func (s *Store) CheckPassword(ctx context.Context, username, password string) (*
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 用户不存在时也做一次比较，避免通过响应时间判断用户名是否存在。
 		bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
-		return nil, nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
-		return nil, nil
+		return nil, "", nil
 	}
-	return &u, nil
+	return &u, hash, nil
 }
 
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy-password"), bcrypt.DefaultCost)
 
-func (s *Store) CreateSession(ctx context.Context, tokenHash []byte, userID int64, expires time.Time) error {
-	_, err := s.pool.Exec(ctx,
-		`INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)`, tokenHash, userID, expires)
-	return err
+func (s *Store) CreateSession(ctx context.Context, tokenHash []byte, userID int64, passwordHash string, expires time.Time) (bool, error) {
+	// 锁定账号行，让会话创建与密码重置串行。重置先完成时旧摘要无法匹配；
+	// 会话先创建时，重置会在更新账号后删掉这条会话。
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO sessions (token_hash, user_id, expires_at)
+		SELECT $1, id, $3 FROM users
+		WHERE id = $2 AND password_hash = $4 AND NOT disabled
+		FOR UPDATE`, tokenHash, userID, expires, passwordHash)
+	return tag.RowsAffected() == 1, err
 }
 
 func (s *Store) DeleteSession(ctx context.Context, tokenHash []byte) error {

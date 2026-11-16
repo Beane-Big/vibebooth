@@ -52,24 +52,27 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Remember *bool  `json:"remember"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
 	username := strings.TrimSpace(req.Username)
-	user, err := s.store.CheckPassword(r.Context(), username, req.Password)
+	if email := normalizeEmail(username); email != "" {
+		username = email
+	}
+	user, passwordHash, err := s.store.checkPassword(r.Context(), username, req.Password)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
-	s.recordLogin(r.Context(), username, user != nil)
 	if user == nil {
+		s.recordLogin(r.Context(), username, false)
 		s.limiter.Fail(ip)
 		writeError(w, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
-	s.limiter.Reset(ip)
 
 	token := make([]byte, 32)
 	if _, err := rand.Read(token); err != nil {
@@ -77,16 +80,28 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	if err := s.store.CreateSession(r.Context(), hashToken(token), user.ID, now.Add(sessionIdle)); err != nil {
+	created, err := s.store.CreateSession(r.Context(), hashToken(token), user.ID, passwordHash, now.Add(sessionIdle))
+	if err != nil {
 		internalError(w, err)
 		return
 	}
+	s.recordLogin(r.Context(), username, created)
+	if !created {
+		s.limiter.Fail(ip)
+		writeError(w, http.StatusUnauthorized, "用户名或密码错误")
+		return
+	}
+	s.limiter.Reset(ip)
 	// Cookie 按最长期限保留，7 天不用就过期由数据库里的会话判断。
+	var expires time.Time
+	if req.Remember == nil || *req.Remember {
+		expires = now.Add(sessionMaxAge)
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    base64.RawURLEncoding.EncodeToString(token),
 		Path:     "/",
-		Expires:  now.Add(sessionMaxAge),
+		Expires:  expires,
 		HttpOnly: true,
 		Secure:   s.cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
@@ -238,6 +253,9 @@ func (s *Server) cleanupSessions(ctx context.Context) {
 	for {
 		if err := s.store.DeleteExpiredSessions(ctx); err != nil {
 			slog.Warn("清理过期会话失败", "err", err)
+		}
+		if _, err := s.store.pool.Exec(ctx, `DELETE FROM email_auth_codes WHERE issued_at < now() - interval '15 minutes'`); err != nil {
+			slog.Warn("清理过期验证码失败", "err", err)
 		}
 		time.Sleep(time.Hour)
 	}
