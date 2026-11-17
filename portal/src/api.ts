@@ -79,6 +79,7 @@ export const privilegeInfo: Record<string, string> = {
 
 // 用户页：某个人对一项功能权限或一个菜单的默认值、单独设置和最终结果。override 为 null 表示跟随默认。
 export type Grant = {
+  optIn?: boolean;
   id: string;
   name: string;
   description?: string;
