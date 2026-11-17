@@ -199,12 +199,14 @@ export const api = {
     put("/api/platform/me/password", { currentPassword, password }),
   apps: () => request<App[]>("/api/platform/apps"),
   authOptions: () => request<{ register: boolean; reset: boolean; google: boolean; terms: string; privacy: string }>("/api/platform/auth/options"),
-  sendCode: (purpose: "register" | "reset", email: string) =>
-    request<void>(`/api/platform/auth/${purpose}/code`, { method: "POST", body: JSON.stringify({ email }) }),
-  verifyCode: (purpose: "register" | "reset", email: string, code: string) =>
-    request<void>(`/api/platform/auth/${purpose}/verify`, { method: "POST", body: JSON.stringify({ email, code }) }),
-  emailAuth: (purpose: "register" | "reset", input: { email: string; code: string; password: string; displayName?: string; accepted?: boolean }) =>
-    request<void>(`/api/platform/auth/${purpose}`, { method: "POST", body: JSON.stringify(input) }),
+  register: (input: { email: string; password: string; accepted: boolean }) =>
+    request<void>("/api/platform/auth/register", { method: "POST", body: JSON.stringify(input) }),
+  sendResetCode: (email: string) =>
+    request<void>("/api/platform/auth/reset/code", { method: "POST", body: JSON.stringify({ email }) }),
+  verifyResetCode: (email: string, code: string) =>
+    request<void>("/api/platform/auth/reset/verify", { method: "POST", body: JSON.stringify({ email, code }) }),
+  resetPassword: (input: { email: string; code: string; password: string }) =>
+    request<void>("/api/platform/auth/reset", { method: "POST", body: JSON.stringify(input) }),
   login: (username: string, password: string, remember: boolean) =>
     request<Me>("/api/platform/auth/login", {
       method: "POST",

@@ -85,4 +85,4 @@ npm run dev   # 接口请求会转发到 localhost:8080，需要先用 docker co
 ```
 ## 邮箱账号
 
-门户支持账号或邮箱密码登录。可配置[邮箱注册与密码重置](DEPLOY.md#邮箱注册和密码重置)和 [Google 登录](DEPLOY.md#google-登录)。
+门户支持账号或邮箱密码登录。可开启[邮箱加密码注册](DEPLOY.md#邮箱注册和密码重置)和 [Google 一键登录](DEPLOY.md#google-登录)，两者均不需要邮件服务。通过邮件找回密码时才需要配 SMTP。

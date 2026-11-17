@@ -96,27 +96,23 @@ func (s *Server) mountGoogleAuth(mux *http.ServeMux, cfg oauth2.Config) {
 		var claims struct {
 			Email    string `json:"email"`
 			Verified bool   `json:"email_verified"`
+			Domain   string `json:"hd"`
 		}
 		if id.Claims(&claims) != nil || !claims.Verified {
 			fail()
 			return
 		}
 		email := normalizeEmail(claims.Email)
-		// 只按 Gmail 地址首次关联，Google 对外部邮箱的历史验证不能证明当前控制权。
-		if !strings.HasSuffix(email, "@gmail.com") {
+		if email == "" {
 			fail()
 			return
 		}
-		var userID int64
-		var passwordHash string
-		err = s.store.pool.QueryRow(ctx, `
-    UPDATE users SET google_subject = $2
-    WHERE username = $1 AND email_verified AND NOT disabled
-      AND (google_subject IS NULL OR google_subject = $2)
-    RETURNING id, password_hash`, email, id.Subject).Scan(&userID, &passwordHash)
+		// Google only vouches for current ownership of Gmail and Workspace addresses.
+		verifiedEmail := strings.HasSuffix(email, "@gmail.com") || claims.Domain != ""
+		userID, username, passwordHash, err := s.store.googleLoginAccount(ctx, id.Subject, email, verifiedEmail)
 		if err != nil {
 			if !errors.Is(err, pgx.ErrNoRows) {
-				slog.Warn("关联 Google 账号失败")
+				slog.Warn("读取 Google 登录账号失败")
 			}
 			fail()
 			return
@@ -136,8 +132,27 @@ func (s *Server) mountGoogleAuth(mux *http.ServeMux, cfg oauth2.Config) {
 			fail()
 			return
 		}
-		s.recordLogin(ctx, email, true)
+		s.recordLogin(ctx, username, true)
 		s.setLoginCookie(w, session[:], time.Time{})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
+}
+
+// Only the stable Google subject can sign into a Google account. A matching
+// email must never attach Google to an existing password account.
+func (s *Store) googleLoginAccount(ctx context.Context, subject, email string, verifiedEmail bool) (id int64, username, hash string, err error) {
+	find := func() error {
+		return s.pool.QueryRow(ctx, `SELECT id, username, password_hash
+			FROM users WHERE google_subject=$1 AND NOT disabled`, subject).Scan(&id, &username, &hash)
+	}
+	if err = find(); !errors.Is(err, pgx.ErrNoRows) {
+		return
+	}
+	_, err = s.pool.Exec(ctx, `INSERT INTO users (username, display_name, password_hash, roles, email_verified, self_registered, google_subject)
+		VALUES ($1, '用户', '', '{}', $2, true, $3) ON CONFLICT DO NOTHING`, email, verifiedEmail, subject)
+	if err == nil {
+		// A simultaneous first login may have created the account.
+		err = find()
+	}
+	return
 }
