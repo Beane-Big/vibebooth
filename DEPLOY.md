@@ -259,12 +259,8 @@ Windows 上的 `C:\Users\<你的用户名>\...\home-platform` 和 Ubuntu 里的 
 > WSL 默认的网络模式下，局域网里的其他设备可能访问不到 WSL 里的端口，这一点还没有验证过。如果访问不了，记下现象再排查。
 >
 > 不要在路由器上给 8080 做端口转发，平台目前不应该暴露到公网。
-## 邮箱注册和密码重置
+## 账号注册
 
-在部署目录的 `.env` 中设置 `EMAIL_REGISTRATION=true`，并把 `AUTH_TERMS_URL` 和 `AUTH_PRIVACY_URL` 填成实际发布的 HTTPS 页面。保存后重新创建平台核心服务。用户用邮箱和密码即可注册，之后用该邮箱登录，无需 SMTP。普通注册填写的邮箱最初未验证。
+登录页默认显示「注册账号」。账号和密码必填，邮箱选填，无需开启环境变量或配置邮件服务。选填邮箱只用于保存联系方式，登录使用账号和密码。
 
-需要为已有本地密码且邮箱已验证的账号提供找回密码时，填写 `SMTP_TLS_ADDR`（例如 `smtp.example.com:465`）、`SMTP_FROM`，以及邮件供应商要求的 `SMTP_USERNAME`、`SMTP_PASSWORD`。邮件服务器必须支持连接建立时启用 TLS。公网部署使用 HTTPS 并设置 `COOKIE_SECURE=true`。未验证邮箱的账号和仅通过 Google 登录的账号不能使用邮件找回密码。
-
-## Google 登录
-
-在 Google Cloud 创建「Web 应用」OAuth 客户端，将 `https://你的门户域名/api/platform/auth/google/callback` 添加为已获授权的重定向 URI。在 `.env` 中填写 `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET` 和完全一致的 `GOOGLE_REDIRECT_URL`，并启用 HTTPS 和 `COOKIE_SECURE=true`。无需 SMTP 或预先注册。首次授权会创建 Vibebooth 账号；若同邮箱已用于其他 Vibebooth 账号，则不会自动关联，请使用原来的登录方式。
+如需在认证页显示政策链接，可将 `AUTH_TERMS_URL` 和 `AUTH_PRIVACY_URL` 设置为实际发布的 HTTPS 链接。Google 登录和邮件找回密码暂不开放；原来只用 Google 登录、从未设置本地密码的账号，如仍需使用，可由管理员在后台设置密码。

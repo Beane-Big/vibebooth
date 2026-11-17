@@ -198,15 +198,9 @@ export const api = {
   setMyPassword: (currentPassword: string, password: string) =>
     put("/api/platform/me/password", { currentPassword, password }),
   apps: () => request<App[]>("/api/platform/apps"),
-  authOptions: () => request<{ register: boolean; reset: boolean; google: boolean; terms: string; privacy: string }>("/api/platform/auth/options"),
-  register: (input: { email: string; password: string; accepted: boolean }) =>
+  authOptions: () => request<{ terms: string; privacy: string }>("/api/platform/auth/options"),
+  register: (input: { username: string; email?: string; password: string }) =>
     request<void>("/api/platform/auth/register", { method: "POST", body: JSON.stringify(input) }),
-  sendResetCode: (email: string) =>
-    request<void>("/api/platform/auth/reset/code", { method: "POST", body: JSON.stringify({ email }) }),
-  verifyResetCode: (email: string, code: string) =>
-    request<void>("/api/platform/auth/reset/verify", { method: "POST", body: JSON.stringify({ email, code }) }),
-  resetPassword: (input: { email: string; code: string; password: string }) =>
-    request<void>("/api/platform/auth/reset", { method: "POST", body: JSON.stringify(input) }),
   login: (username: string, password: string, remember: boolean) =>
     request<Me>("/api/platform/auth/login", {
       method: "POST",

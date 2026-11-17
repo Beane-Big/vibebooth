@@ -57,6 +57,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAU
 ALTER TABLE users ADD COLUMN IF NOT EXISTS self_registered BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_subject TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS users_google_subject_idx ON users (google_subject) WHERE google_subject IS NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+-- 早期自助账号使用已规范化的邮箱作为 username；保留其原登录地址。
+UPDATE users SET email = username
+	WHERE email IS NULL AND (self_registered OR email_verified OR google_subject IS NOT NULL)
+		AND strpos(username, '@') > 0;
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users (email) WHERE email IS NOT NULL;
 -- 按人授权菜单：只记录和模块清单里默认值不同的部分，没有记录就按默认值。
 CREATE TABLE IF NOT EXISTS menu_grants (
 	user_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

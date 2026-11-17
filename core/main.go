@@ -158,7 +158,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/ext/v1/persons", s.handleExtPersons)
 	mux.HandleFunc("GET /api/platform/ext/v1/persons/{id}", s.handleExtPerson)
 	mux.HandleFunc("GET /api/platform/ext/v1/users/{id}/person", s.handleExtUserPerson)
-	s.mountEmailAuth(mux)
+	s.mountRegistration(mux)
 	return mux
 }
 
