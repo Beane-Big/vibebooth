@@ -27,6 +27,13 @@ type User struct {
 	PersonID *int64 `json:"personId"`
 }
 
+func (u *User) Name() string {
+	if u.DisplayName != "" {
+		return u.DisplayName
+	}
+	return u.Username
+}
+
 func (u *User) IsAdmin() bool { return hasAnyRole(u.Roles, []string{"admin"}) }
 
 const schema = `
@@ -171,7 +178,7 @@ func (s *Store) EnsureAdmin(ctx context.Context, username, password string) erro
 	if len(password) < 8 {
 		return errors.New("首次启动需要在 .env 中设置至少 8 位的 ADMIN_PASSWORD")
 	}
-	_, err := s.CreateUser(ctx, username, username, password, true, nil)
+	_, err := s.CreateUser(ctx, username, "", password, true, nil)
 	return err
 }
 
@@ -207,10 +214,14 @@ func (s *Store) CreateUser(ctx context.Context, username, displayName, password 
 	return u, err
 }
 
-// SetUserPerson 把账号关联到人员，显示名称改成人员姓名；personID 为 nil 时解除关联，显示名称保持不变。
+// SetUserPerson 把账号关联到人员，显示名称改成人员姓名；personID 为 nil 时解除关联并清空原成员姓名。
 func (s *Store) SetUserPerson(ctx context.Context, id int64, personID *int64) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE users SET person_id = $2, display_name = COALESCE((SELECT name FROM persons WHERE id = $2), display_name) WHERE id = $1`,
+		`UPDATE users SET person_id = $2,
+            display_name = CASE
+                WHEN $2::bigint IS NULL AND person_id IS NULL THEN display_name
+                ELSE COALESCE((SELECT name FROM persons WHERE id = $2), '')
+            END WHERE id = $1`,
 		id, personID)
 	if isForeignKeyViolation(err) {
 		return errPersonNotFound
@@ -349,16 +360,29 @@ func (s *Store) UpdatePersonPhoto(ctx context.Context, id int64, photo string) (
 		`UPDATE persons SET photo = $2, updated_at = now() WHERE id = $1 RETURNING `+personColumns, id, photo))
 }
 
-// DeletePerson 删除人员；他的账号保留，只是不再关联人员（外键 ON DELETE SET NULL）。
+// DeletePerson 删除人员并清除关联账号继承的姓名，保留账号。
 func (s *Store) DeletePerson(ctx context.Context, id int64) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM persons WHERE id = $1`, id)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	defer tx.Rollback(ctx)
+	// 先锁住人员，避免清空姓名与删除之间又有账号关联进来。
+	var lockedID int64
+	err = tx.QueryRow(ctx, `SELECT id FROM persons WHERE id = $1 FOR UPDATE`, id).Scan(&lockedID)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return errPersonNotFound
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE users SET person_id = NULL, display_name = '' WHERE person_id = $1`, lockedID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM persons WHERE id = $1`, lockedID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // Member 是“成员”权限看到的成员：只有姓名、照片和自己写的备注，没有管理员的备注和账号。Self 表示是不是自己。
@@ -786,7 +810,7 @@ func (s *Store) StatsReport(ctx context.Context, days int, tz string) (*statsRep
 
 	// 所有账号都列出来，好看出谁很久没来了。最近活跃时间来自明细，超过保留期的为空。
 	rows, err = s.pool.Query(ctx, `
-		SELECT u.id, u.display_name, u.disabled,
+		SELECT u.id, COALESCE(NULLIF(u.display_name, ''), u.username), u.disabled,
 			coalesce((SELECT sum(minutes) FROM activity_daily a WHERE a.user_id = u.id AND a.day >= $1::date), 0),
 			(SELECT count(DISTINCT day) FROM activity_daily a WHERE a.user_id = u.id AND a.day >= $1::date),
 			(SELECT max(minute) FROM activity a WHERE a.user_id = u.id)

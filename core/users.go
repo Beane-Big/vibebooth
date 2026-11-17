@@ -37,7 +37,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 
 func validDisplayName(name string) bool {
 	n := utf8.RuneCountInString(name)
-	return n >= 1 && n <= 32
+	return n <= 32
 }
 
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request, _ *User) {
@@ -55,9 +55,6 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request, _ *Use
 		return
 	}
 	in.Username, in.DisplayName = strings.TrimSpace(in.Username), strings.TrimSpace(in.DisplayName)
-	if in.DisplayName == "" {
-		in.DisplayName = in.Username
-	}
 	switch {
 	case !usernamePattern.MatchString(in.Username):
 		writeError(w, http.StatusBadRequest, "用户名只能是 2 到 32 位字母、数字、下划线、点或连字符")
@@ -113,7 +110,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, me *Us
 	in.DisplayName = strings.TrimSpace(in.DisplayName)
 	switch {
 	case !validDisplayName(in.DisplayName):
-		writeError(w, http.StatusBadRequest, "显示名称不能为空，也不能超过 32 个字")
+		writeError(w, http.StatusBadRequest, "显示名称不能超过 32 个字")
 	// 不能停用自己或取消自己的管理员，避免平台里一个管理员都没有。
 	case target.ID == me.ID && (in.Disabled || !in.Admin):
 		writeError(w, http.StatusBadRequest, "不能停用自己，也不能取消自己的管理员")

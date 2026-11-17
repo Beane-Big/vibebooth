@@ -25,7 +25,7 @@ import {
   Typography,
 } from "antd";
 import { AppstoreOutlined, ArrowLeftOutlined, HomeOutlined, PlusOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
-import { api, isAdmin, type AppGrant, type Grant, type Member, type Person, type PersonInput, type User, type UserMenus } from "../api";
+import { api, isAdmin, userDisplayName, type AppGrant, type Grant, type Member, type Person, type PersonInput, type User, type UserMenus } from "../api";
 import MyPassword from "../components/MyPassword";
 import MyPhoto from "../components/MyPhoto";
 import PersonAvatar from "../components/PersonAvatar";
@@ -45,7 +45,7 @@ const MANY_APPS = 6;
 // 用户应用：管理员管成员、账号和权限；有“成员”权限的普通用户只能看成员，给他们写只有自己看得到的备注，改自己的资料和密码。
 // onMeChanged 在改了自己的姓名或头像后调用，让顶栏跟着更新。
 export default function Users({ me, onMeChanged }: { me: User; onMeChanged: () => void }) {
-  return isAdmin(me) ? <AdminUsers me={me} /> : <MemberRemarks onMeChanged={onMeChanged} />;
+  return isAdmin(me) ? <AdminUsers me={me} onMeChanged={onMeChanged} /> : <MemberRemarks onMeChanged={onMeChanged} />;
 }
 
 // ListDetail 是左边列表、右边详情的布局。窄屏上先看列表，选中后只看详情，左上角返回列表。
@@ -263,7 +263,7 @@ function SelfDetail({ member, onSaved }: { member: Member; onSaved: () => void }
 
 // AdminUsers 是管理员看到的：左边是成员列表（家庭成员，加上没关联成员的账号），右边是选中项的页签：资料、账号、权限。
 // 一个账号最多属于一个成员，一个成员可以有多个账号，权限挂在账号上。
-function AdminUsers({ me }: { me: User }) {
+function AdminUsers({ me, onMeChanged }: { me: User; onMeChanged: () => void }) {
   const [persons, setPersons] = useState<Person[] | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
   const [error, setError] = useState("");
@@ -280,6 +280,11 @@ function AdminUsers({ me }: { me: User }) {
       .catch((err) => setError(err.message));
   }
   useEffect(load, []);
+
+  function refresh() {
+    load();
+    onMeChanged();
+  }
 
   const accountsOf = (personId: number) => users?.filter((u) => u.personId === personId) ?? [];
   const unlinked = users?.filter((u) => u.personId === null) ?? [];
@@ -334,8 +339,8 @@ function AdminUsers({ me }: { me: User }) {
           <MemberRow
             key={`u${u.id}`}
             avatar={<Avatar size={40} icon={<UserOutlined />} />}
-            title={u.displayName}
-            subtitle={u.username}
+            title={userDisplayName(u)}
+            subtitle={userDisplayName(u) === u.username ? undefined : u.username}
             tags={accountTags([u])}
             active={isSelected(s)}
             onClick={() => setSelected(s)}
@@ -352,14 +357,14 @@ function AdminUsers({ me }: { me: User }) {
       accounts={accountsOf(currentPerson.id)}
       unlinked={unlinked}
       me={me}
-      onSaved={load}
+      onSaved={refresh}
       onDeleted={() => {
         setSelected(null);
-        load();
+        refresh();
       }}
     />
   ) : currentUser && persons ? (
-    <AccountDetail key={`u${currentUser.id}`} user={currentUser} persons={persons} me={me} onSaved={load} />
+    <AccountDetail key={`u${currentUser.id}`} user={currentUser} persons={persons} me={me} onSaved={refresh} />
   ) : (
     <Card>
       <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择一个成员，查看他的资料、账号和权限。" />
@@ -404,7 +409,7 @@ function MemberRow({
 }: {
   avatar: ReactNode;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   tags?: ReactNode;
   active: boolean;
   onClick: () => void;
@@ -419,9 +424,11 @@ function MemberRow({
           </Typography.Text>
           {tags}
         </Flex>
-        <Typography.Text type="secondary" ellipsis>
-          {subtitle}
-        </Typography.Text>
+        {subtitle && (
+          <Typography.Text type="secondary" ellipsis>
+            {subtitle}
+          </Typography.Text>
+        )}
       </Flex>
     </div>
   );
@@ -693,13 +700,14 @@ function PersonDetail({
 function AccountDetail({ user, persons, me, onSaved }: { user: User; persons: Person[]; me: User; onSaved: () => void }) {
   const { message } = AntApp.useApp();
   const [tab, setTab] = useState("account");
+  const name = userDisplayName(user);
   return (
     <DetailCard
       avatar={<Avatar size={56} icon={<UserOutlined />} />}
-      title={user.displayName}
+      title={name}
       subtitle={
         <Space size={6} wrap>
-          <span>{user.username}</span>
+          {name !== user.username && <span>{user.username}</span>}
           {accountTags([user])}
         </Space>
       }
@@ -844,7 +852,7 @@ function AddAccount({
                 onChange={setLinkId}
                 options={unlinked.map((u) => ({
                   value: u.id,
-                  label: u.displayName === u.username ? u.username : `${u.username}（${u.displayName}）`,
+                  label: userDisplayName(u) === u.username ? u.username : `${u.username}（${userDisplayName(u)}）`,
                 }))}
               />
               <Button type="primary" disabled={linkId === null} onClick={link}>
@@ -866,6 +874,7 @@ function AccountSettings({ user, me, onSaved, link }: { user: User; me: User; on
   const { message } = AntApp.useApp();
   const isMe = user.id === me.id;
   const [displayName, setDisplayName] = useState(user.displayName);
+  useEffect(() => setDisplayName(user.displayName), [user.displayName]);
   const [admin, setAdmin] = useState(isAdmin(user));
   const [disabled, setDisabled] = useState(user.disabled);
   const [passwordForm] = Form.useForm<{ password: string; confirm: string; adminPassword: string }>();
@@ -908,9 +917,9 @@ function AccountSettings({ user, me, onSaved, link }: { user: User; me: User; on
                 <Input value={user.displayName} disabled />
               </Form.Item>
             ) : (
-              <Form.Item label="显示名称" required>
+              <Form.Item label="显示名称">
                 <Space.Compact style={{ width: "100%" }}>
-                  <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
+                  <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} allowClear />
                   <Button type="primary" htmlType="submit" disabled={displayName.trim() === user.displayName}>
                     保存
                   </Button>

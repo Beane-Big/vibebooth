@@ -51,7 +51,7 @@ func (s *Server) mountRegistration(mux *http.ServeMux) {
 			return
 		}
 		tag, err := s.store.pool.Exec(r.Context(), `INSERT INTO users (username, email, display_name, password_hash, roles, self_registered)
-			SELECT $1, NULLIF($2, ''), $1, $3, '{}', true
+			SELECT $1, NULLIF($2, ''), '', $3, '{}', true
 			WHERE $2 = '' OR NOT EXISTS (SELECT 1 FROM users WHERE lower(username) = $2)
 			ON CONFLICT DO NOTHING`, username, email, string(hash))
 		if err != nil {
