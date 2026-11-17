@@ -23,6 +23,8 @@ export type PersonInput = Pick<Person, "name" | "note" | "photo">;
 // 有“成员”权限的人看到的成员：没有管理员的备注，remark 是他自己写的、只有自己看得到的备注；self 表示是不是他自己。
 export type Member = Pick<Person, "id" | "name" | "photo"> & { remark: string; self: boolean };
 
+export const userDisplayName = (user: User) => user.displayName.trim() || user.username;
+
 export const isAdmin = (user: User) => user.roles.includes("admin");
 
 // 当前登录的人：登录和 /me 接口在账号信息之外还带上平台自己的功能权限（管理员总有全部）。

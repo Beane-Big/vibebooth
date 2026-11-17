@@ -1,6 +1,6 @@
 import type { MouseEvent, ReactNode } from "react";
 import { Card, Col, Empty, Row, Spin, Tag, Typography } from "antd";
-import type { App, Me, ThemeInfo } from "../api";
+import { userDisplayName, type App, type Me, type ThemeInfo } from "../api";
 import type { BuiltinApp } from "../builtin";
 import AppIcon from "../components/AppIcon";
 import type { AppTab } from "../components/AppTabs";
@@ -38,7 +38,7 @@ export default function Home({
           <ThemeHome
             apps={themeApps(props)}
             dark={dark}
-            user={{ displayName: user.displayName }}
+            user={{ displayName: userDisplayName(user) }}
             wallpaper={wallpaperURL(wallpaper)}
           />
         </ThemeBoundary>

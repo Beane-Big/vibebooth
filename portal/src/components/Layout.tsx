@@ -1,7 +1,7 @@
 import { cloneElement, type ComponentType, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { Button, Dropdown, Grid, Layout as AntLayout, Segmented, Typography, theme } from "antd";
 import { IdcardOutlined, LogoutOutlined } from "@ant-design/icons";
-import { api, type Me } from "../api";
+import { api, userDisplayName, type Me } from "../api";
 import PersonAvatar from "./PersonAvatar";
 import Wordmark from "./Wordmark";
 import { useThemeMode, wallpaperURL, type Skin, type ThemeMode } from "../theme";
@@ -34,6 +34,7 @@ export default function Layout({
   plain?: boolean;
   children: ReactNode;
 }) {
+  const name = userDisplayName(user);
   const { mode, setMode, skin, dark, wallpaper } = useThemeMode();
   // 手机上只显示头像，名字收进下拉菜单；平台字标也不显示，给标签栏腾地方。
   const screens = Grid.useBreakpoint();
@@ -90,7 +91,7 @@ export default function Layout({
               }}
             >
               <Typography.Text strong style={{ display: "block", padding: "4px 8px" }}>
-                {user.displayName}
+                {name}
               </Typography.Text>
               {user.stats && (
                 <Typography.Text type="secondary" style={{ display: "block", padding: "0 8px 8px", fontSize: 12 }}>
@@ -115,8 +116,8 @@ export default function Layout({
           )}
         >
           <Button type="text" style={{ paddingInline: 8, height: 40 }}>
-            <PersonAvatar person={{ name: user.displayName, photo: user.photo }} size={28} />
-            {screens.sm && <span>{user.displayName}</span>}
+            <PersonAvatar person={{ name, photo: user.photo }} size={28} />
+            {screens.sm && <span>{name}</span>}
           </Button>
         </Dropdown>
       </AntLayout.Header>

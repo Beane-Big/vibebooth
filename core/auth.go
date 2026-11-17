@@ -444,7 +444,7 @@ func (s *Server) issueToken(user *User, audience string, menus, perms []string) 
 		"aud":   audience,
 		"iat":   now.Unix(),
 		"exp":   now.Add(tokenTTL).Unix(),
-		"name":  user.DisplayName,
+		"name":  user.Name(),
 		"roles": user.Roles,
 		"menus": menus,
 		"perms": perms,
