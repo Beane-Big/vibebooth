@@ -97,6 +97,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if req.Remember == nil || *req.Remember {
 		expires = now.Add(sessionMaxAge)
 	}
+	s.setLoginCookie(w, token, expires)
+	s.writeMe(w, r, user)
+}
+
+func (s *Server) setLoginCookie(w http.ResponseWriter, token []byte, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    base64.RawURLEncoding.EncodeToString(token),
@@ -106,7 +111,6 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Secure:   s.cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
-	s.writeMe(w, r, user)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {

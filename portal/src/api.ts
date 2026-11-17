@@ -198,7 +198,7 @@ export const api = {
   setMyPassword: (currentPassword: string, password: string) =>
     put("/api/platform/me/password", { currentPassword, password }),
   apps: () => request<App[]>("/api/platform/apps"),
-  authOptions: () => request<{ register: boolean; reset: boolean; terms: string; privacy: string }>("/api/platform/auth/options"),
+  authOptions: () => request<{ register: boolean; reset: boolean; google: boolean; terms: string; privacy: string }>("/api/platform/auth/options"),
   sendCode: (purpose: "register" | "reset", email: string) =>
     request<void>(`/api/platform/auth/${purpose}/code`, { method: "POST", body: JSON.stringify({ email }) }),
   verifyCode: (purpose: "register" | "reset", email: string, code: string) =>

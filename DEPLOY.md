@@ -264,3 +264,6 @@ Windows 上的 `C:\Users\<你的用户名>\...\home-platform` 和 Ubuntu 里的 
 在部署目录的 `.env` 中填写 `SMTP_TLS_ADDR`（例如 `smtp.example.com:465`）、`SMTP_FROM`，以及供应商要求的 `SMTP_USERNAME`、`SMTP_PASSWORD`。邮件服务器必须支持连接建立时启用 TLS。现有账号可照常用用户名登录，密码重置适用于通过邮箱验证码注册的账号。
 
 开放自助注册还需设置 `EMAIL_REGISTRATION=true`，并将 `AUTH_TERMS_URL` 和 `AUTH_PRIVACY_URL` 填成实际发布的 HTTPS 页面。公网使用时先配置 HTTPS 并设置 `COOKIE_SECURE=true`，再重新创建平台核心服务，并用真实邮箱验证邮件收发。
+## Google 登录
+
+在 Google Cloud 创建「Web 应用」OAuth 客户端，将 `https://你的门户域名/api/platform/auth/google/callback` 添加为已获授权的重定向 URI。在 `.env` 中填写 `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET` 和完全一致的 `GOOGLE_REDIRECT_URL`，并启用 HTTPS 和 `COOKIE_SECURE=true`。Google 登录适用于已注册并验证的 Gmail 账号。
