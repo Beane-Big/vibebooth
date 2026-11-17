@@ -96,8 +96,13 @@ func (s *Server) mountEmailAuth(mux *http.ServeMux) {
 	terms, privacy := policyURL("AUTH_TERMS_URL"), policyURL("AUTH_PRIVACY_URL")
 	reset := host != "" && mailer.from != ""
 	register := reset && os.Getenv("EMAIL_REGISTRATION") == "true" && terms != "" && privacy != ""
+	googleConfig, google := googleOAuthConfig()
+	google = google && s.cfg.CookieSecure
+	if google {
+		s.mountGoogleAuth(mux, googleConfig)
+	}
 	mux.HandleFunc("GET /api/platform/auth/options", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"register": register, "reset": reset, "terms": terms, "privacy": privacy})
+		writeJSON(w, http.StatusOK, map[string]any{"register": register, "reset": reset, "google": google, "terms": terms, "privacy": privacy})
 	})
 	requests := newLoginLimiter(8, 15*time.Minute)
 	submissions := newLoginLimiter(25, 15*time.Minute)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Checkbox, ConfigProvider, Form, Input, Progress, theme, type InputProps } from "antd";
-import { CheckOutlined, EyeInvisibleOutlined, EyeOutlined } from "@ant-design/icons";
+import { CheckOutlined, EyeInvisibleOutlined, EyeOutlined, GoogleOutlined } from "@ant-design/icons";
 import liquidBg from "../assets/liquid-bg.jpg";
 import { api, ApiError, type Me } from "../api";
 import Beian from "../components/Beian";
@@ -10,8 +10,7 @@ import "./Auth.css";
 type Mode = "login" | "register" | "reset";
 type Fields = { email: string; password: string; code: string; displayName: string; remember: boolean; accepted: boolean };
 const titles = { login: "登录 Vibebooth", register: "创建 Vibebooth 账号", reset: "重置密码" };
-const descriptions = { login: "登录后访问你连接的小应用", register: "连接你选择的小应用", reset: "通过邮箱验证身份并设置新密码" };
-const optionsDefault = { register: false, reset: false, terms: "", privacy: "" };
+const optionsDefault = { register: false, reset: false, google: false, terms: "", privacy: "" };
 const required = (message: string) => ({ required: true, message });
 const emailRules = [required("请输入邮箱"), { type: "email" as const, message: "请输入有效的邮箱地址" }];
 const passwordRules = [required("请输入密码"), {
@@ -37,11 +36,11 @@ function AuthForm({ onLogin }: { onLogin: (user: Me) => void }) {
   const [mode, setMode] = useState<Mode>("login");
   const [options, setOptions] = useState(optionsDefault);
   const [step, setStep] = useState(0);
-  const [legacy, setLegacy] = useState(false);
+  const [accountLogin, setAccountLogin] = useState(false);
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() => new URLSearchParams(location.search).has("google_error") ? "Google 登录未完成。请重试，或使用已验证的邮箱登录。" : "");
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm<Fields>();
   const watched = Form.useWatch("password", form) ?? "";
@@ -101,7 +100,6 @@ function AuthForm({ onLogin }: { onLogin: (user: Me) => void }) {
         <img src={liquidBg} alt="" width={1920} height={1200} />
         <span /><span /><span /><span /><span />
       </div>
-      <div className="auth-brand"><span className="auth-brand-mark" aria-hidden="true" />Vibebooth</div>
       <section className="auth-card" aria-labelledby="auth-title">
         {mode !== "login" && step < 3 && (
           <ol className="auth-steps" aria-label="认证进度">
@@ -115,7 +113,6 @@ function AuthForm({ onLogin }: { onLogin: (user: Me) => void }) {
         <header className={step === 3 ? "auth-heading auth-success" : "auth-heading"}>
           {step === 3 && <span className="auth-success-mark" aria-hidden="true"><CheckOutlined /></span>}
           <h1 id="auth-title">{heading}</h1>
-          {(mode === "login" || step === 0) && <p>{descriptions[mode]}</p>}
           {mode === "login" && options.register && (
             <p className="auth-signup">还没有账号？<Button type="link" disabled={busy} onClick={() => go("register")}>注册账号</Button></p>
           )}
@@ -128,8 +125,8 @@ function AuthForm({ onLogin }: { onLogin: (user: Me) => void }) {
         ) : (
           <Form form={form} layout="vertical" requiredMark={false} disabled={busy} onFinish={submit}>
             {(mode === "login" || step === 0) && (
-              <Form.Item name="email" label={mode === "login" && legacy ? "用户名" : "邮箱"} rules={mode === "login" && legacy ? [required("请输入用户名")] : emailRules}>
-                <Input size="large" placeholder={mode === "login" && legacy ? "输入用户名" : "you@example.com"} inputMode={mode === "login" && legacy ? "text" : "email"} autoComplete={mode === "login" ? "username" : "email"} autoCapitalize="none" spellCheck={false} />
+              <Form.Item name="email" label={mode === "login" && accountLogin ? "账号" : "邮箱"} rules={mode === "login" && accountLogin ? [required("请输入账号")] : emailRules}>
+                <Input size="large" type={mode === "login" && accountLogin ? "text" : "email"} autoComplete={mode === "login" && accountLogin ? "username" : "email"} autoCapitalize="none" spellCheck={false} />
               </Form.Item>
             )}
             {(mode === "login" || (mode === "register" && step === 0) || (mode === "reset" && step === 2)) && (
@@ -184,7 +181,8 @@ function AuthForm({ onLogin }: { onLogin: (user: Me) => void }) {
         <nav className="auth-nav" aria-label="账号入口">
           {mode === "login" ? (
             <>
-              <Button type="link" disabled={busy} onClick={() => { setLegacy(!legacy); setError(""); form.resetFields(["email"]); }}>{legacy ? "使用邮箱登录" : "使用旧用户名登录"}</Button>
+              {options.google && <Button block size="large" icon={<GoogleOutlined />} href="/api/platform/auth/google" disabled={busy}>使用 Google 登录</Button>}
+              <Button type="link" disabled={busy} onClick={() => { setAccountLogin(!accountLogin); setError(""); form.resetFields(["email"]); }}>{accountLogin ? "使用邮箱登录" : "使用账号登录"}</Button>
             </>
           ) : step !== 3 && <Button type="link" disabled={busy} onClick={() => go("login")}>返回登录</Button>}
         </nav>

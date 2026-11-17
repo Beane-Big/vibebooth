@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions (expires_at);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_subject TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS users_google_subject_idx ON users (google_subject) WHERE google_subject IS NOT NULL;
 -- 按人授权菜单：只记录和模块清单里默认值不同的部分，没有记录就按默认值。
 CREATE TABLE IF NOT EXISTS menu_grants (
 	user_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

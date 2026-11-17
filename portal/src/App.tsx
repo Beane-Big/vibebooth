@@ -31,7 +31,7 @@ export default function App() {
 
   if (loading)
     return (
-      <div className="center">
+      <div className="auth-shell auth-loading">
         <Spin />
       </div>
     );
