@@ -92,25 +92,15 @@ func (m authMailer) send(to, code string) error {
 	return body.Close()
 }
 
-func (s *Server) mountEmailAuth(mux *http.ServeMux) {
+// Kept for future use; email recovery routes are not registered by the server.
+func (s *Server) mountEmailReset(mux *http.ServeMux) {
 	addr := strings.TrimSpace(os.Getenv("SMTP_TLS_ADDR"))
 	host, _, _ := net.SplitHostPort(addr)
 	mailer := authMailer{addr: addr, host: host, from: normalizeEmail(os.Getenv("SMTP_FROM")), username: os.Getenv("SMTP_USERNAME"), password: os.Getenv("SMTP_PASSWORD")}
-	terms, privacy := policyURL("AUTH_TERMS_URL"), policyURL("AUTH_PRIVACY_URL")
 	reset := host != "" && mailer.from != ""
-	register := os.Getenv("EMAIL_REGISTRATION") == "true" && terms != "" && privacy != ""
-	googleConfig, google := googleOAuthConfig()
-	google = google && s.cfg.CookieSecure
-	if google {
-		s.mountGoogleAuth(mux, googleConfig)
-	}
-	mux.HandleFunc("GET /api/platform/auth/options", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"register": register, "reset": reset, "google": google, "terms": terms, "privacy": privacy})
-	})
 	requests := newLoginLimiter(8, 15*time.Minute)
 	submissions := newLoginLimiter(25, 15*time.Minute)
 	mailSlots := make(chan struct{}, 8)
-	s.mountRegistration(mux, register)
 	mux.HandleFunc("POST /api/platform/auth/reset/code", func(w http.ResponseWriter, r *http.Request) {
 		if !reset {
 			writeError(w, http.StatusServiceUnavailable, "此功能暂未启用")
@@ -230,7 +220,7 @@ func (s *Server) mountEmailAuth(mux *http.ServeMux) {
 			return
 		}
 		var id int64
-		err = tx.QueryRow(ctx, `UPDATE users SET password_hash=$2 WHERE username=$1 AND `+emailPasswordResetEligible+` RETURNING id`, email, string(hash)).Scan(&id)
+		err = tx.QueryRow(ctx, `UPDATE users SET password_hash=$2 WHERE email=$1 AND `+emailPasswordResetEligible+` RETURNING id`, email, string(hash)).Scan(&id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusBadRequest, "验证码无效或已过期，请重新获取")
 			return
@@ -250,70 +240,13 @@ func (s *Server) mountEmailAuth(mux *http.ServeMux) {
 	})
 }
 
-func (s *Server) mountRegistration(mux *http.ServeMux, enabled bool) {
-	attempts := newLoginLimiter(8, 15*time.Minute)
-	mux.HandleFunc("POST /api/platform/auth/register", func(w http.ResponseWriter, r *http.Request) {
-		if !enabled {
-			writeError(w, http.StatusServiceUnavailable, "此功能暂未启用")
-			return
-		}
-		ip := clientIP(r)
-		if !attempts.Allow(ip) {
-			writeError(w, http.StatusTooManyRequests, "操作过于频繁，请稍后再试")
-			return
-		}
-		attempts.Fail(ip)
-		var in struct {
-			Email    string `json:"email"`
-			Password string `json:"password"`
-			Accepted bool   `json:"accepted"`
-		}
-		if !decodeJSON(w, r, &in) {
-			return
-		}
-		email := normalizeEmail(in.Email)
-		if email == "" {
-			writeError(w, http.StatusBadRequest, "请输入有效的邮箱地址")
-			return
-		}
-		if !validAuthPassword(in.Password) {
-			writeError(w, http.StatusBadRequest, "密码至少 8 个字符，且不能超过 72 字节")
-			return
-		}
-		if !in.Accepted {
-			writeError(w, http.StatusBadRequest, "请同意服务条款与隐私声明")
-			return
-		}
-		hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
-		if err != nil {
-			internalError(w, err)
-			return
-		}
-		tag, err := s.store.pool.Exec(r.Context(), `INSERT INTO users (username, display_name, password_hash, roles, self_registered)
-			VALUES ($1, '用户', $2, '{}', true) ON CONFLICT (username) DO NOTHING`, email, string(hash))
-		if err != nil {
-			internalError(w, err)
-			return
-		}
-		if tag.RowsAffected() == 0 {
-			writeError(w, http.StatusConflict, "无法使用此邮箱注册，请尝试登录或使用其他邮箱。")
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
-}
-
-func validAuthPassword(password string) bool {
-	return len([]rune(password)) >= 8 && len(password) <= 72
-}
-
 func (s *Server) issueEmailCode(mailer authMailer, email string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	var eligible bool
 	err := s.store.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users
-		WHERE username = $1 AND `+emailPasswordResetEligible+`)`, email).Scan(&eligible)
+		WHERE email = $1 AND `+emailPasswordResetEligible+`)`, email).Scan(&eligible)
 	if err != nil {
 		slog.Warn("检查验证邮件发送条件失败", "purpose", "reset", "err", err)
 		return
