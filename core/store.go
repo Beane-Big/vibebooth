@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions (expires_at);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS self_registered BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_subject TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS users_google_subject_idx ON users (google_subject) WHERE google_subject IS NOT NULL;
 -- 按人授权菜单：只记录和模块清单里默认值不同的部分，没有记录就按默认值。
@@ -237,7 +238,7 @@ func (s *Store) UserByID(ctx context.Context, id int64) (*User, error) {
 // 停用时删除这个人的全部会话，让他立即退出。
 func (s *Store) UpdateUser(ctx context.Context, id int64, displayName string, admin, disabled bool) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE users SET display_name = COALESCE((SELECT name FROM persons WHERE id = users.person_id), $2), roles = CASE WHEN NOT $5 AND email_verified THEN '{}'::text[] ELSE $3 END, disabled = $4
+		`UPDATE users SET display_name = COALESCE((SELECT name FROM persons WHERE id = users.person_id), $2), roles = CASE WHEN NOT $5 AND (email_verified OR self_registered) THEN '{}'::text[] ELSE $3 END, disabled = $4
 		 WHERE id = $1`,
 		id, displayName, rolesFor(admin), disabled, admin)
 	if err == nil && disabled {
@@ -556,6 +557,10 @@ func (s *Store) checkPassword(ctx context.Context, username, password string) (*
 	}
 	if err != nil {
 		return nil, "", err
+	}
+	if hash == "" {
+		bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+		return nil, "", nil
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
 		return nil, "", nil
