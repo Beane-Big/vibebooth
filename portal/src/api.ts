@@ -198,10 +198,17 @@ export const api = {
   setMyPassword: (currentPassword: string, password: string) =>
     put("/api/platform/me/password", { currentPassword, password }),
   apps: () => request<App[]>("/api/platform/apps"),
-  login: (username: string, password: string) =>
+  authOptions: () => request<{ register: boolean; reset: boolean; terms: string; privacy: string }>("/api/platform/auth/options"),
+  sendCode: (purpose: "register" | "reset", email: string) =>
+    request<void>(`/api/platform/auth/${purpose}/code`, { method: "POST", body: JSON.stringify({ email }) }),
+  verifyCode: (purpose: "register" | "reset", email: string, code: string) =>
+    request<void>(`/api/platform/auth/${purpose}/verify`, { method: "POST", body: JSON.stringify({ email, code }) }),
+  emailAuth: (purpose: "register" | "reset", input: { email: string; code: string; password: string; displayName?: string; accepted?: boolean }) =>
+    request<void>(`/api/platform/auth/${purpose}`, { method: "POST", body: JSON.stringify(input) }),
+  login: (username: string, password: string, remember: boolean) =>
     request<Me>("/api/platform/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, remember }),
     }),
   logout: () => request<void>("/api/platform/auth/logout", { method: "POST" }),
 

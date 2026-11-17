@@ -6,7 +6,7 @@ import { builtinAliases, builtinAppsFor, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
 import Beian from "./components/Beian";
 import Layout from "./components/Layout";
-import Login from "./pages/Login";
+import Login from "./pages/AuthForm";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
 import Stats from "./pages/Stats";
@@ -41,7 +41,7 @@ export default function App() {
       setUser(u);
       const next = new URLSearchParams(location.search).get("next");
       // 只允许跳回本站路径，防止被利用跳到外部网站。没有门户权限的人跳回门户也只会看到“没有权限”。
-      if (next && next.startsWith("/") && !next.startsWith("//")) location.href = next;
+      if (next && /^\/(?![\/\\])[^\\\s]*$/.test(next)) location.href = next;
       else history.replaceState(null, "", "/");
     }} />;
   }

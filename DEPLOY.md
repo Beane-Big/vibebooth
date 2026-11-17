@@ -259,3 +259,8 @@ Windows 上的 `C:\Users\<你的用户名>\...\home-platform` 和 Ubuntu 里的 
 > WSL 默认的网络模式下，局域网里的其他设备可能访问不到 WSL 里的端口，这一点还没有验证过。如果访问不了，记下现象再排查。
 >
 > 不要在路由器上给 8080 做端口转发，平台目前不应该暴露到公网。
+## 邮箱注册和密码重置
+
+在部署目录的 `.env` 中填写 `SMTP_TLS_ADDR`（例如 `smtp.example.com:465`）、`SMTP_FROM`，以及供应商要求的 `SMTP_USERNAME`、`SMTP_PASSWORD`。邮件服务器必须支持连接建立时启用 TLS。现有账号可照常用用户名登录，密码重置适用于通过邮箱验证码注册的账号。
+
+开放自助注册还需设置 `EMAIL_REGISTRATION=true`，并将 `AUTH_TERMS_URL` 和 `AUTH_PRIVACY_URL` 填成实际发布的 HTTPS 页面。公网使用时先配置 HTTPS 并设置 `COOKIE_SECURE=true`，再重新创建平台核心服务，并用真实邮箱验证邮件收发。

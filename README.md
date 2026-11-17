@@ -83,3 +83,6 @@ cd portal
 npm install
 npm run dev   # 接口请求会转发到 localhost:8080，需要先用 docker compose 启动平台
 ```
+## 邮箱账号
+
+门户支持邮箱和密码登录，旧账号仍可用用户名登录。开启邮箱注册与密码重置的配置见 [部署说明](DEPLOY.md#邮箱注册和密码重置)。
