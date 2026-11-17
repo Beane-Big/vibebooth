@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Card, Col, Empty, Menu, Row } from "antd";
 import { AppstoreOutlined } from "@ant-design/icons";
-import { hasPerm, type Me } from "../api";
+import { hasPerm, isAdmin, type Me } from "../api";
 import Modules from "./Modules";
 
 // 平台自带的“设置”应用：左边是设置项，右边是选中项的内容。目前只有“应用管理”，要有“应用管理”权限才显示，
@@ -27,7 +27,7 @@ export default function Settings({ me }: { me: Me }) {
         </Card>
       </Col>
       <Col xs={24} lg={18}>
-        {active === "modules" && <Modules />}
+        {active === "modules" && <Modules canManageAccess={isAdmin(me)} />}
       </Col>
     </Row>
   );

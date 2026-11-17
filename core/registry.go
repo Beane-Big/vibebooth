@@ -121,14 +121,28 @@ type appView struct {
 
 // handleApps 返回当前用户能用的应用（应用开关开着就有入口，里面能看哪些页面另按菜单算），并并发检查各模块健康状态。
 func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) {
-	g, err := s.store.Grants(r.Context(), user.ID)
+	w.Header().Set("Cache-Control", "private, no-store")
+	var g grants
+	if user != nil {
+		var err error
+		g, err = s.store.Grants(r.Context(), user.ID)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		if !appAllowed(user, platformModule, g) {
+			writeError(w, http.StatusForbidden, "没有使用平台的权限")
+			return
+		}
+	}
+	scopes, err := s.store.appScopes(r.Context())
 	if err != nil {
 		internalError(w, err)
 		return
 	}
 	var apps []*Module
 	for _, m := range s.registry.List() {
-		if appAllowed(user, m, g) {
+		if canBrowseApp(m, scopes[m.ID].forModule(m), user != nil) || user != nil && appAllowed(user, m, g) {
 			apps = append(apps, m)
 		}
 	}
@@ -203,6 +217,18 @@ func loadLayers(dir, icon string) *iconLayers {
 func (s *Server) iconModule(w http.ResponseWriter, r *http.Request, user *User) (*Module, bool) {
 	m, ok := s.registry.Get(r.PathValue("id"))
 	if !ok || m.Icon == "" {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	scope, err := s.store.appScope(r.Context(), m)
+	if err != nil {
+		internalError(w, err)
+		return nil, false
+	}
+	if canBrowseApp(m, scope, user != nil) {
+		return m, true
+	}
+	if user == nil {
 		http.NotFound(w, r)
 		return nil, false
 	}

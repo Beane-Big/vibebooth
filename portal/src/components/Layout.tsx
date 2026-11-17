@@ -21,7 +21,7 @@ export default function Layout({
   plain = false,
   children,
 }: {
-  user: Me;
+  user: Me | null;
   tabs: ReactNode;
   onHome: () => void;
   onUserInfo?: () => void;
@@ -34,7 +34,7 @@ export default function Layout({
   plain?: boolean;
   children: ReactNode;
 }) {
-  const name = userDisplayName(user);
+  const name = user ? userDisplayName(user) : "";
   const { mode, setMode, skin, dark, wallpaper } = useThemeMode();
   // 手机上只显示头像，名字收进下拉菜单；平台字标也不显示，给标签栏腾地方。
   const screens = Grid.useBreakpoint();
@@ -56,7 +56,7 @@ export default function Layout({
             </div>
           </ThemeBoundary>
         )}
-        {screens.sm && (
+        {(screens.sm || !user) && (
           <a
             className="brand"
             href="/"
@@ -70,7 +70,7 @@ export default function Layout({
           </a>
         )}
         {tabs}
-        <Dropdown
+        {user ? <Dropdown
           trigger={["click"]}
           placement="bottomRight"
           menu={{
@@ -119,7 +119,7 @@ export default function Layout({
             <PersonAvatar person={{ name, photo: user.photo }} size={28} />
             {screens.sm && <span>{name}</span>}
           </Button>
-        </Dropdown>
+        </Dropdown> : <Button type="primary" href="/login" style={{ marginInlineStart: "auto" }}>登录</Button>}
       </AntLayout.Header>
       <div className="layout-content">{children}</div>
     </AntLayout>

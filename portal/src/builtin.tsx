@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BarChartOutlined, SettingOutlined, SkinOutlined, TeamOutlined } from "@ant-design/icons";
+import { BarChartOutlined, ContactsOutlined, SettingOutlined, SkinOutlined, TeamOutlined } from "@ant-design/icons";
 import { hasPerm, isAdmin, type Me, type PlatformPerm } from "./api";
 
 // 平台自带的应用：代码在门户里，交互和模块一样，出现在应用页，点开是一个标签页。
@@ -17,6 +17,15 @@ export type BuiltinApp = {
 };
 
 export const builtinApps: BuiltinApp[] = [
+  {
+    id: "contacts",
+    name: "联系人",
+    description: "你的联系人",
+    url: "/contacts",
+    icon: <ContactsOutlined />,
+    tint: ["#54bcff", "#3168e9"],
+    perm: "everyone",
+  },
   // 管理员在这里管成员、账号和权限；有“成员”权限的普通用户只能看成员、给他们写自己的备注。
   // 能管账号的人可以给自己勾上任何权限，等于管理员，所以账号和权限只给管理员。
   {

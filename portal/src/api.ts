@@ -37,6 +37,10 @@ export type PlatformPerm = "settings" | "modules" | "members";
 
 export const hasPerm = (me: Me, perm: PlatformPerm) => me.perms.includes(perm);
 
+export type AppScope = "restricted" | "signed-in" | "public";
+export type AppAccess = { scope: AppScope; version: string };
+export type Contact = { id: number; name: string; username?: string; email?: string };
+
 export type App = {
   id: string;
   name: string;
@@ -199,6 +203,12 @@ export const api = {
   // 改自己的密码，要先输入当前密码；其他设备要重新登录，当前设备不用。
   setMyPassword: (currentPassword: string, password: string) =>
     put("/api/platform/me/password", { currentPassword, password }),
+  appAccess: () => request<Record<string, AppAccess>>("/api/platform/app-access"),
+  setAppAccess: (id: string, access: AppAccess) => put("/api/platform/app-access/" + encodeURIComponent(id), access),
+  contacts: () => request<Contact[]>("/api/platform/contacts"),
+  addContact: (identifier: string) =>
+    request<void>("/api/platform/contacts", { method: "POST", body: JSON.stringify({ identifier }) }),
+  removeContact: (id: number) => request<void>("/api/platform/contacts/" + id, { method: "DELETE" }),
   apps: () => request<App[]>("/api/platform/apps"),
   authOptions: () => request<{ terms: string; privacy: string }>("/api/platform/auth/options"),
   register: (input: { username: string; email?: string; password: string }) =>

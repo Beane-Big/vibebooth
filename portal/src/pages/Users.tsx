@@ -11,7 +11,6 @@ import {
   Empty,
   Flex,
   Form,
-  Grid,
   Input,
   Modal,
   Popconfirm,
@@ -24,8 +23,9 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { AppstoreOutlined, ArrowLeftOutlined, HomeOutlined, PlusOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, HomeOutlined, PlusOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
 import { api, isAdmin, userDisplayName, type AppGrant, type Grant, type Member, type Person, type PersonInput, type User, type UserMenus } from "../api";
+import ListDetail from "../components/ListDetail";
 import MyPassword from "../components/MyPassword";
 import MyPhoto from "../components/MyPhoto";
 import PersonAvatar from "../components/PersonAvatar";
@@ -46,29 +46,6 @@ const MANY_APPS = 6;
 // onMeChanged 在改了自己的姓名或头像后调用，让顶栏跟着更新。
 export default function Users({ me, onMeChanged }: { me: User; onMeChanged: () => void }) {
   return isAdmin(me) ? <AdminUsers me={me} onMeChanged={onMeChanged} /> : <MemberRemarks onMeChanged={onMeChanged} />;
-}
-
-// ListDetail 是左边列表、右边详情的布局。窄屏上先看列表，选中后只看详情，左上角返回列表。
-function ListDetail({ list, detail, selected, onBack }: { list: ReactNode; detail: ReactNode; selected: boolean; onBack: () => void }) {
-  const wide = !!Grid.useBreakpoint().lg;
-  if (wide) {
-    return (
-      <Row gutter={16} align="top">
-        <Col span={8}>{list}</Col>
-        <Col span={16}>{detail}</Col>
-      </Row>
-    );
-  }
-  return selected ? (
-    <Flex vertical gap={12}>
-      <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} style={{ alignSelf: "flex-start" }}>
-        成员
-      </Button>
-      {detail}
-    </Flex>
-  ) : (
-    list
-  );
 }
 
 // SearchBox 是成员列表顶部的搜索框。

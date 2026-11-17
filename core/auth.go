@@ -183,6 +183,17 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 	return s.store.UserBySession(r.Context(), hash)
 }
 
+func (s *Server) optionalUser(next func(http.ResponseWriter, *http.Request, *User)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, err := s.currentUser(r)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		next(w, r, user)
+	}
+}
+
 func (s *Server) requireUser(next func(http.ResponseWriter, *http.Request, *User)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user, err := s.currentUser(r)
@@ -278,6 +289,20 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		internalError(w, err)
 		return
 	}
+	path, _, _ := strings.Cut(uri, "?")
+	app, ok := s.registry.Get(appIDFromURI(path))
+	if ok && publicFrontendRequest(app, path, r.Header.Get("X-Forwarded-Method")) {
+		scope, err := s.store.appScope(r.Context(), app)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		if canBrowseApp(app, scope, user != nil) {
+			// A frontend grant carries no user identity or API permissions.
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+	}
 	if user == nil {
 		if isAPI {
 			writeError(w, http.StatusUnauthorized, "未登录")
@@ -289,8 +314,6 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path, _, _ := strings.Cut(uri, "?")
-	app, ok := s.registry.Get(appIDFromURI(path))
 	if !ok {
 		writeError(w, http.StatusNotFound, "应用不存在")
 		return

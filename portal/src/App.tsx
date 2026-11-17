@@ -12,6 +12,7 @@ import Settings from "./pages/Settings";
 import Stats from "./pages/Stats";
 import Themes from "./pages/Themes";
 import Users from "./pages/Users";
+import Contacts from "./pages/Contacts";
 import { useThemeMode } from "./theme";
 import { useActiveTheme } from "./themeHost";
 
@@ -37,9 +38,13 @@ export default function App() {
     );
 
   if (!user) {
+    const path = location.pathname;
+    if (path !== "/login" && !isBuiltinURL(path) && !builtinAliases[path]) {
+      return <GuestPortal />;
+    }
     return <Login onLogin={(u) => {
       setUser(u);
-      const next = new URLSearchParams(location.search).get("next");
+      const next = new URLSearchParams(location.search).get("next") ?? (path !== "/login" ? path : null);
       // 只允许跳回本站路径，防止被利用跳到外部网站。没有门户权限的人跳回门户也只会看到“没有权限”。
       if (next && /^\/(?![\/\\])[^\\\s]*$/.test(next)) location.href = next;
       else history.replaceState(null, "", "/");
@@ -71,6 +76,24 @@ export default function App() {
         setUser(null);
       }}
     />
+  );
+}
+
+function GuestPortal() {
+  const [apps, setApps] = useState<AppInfo[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    api.apps().then(setApps).catch((err) => setError(err.message));
+  }, []);
+  return (
+    <Layout user={null} tabs={null} onHome={() => location.assign("/")} onLogout={() => {}}>
+      <div className="content">
+        {error ? <Alert type="error" message={error} showIcon />
+          : apps ? <Home apps={apps} builtins={[]} user={null} theme={null} onOpen={(tab) => location.assign(tab.url)} />
+          : <Spin />}
+      </div>
+      <Beian />
+    </Layout>
   );
 }
 
@@ -158,6 +181,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
             className="content"
             style={t.url !== tabs.active ? { display: "none" } : undefined}
           >
+            {t.url === "/contacts" && <Contacts />}
             {t.url === "/admin/users" && <Users me={user} onMeChanged={onMeChanged} />}
             {t.url === "/settings" && <Settings me={user} />}
             {t.url === "/themes" && <Themes me={user} themes={theme.themes} />}
