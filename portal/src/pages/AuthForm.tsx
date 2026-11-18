@@ -117,6 +117,9 @@ function AuthForm({ onLogin }: { onLogin: (user: Me) => void }) {
             <Button block type="primary" size="large" htmlType="submit" loading={busy}>
               {mode === "login" ? "登录" : "创建账号"}
             </Button>
+            {mode === "login" && (
+              <Button block size="large" href="/" disabled={busy} className="auth-browse">随便看看</Button>
+            )}
           </Form>
         )}
         {mode === "register" && (

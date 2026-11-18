@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Checkbox, Flex, List, Progress, Space, Tag, Typography } from "antd";
-import { api, ApiError, maxPackageMB, privilegeInfo, type InstalledModule } from "../api";
+import { Alert, Button, Card, Checkbox, Flex, List, Progress, Select, Space, Tag, Typography } from "antd";
+import { api, ApiError, maxPackageMB, privilegeInfo, type AppAccess, type InstalledModule } from "../api";
 import { LogCollapse, PackagesDragger, ResultAlert, type OperationResult } from "../components/PackageUpload";
 
 // 排队安装的一个模块包。confirm 表示模块声明了特权，等管理员确认；确认后带上 allowPrivileges 重新排队。
@@ -30,7 +30,22 @@ let nextKey = 1;
 
 // 应用管理：上传模块包安装或升级，卸载模块。安装和卸载都不会重启平台和其他应用。
 // 一次可以选多个模块包，按加入的顺序一个一个上传、安装：安装器同一时间只装一个，一起传也只是排队，还会抢带宽。
-export default function Modules() {
+export default function Modules({ canManageAccess }: { canManageAccess: boolean }) {
+  const [access, setAccess] = useState<Record<string, AppAccess>>({});
+  const [savingAccess, setSavingAccess] = useState<string | null>(null);
+
+  async function changeAccess(id: string, policy: AppAccess) {
+    setSavingAccess(id);
+    try {
+      await api.setAppAccess(id, policy);
+      setAccess((previous) => ({ ...previous, [id]: policy }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setSavingAccess(null);
+    }
+  }
+
   const [modules, setModules] = useState<InstalledModule[] | null>(null);
   const [error, setError] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -44,6 +59,7 @@ export default function Modules() {
   const busy = running || uninstalling;
 
   function load() {
+    if (canManageAccess) api.appAccess().then(setAccess).catch((err) => setError(err.message));
     api
       .modules()
       .then(setModules)
@@ -210,6 +226,21 @@ export default function Modules() {
                     {m.requiredBy.length > 0 && ` · 被 ${m.requiredBy.join("、")} 依赖`}
                   </Typography.Text>
                 </Flex>
+                {access[m.id] && (
+                  <Select
+                    aria-label={`${m.name}访问范围`}
+                    value={access[m.id].scope}
+                    style={{ minWidth: 124 }}
+                    disabled={busy || savingAccess !== null}
+                    loading={savingAccess === m.id}
+                    onChange={(scope) => changeAccess(m.id, { version: access[m.id].version, scope })}
+                    options={[
+                      { value: "restricted", label: "按权限访问" },
+                      { value: "signed-in", label: "登录可访问" },
+                      { value: "public", label: "公开访问" },
+                    ]}
+                  />
+                )}
                 {removing === m.id ? (
                   <Space wrap>
                     <Checkbox checked={purge} onChange={(e) => setPurge(e.target.checked)}>

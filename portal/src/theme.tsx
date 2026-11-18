@@ -12,43 +12,43 @@ export type Skin = "classic" | "tiles" | `theme:${string}`;
 // themeID 返回皮肤对应的主题包 id，内置皮肤返回空。
 export const themeID = (skin: Skin) => (skin.startsWith("theme:") ? skin.slice("theme:".length) : "");
 
-// 门户的设计参数都集中在这里，风格照 Microsoft Fluent 2：中性灰底、白色卡片配轻阴影、4px 圆角的控件、品牌蓝。
-// 颜色取自 Fluent 2 的 neutral / brand 色板。主题包可以改其中任意几个值（ThemeDefinition.tokens）。
+// 默认主题沿用认证页的蓝色、粉彩背景和柔和玻璃层次。
+// 主题包可以通过 ThemeDefinition.tokens 覆盖。
 const palette = {
   light: {
-    colorPrimary: "#0f6cbd",
+    colorPrimary: "#245ed0",
     colorError: "#c50f1f",
     colorSuccess: "#107c10",
     colorWarning: "#bc4b09",
-    colorText: "#242424",
-    colorTextSecondary: "#616161",
-    colorBgLayout: "#f5f5f5",
+    colorText: "#18233a",
+    colorTextSecondary: "#52617a",
+    colorBgLayout: "#edf2fb",
     colorBgContainer: "#ffffff",
-    colorBorder: "#d1d1d1",
-    colorBorderSecondary: "#e0e0e0",
-    // Fluent 的 shadow4 / shadow16：卡片和弹出层用。
-    cardShadow: "0 0 2px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.14)",
-    popupShadow: "0 0 2px rgba(0,0,0,0.12), 0 8px 16px rgba(0,0,0,0.14)",
+    colorBorder: "#c3d0e4",
+    colorBorderSecondary: "#dce5f2",
+    // 卡片与弹出层用柔和阴影和顶部高光区分层级。
+    cardShadow: "inset 0 1px 0 rgba(255,255,255,0.85), 0 12px 32px -16px rgba(51,69,113,0.24)",
+    popupShadow: "inset 0 1px 0 rgba(255,255,255,0.9), 0 24px 72px -20px rgba(35,51,86,0.3)",
     // 彩色方块皮肤里悬浮顶栏的阴影，比卡片的更柔更散。
     floatShadow: "0 10px 30px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06)",
-    // 输入框底边比其他三边深一些，是 Fluent 输入框的特征。
-    inputBottom: "#616161",
+    // 保留主题包可覆盖的输入框边框色。
+    inputBottom: "#c3d0e4",
   },
   dark: {
     colorPrimary: "#479ef5",
     colorError: "#dc626d",
     colorSuccess: "#54b054",
     colorWarning: "#fa9e5e",
-    colorText: "#ffffff",
-    colorTextSecondary: "#adadad",
-    colorBgLayout: "#1f1f1f",
-    colorBgContainer: "#292929",
-    colorBorder: "#666666",
-    colorBorderSecondary: "#3d3d3d",
+    colorText: "#edf3ff",
+    colorTextSecondary: "#b0bfd6",
+    colorBgLayout: "#121b2d",
+    colorBgContainer: "#202c42",
+    colorBorder: "#50617e",
+    colorBorderSecondary: "#354560",
     cardShadow: "0 0 2px rgba(0,0,0,0.24), 0 2px 4px rgba(0,0,0,0.28)",
     popupShadow: "0 0 2px rgba(0,0,0,0.24), 0 8px 16px rgba(0,0,0,0.28)",
     floatShadow: "0 10px 30px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3)",
-    inputBottom: "#d6d6d6",
+    inputBottom: "#50617e",
   },
 };
 
@@ -108,7 +108,7 @@ function themeConfig(p: Palette, dark: boolean, o?: ThemeOverrides): ThemeConfig
   if (glass) {
     const surface = translucent(colors.colorBgContainer, glass.opacity);
     // 弹出层（下拉菜单、弹窗）比卡片不透明一些，叠在内容上也看得清字。
-    const elevated = translucent(dark ? "#2b2b2b" : "#ffffff", Math.min(1, glass.opacity + 0.2));
+    const elevated = translucent(colors.colorBgContainer, Math.min(1, glass.opacity + 0.2));
     base.token = { ...base.token, colorBgContainer: surface, colorBgElevated: elevated };
     base.components = { ...base.components, Layout: { ...base.components!.Layout, headerBg: surface } };
   }
@@ -126,10 +126,13 @@ function baseConfig(colors: Colors, cardShadow: string, popupShadow: string, dar
     algorithm: dark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
     token: {
       ...colors,
-      // Fluent 的控件圆角是 4px，卡片和弹窗是 8px。
-      borderRadius: 4,
-      borderRadiusSM: 2,
-      borderRadiusLG: 8,
+      // 与认证页共享柔和圆角，卡片和弹框使用更大的容器圆角。
+      borderRadius: 14,
+      borderRadiusSM: 10,
+      borderRadiusLG: 24,
+      controlHeight: 40,
+      controlHeightSM: 32,
+      controlHeightLG: 48,
       fontSize: 14,
       fontFamily: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
       boxShadowSecondary: popupShadow,
@@ -151,6 +154,14 @@ function baseConfig(colors: Colors, cardShadow: string, popupShadow: string, dar
     },
   };
 }
+
+const defaultOverrides: ThemeOverrides = {
+  glass: { blur: 28, opacity: 0.76 },
+  background: {
+    light: "radial-gradient(ellipse at 6% 0%, #fbe5dd99, transparent 48%), radial-gradient(ellipse at 96% 14%, #dce8fcbb, transparent 55%), radial-gradient(ellipse at 50% 100%, #e9e0f699, transparent 60%), #edf2fb",
+    dark: "radial-gradient(ellipse at 0% 0%, #24365788, transparent 55%), radial-gradient(ellipse at 95% 100%, #33274866, transparent 55%), #121b2d",
+  },
+};
 
 const storageKey = "vb-theme";
 // 自己选的皮肤；没有这一项表示跟随平台默认。
@@ -285,7 +296,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const wallpaper = ownWallpaper ?? defaultWallpaper;
   const systemDark = useSystemDark();
   const dark = mode === "dark" || (mode === "system" && systemDark);
-  const p = paletteFor(dark, overrides ?? undefined);
+  const effectiveOverrides = overrides ?? defaultOverrides;
+  const p = paletteFor(dark, effectiveOverrides);
   const themedIcons = !!pick(overrides?.icons, dark);
   const wordmark = pick(overrides?.wordmark, dark);
 
@@ -324,8 +336,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }}
     >
       {/* 关掉按钮文字自动加空格，“保存”不会显示成“保 存”。 */}
-      <ConfigProvider locale={zhCN} theme={themeConfig(p, dark, overrides ?? undefined)} button={{ autoInsertSpace: false }}>
-        <CssVars dark={dark} p={p} o={overrides ?? undefined} wallpaper={wallpaperURL(wallpaper)} />
+      <ConfigProvider locale={zhCN} theme={themeConfig(p, dark, effectiveOverrides)} button={{ autoInsertSpace: false }}>
+        <CssVars dark={dark} p={p} o={effectiveOverrides} wallpaper={wallpaperURL(wallpaper)} />
         <AntApp>{children}</AntApp>
       </ConfigProvider>
     </ModeContext.Provider>
@@ -368,6 +380,7 @@ function CssVars({ dark, p, o, wallpaper }: { dark: boolean; p: Palette; o?: The
     root.style.colorScheme = dark ? "dark" : "light";
     root.classList.toggle("vb-has-bg", !!background);
     root.classList.toggle("vb-glass", !!glass);
-  }, [token, dark, p.inputBottom, p.floatShadow, background, glass?.blur, icons?.bg, icons?.fg]);
+    root.classList.toggle("vb-default-theme", o === defaultOverrides);
+  }, [token, dark, p.inputBottom, p.floatShadow, background, glass?.blur, o, icons?.bg, icons?.fg]);
   return null;
 }

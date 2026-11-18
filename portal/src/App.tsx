@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Result, Spin } from "antd";
+import { Alert, App as AntApp, Button, Card, Flex, Result, Spin } from "antd";
 import { useActivityBeat } from "./activity";
 import { api, ApiError, type App as AppInfo, type Me } from "./api";
 import { builtinAliases, builtinAppsFor, isBuiltinURL } from "./builtin";
@@ -12,12 +12,14 @@ import Settings from "./pages/Settings";
 import Stats from "./pages/Stats";
 import Themes from "./pages/Themes";
 import Users from "./pages/Users";
+import Contacts from "./pages/Contacts";
 import { useThemeMode } from "./theme";
 import { useActiveTheme } from "./themeHost";
 
 export default function App() {
   const [user, setUser] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loginConfirmed, setLoginConfirmed] = useState(() => new URLSearchParams(location.search).get("confirmed") === "1");
 
   useEffect(() => {
     api
@@ -37,9 +39,17 @@ export default function App() {
     );
 
   if (!user) {
+    const path = location.pathname;
+    if (path !== "/login" && !isBuiltinURL(path) && !builtinAliases[path]) {
+      return <GuestPortal />;
+    }
+    const needsLogin = path !== "/login" || new URLSearchParams(location.search).has("next");
+    if (needsLogin && !loginConfirmed) {
+      return <LoginPrompt onContinue={() => setLoginConfirmed(true)} />;
+    }
     return <Login onLogin={(u) => {
       setUser(u);
-      const next = new URLSearchParams(location.search).get("next");
+      const next = new URLSearchParams(location.search).get("next") ?? (path !== "/login" ? path : null);
       // 只允许跳回本站路径，防止被利用跳到外部网站。没有门户权限的人跳回门户也只会看到“没有权限”。
       if (next && /^\/(?![\/\\])[^\\\s]*$/.test(next)) location.href = next;
       else history.replaceState(null, "", "/");
@@ -74,9 +84,94 @@ export default function App() {
   );
 }
 
+function LoginPrompt({ onContinue }: { onContinue: () => void }) {
+  return (
+    <Layout user={null} tabs={null} onHome={() => location.assign("/")} onLogout={() => {}}>
+      <Flex align="center" justify="center" style={{ minHeight: "min(65vh, 560px)", padding: 24 }}>
+        <Card style={{ width: "100%", maxWidth: 440, textAlign: "center" }}>
+          <Result status="info" title="此功能需要登录"
+            subTitle="是否前往登录或注册？"
+            extra={[
+              <Button key="cancel" onClick={() => location.assign("/")}>暂不登录</Button>,
+              <Button key="continue" type="primary" onClick={onContinue}>登录或注册</Button>,
+            ]} />
+        </Card>
+      </Flex>
+      <Beian />
+    </Layout>
+  );
+}
+
+function GuestPortal() {
+  const { modal } = AntApp.useApp();
+  const [apps, setApps] = useState<AppInfo[] | null>(null);
+  const [error, setError] = useState("");
+  const tabs = useAppTabs();
+  useEffect(() => {
+    api.apps().then(setApps).catch((err) => setError(err.message));
+  }, []);
+
+  function openApp(tab: AppTab) {
+    if (apps?.find((app) => app.url === tab.url)?.loginRequired) {
+      modal.confirm({
+        icon: null,
+        centered: true,
+        className: "login-confirm",
+        title: "此功能需要登录",
+        content: "是否前往登录或注册？",
+        okText: "登录或注册",
+        cancelText: "暂不登录",
+        onOk: () => { location.href = "/login?next=%2F&confirmed=1"; },
+      });
+      return;
+    }
+    tabs.open(tab);
+  }
+
+  const availableTabs = tabs.tabs.filter((tab) => apps?.some((app) => app.url === tab.url && !app.loginRequired));
+  const guestTabs = {
+    ...tabs,
+    tabs: availableTabs,
+    active: availableTabs.some((tab) => tab.url === tabs.active) ? tabs.active : PORTAL_TAB,
+  };
+
+  function onEmbeddedPortal(tab: AppTab, url: string) {
+    if (url.startsWith("/login")) {
+      modal.confirm({
+        icon: null,
+        centered: true,
+        className: "login-confirm",
+        title: "此功能需要登录",
+        content: "是否前往登录或注册？",
+        okText: "登录或注册",
+        cancelText: "暂不登录",
+        onOk: () => { location.href = "/login?next=%2F&confirmed=1"; },
+        onCancel: () => { tabs.close(tab.url); },
+      });
+    } else {
+      tabs.close(tab.url);
+      tabs.activate(PORTAL_TAB);
+    }
+  }
+
+  return (
+    <Layout user={null} tabs={<AppTabBar state={guestTabs} onRefresh={(key) => key === PORTAL_TAB ? location.reload() : reloadFrame(key)} />}
+      onHome={() => tabs.activate(PORTAL_TAB)} onLogout={() => {}}>
+      <div className="content" style={guestTabs.active !== PORTAL_TAB ? { display: "none" } : undefined}>
+        {error ? <Alert type="error" message={error} showIcon />
+          : apps ? <Home apps={apps} builtins={[]} user={null} theme={null} onOpen={openApp} />
+          : <Spin />}
+      </div>
+      <AppFrames state={guestTabs} onEmbeddedPortal={onEmbeddedPortal} />
+      {guestTabs.active === PORTAL_TAB && <Beian />}
+    </Layout>
+  );
+}
+
 // 门户只有首页一个页面，其余都在标签里：模块应用放在内嵌页，平台自带的应用（用户、设置）由门户直接渲染。
 // 直接访问自带应用的网址（例如按住 Ctrl 点卡片）时打开它的标签，地址栏回到首页；旧网址 /admin/modules 打开“设置”。
 function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => void; onLogout: () => void }) {
+  const { modal } = AntApp.useApp();
   const [apps, setApps] = useState<AppInfo[] | null>(null);
   const [error, setError] = useState("");
   const tabs = useAppTabs();
@@ -113,7 +208,18 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   // 其他情况关掉这个标签，回到首页。
   function onEmbeddedPortal(tab: AppTab, url: string, frame: HTMLIFrameElement) {
     if (url.startsWith("/login")) {
-      location.href = "/login";
+      const target = "/login?next=%2F";
+      modal.confirm({
+        icon: null,
+        centered: true,
+        className: "login-confirm",
+        title: "此功能需要登录",
+        content: "是否前往登录或注册？",
+        okText: "登录或注册",
+        cancelText: "暂不登录",
+        onOk: () => { location.href = target + "&confirmed=1"; },
+        onCancel: () => { tabs.close(tab.url); },
+      });
       return;
     }
     const path = url.split("?")[0];
@@ -151,13 +257,14 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
         )}
       </div>
       {tabs.tabs
-        .filter((t) => builtins.some((app) => app.url === t.url))
+        .filter((t) => builtins.some((app) => !app.embedded && app.url === t.url))
         .map((t) => (
           <div
             key={`${t.url}#${reloads[t.url] ?? 0}`}
             className="content"
             style={t.url !== tabs.active ? { display: "none" } : undefined}
           >
+            {t.url === "/contacts" && <Contacts />}
             {t.url === "/admin/users" && <Users me={user} onMeChanged={onMeChanged} />}
             {t.url === "/settings" && <Settings me={user} />}
             {t.url === "/themes" && <Themes me={user} themes={theme.themes} />}

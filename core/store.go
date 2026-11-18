@@ -140,6 +140,32 @@ CREATE TABLE IF NOT EXISTS login_events (
 	ok      BOOLEAN NOT NULL
 );
 CREATE INDEX IF NOT EXISTS login_events_at_idx ON login_events (at);
+CREATE TABLE IF NOT EXISTS app_access (
+	module_id TEXT PRIMARY KEY,
+	version TEXT NOT NULL,
+	scope TEXT NOT NULL CHECK (scope IN ('public', 'signed-in'))
+);
+CREATE TABLE IF NOT EXISTS contacts (
+	id BIGSERIAL PRIMARY KEY,
+	owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	target_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+	target_person_id BIGINT REFERENCES persons(id) ON DELETE CASCADE,
+	email TEXT,
+	CHECK (num_nonnulls(target_user_id, target_person_id, email) = 1),
+	CHECK (owner_id <> target_user_id),
+	UNIQUE (owner_id, target_user_id),
+	UNIQUE (owner_id, target_person_id),
+	UNIQUE (owner_id, email)
+);
+-- 只迁移一次。以后新增人员或移除联系人都不会重新导入。
+WITH migration AS (
+	INSERT INTO settings (key, value) VALUES ('contacts_seed_v1', 'done')
+	ON CONFLICT (key) DO NOTHING RETURNING key
+)
+INSERT INTO contacts (owner_id, target_person_id)
+SELECT u.id, p.id FROM migration CROSS JOIN users u CROSS JOIN persons p
+WHERE u.person_id IS NOT NULL AND u.person_id <> p.id
+ON CONFLICT DO NOTHING;
 -- 关联了人员的账号，显示名称就是人员姓名。改姓名、关联账号时会一起改；这里把以前不一致的数据对齐一次。
 UPDATE users u SET display_name = p.name FROM persons p WHERE p.id = u.person_id AND u.display_name <> p.name;
 `

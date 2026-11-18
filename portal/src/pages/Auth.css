@@ -160,3 +160,6 @@ html:has(.auth-shell) body { background: #e9effb; }
 @media (prefers-reduced-motion: reduce) {
   .auth-backdrop img, .auth-backdrop span { animation: none; }
 }
+
+/* 访客入口与登录按钮保持相同尺寸，用次要样式区分操作。 */
+.auth-browse { margin-top: 12px; }

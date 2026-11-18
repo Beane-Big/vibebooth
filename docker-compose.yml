@@ -117,6 +117,29 @@ services:
       - traefik.http.routers.installer.middlewares=platform-admin@docker
       - traefik.http.services.installer.loadbalancer.server.port=8000
 
+  builder:
+    build:
+      context: .
+      dockerfile: builder/Dockerfile
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+    restart: unless-stopped
+    environment:
+      DOCKER_HOST: tcp://build-proxy:2375
+      GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+      NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+    volumes:
+      - builder-data:/data
+    networks: [default, build]
+    depends_on: [build-proxy, core]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.platform-builder.rule=PathPrefix(`/api/platform/builder/`) || PathPrefix(`/apps/builder/`)
+      - traefik.http.routers.platform-builder.priority=110
+      - traefik.http.routers.platform-builder.middlewares=platform-admin@docker
+      - traefik.http.services.platform-builder.loadbalancer.server.port=8000
+
   # 安装器专用的 Docker 代理：要导入镜像、创建容器、网络和卷，所以开放了写操作。
   # 它只连在 installer-socket 网络上，只有安装器能访问；网关仍然用上面的只读代理。
   installer-proxy:
@@ -159,6 +182,7 @@ networks:
     internal: true
 
 volumes:
+  builder-data:
   pgdata:
   core-data:
   modules-data:
