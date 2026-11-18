@@ -229,6 +229,7 @@ func (s *Server) handleSetUserPerson(w http.ResponseWriter, r *http.Request, _ *
 
 // grantView 是一个菜单或一项功能权限对某个人的授权状态。
 type grantView struct {
+	OptIn       bool   `json:"optIn,omitempty"`
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -278,8 +279,12 @@ func (s *Server) handleUserMenus(w http.ResponseWriter, r *http.Request, _ *User
 		}
 		perms := grantedPerms(target, m, g)
 		for _, p := range m.Permissions {
-			view.Perms = append(view.Perms, grantFor(target, p.ID, p.Name, p.Description, p.Default,
-				g.Perms[m.ID], slices.Contains(perms, p.ID)))
+			grant := grantFor(target, p.ID, p.Name, p.Description, p.Default, g.Perms[m.ID], slices.Contains(perms, p.ID))
+			grant.OptIn = p.OptIn
+			if p.OptIn {
+				grant.Default = false
+			}
+			view.Perms = append(view.Perms, grant)
 		}
 		allowed := menuIDs(menus)
 		for _, menu := range m.Menus {

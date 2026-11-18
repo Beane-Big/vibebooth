@@ -60,24 +60,24 @@ func appAllowed(user *User, m *Module, g grants) bool {
 	return m == platformModule || len(grantedMenus(user, m, g)) > 0
 }
 
-// grantedPerms 按单独设置和清单里的默认角色算出功能权限，不看应用开关。管理员拥有全部权限。
+// grantedPerms 按单独设置和清单里的默认角色算出功能权限，不看应用开关。管理员只自动拥有非手动开通的权限。
 func grantedPerms(user *User, m *Module, g grants) []string {
 	var perms []string
 	for _, p := range m.Permissions {
 		allowed, set := g.Perms[m.ID][p.ID]
-		if user.IsAdmin() || (set && allowed) || (!set && hasAnyRole(user.Roles, p.Default)) {
+		if (set && allowed) || (!p.OptIn && (user.IsAdmin() || (!set && hasAnyRole(user.Roles, p.Default)))) {
 			perms = append(perms, p.ID)
 		}
 	}
 	return perms
 }
 
-// grantedMenus 按单独设置和清单里的默认角色算出菜单，不看应用开关。管理员拥有全部菜单。
+// grantedMenus 按单独设置和清单里的默认角色算出菜单，不看应用开关。管理员拥有所有未绑定功能权限的菜单。
 func grantedMenus(user *User, m *Module, g grants) []manifest.Menu {
 	perms := grantedPerms(user, m, g)
 	var menus []manifest.Menu
 	for _, menu := range m.Menus {
-		if user.IsAdmin() || menuAllowed(user, m.ID, menu, g, perms) {
+		if (user.IsAdmin() && menu.Requires == "") || menuAllowed(user, m.ID, menu, g, perms) {
 			menus = append(menus, menu)
 		}
 	}

@@ -48,6 +48,8 @@ type Menu struct {
 // Permission 是模块的一项功能权限，例如“记分”“修改设置”。它不对应网址，网关不拦，
 // 由模块后端用令牌里的 perms 校验，前端据此决定按钮显不显示。平台只按人存“有没有”，不理解它的含义。
 type Permission struct {
+	// OptIn 要求逐人授权，管理员也不会自动拥有。
+	OptIn       bool   `yaml:"opt_in,omitempty" json:"opt_in,omitempty"`
 	ID          string `yaml:"id" json:"id"`
 	Name        string `yaml:"name" json:"name"`
 	Description string `yaml:"description" json:"description,omitempty"`
@@ -206,7 +208,10 @@ func (m *Manifest) validate() error {
 		if p.Name == "" {
 			return fmt.Errorf("功能权限 %s 缺少 name", p.ID)
 		}
-		if len(p.Default) == 0 {
+		if p.OptIn && len(p.Default) > 0 {
+			return fmt.Errorf("功能权限 %s 启用 opt_in 时不能指定默认角色", p.ID)
+		}
+		if !p.OptIn && len(p.Default) == 0 {
 			p.Default = []string{"user"}
 		}
 		perms[p.ID] = true

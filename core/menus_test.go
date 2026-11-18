@@ -13,7 +13,7 @@ func testModule(t *testing.T) *Module {
 		"  - {id: home, name: 首页, path: /apps/demo/}\n" +
 		"  - {id: settings, name: 设置, path: /apps/demo/settings/, default: [admin], settings: true}\n" +
 		"  - {id: board, name: 记分板, path: /apps/demo/board/, requires: score}\n" +
-		"permissions:\n  - {id: score, name: 记分}\n  - {id: reset, name: 清零, default: [admin]}\n"))
+		"permissions:\n  - {id: score, name: 记分}\n  - {id: reset, name: 清零, default: [admin]}\n  - {id: export, name: 导出, opt_in: true}\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,10 @@ func TestMenusFor(t *testing.T) {
 		{"去掉功能权限，跟着它的菜单也没了", user, grants{Perms: grantMap{"demo": {"score": no}}}, []string{"home"}, nil},
 		{"菜单跟着权限走，不看菜单的单独设置", user, grants{Menus: grantMap{"demo": {"board": yes}}, Perms: grantMap{"demo": {"score": no}}}, []string{"home"}, nil},
 		{"单独给清零", user, grants{Perms: grantMap{"demo": {"reset": yes}}}, []string{"home", "board"}, []string{"score", "reset"}},
-		{"管理员总有全部", admin, grants{Menus: grantMap{"demo": {"settings": no, "home": no}}, Perms: grantMap{"demo": {"score": no}}},
+		{"普通用户手动开通导出", user, grants{Perms: grantMap{"demo": {"export": yes}}}, []string{"home", "board"}, []string{"score", "export"}},
+		{"管理员手动开通导出", admin, grants{Perms: grantMap{"demo": {"export": yes}}}, []string{"home", "settings", "board"}, []string{"score", "reset", "export"}},
+		{"管理员关闭导出", admin, grants{Perms: grantMap{"demo": {"export": no}}}, []string{"home", "settings", "board"}, []string{"score", "reset"}},
+		{"管理员默认拥有常规权限", admin, grants{Menus: grantMap{"demo": {"settings": no, "home": no}}, Perms: grantMap{"demo": {"score": no}}},
 			[]string{"home", "settings", "board"}, []string{"score", "reset"}},
 	}
 	same := func(a, b []string) bool { return slices.Equal(a, b) || (len(a) == 0 && len(b) == 0) }

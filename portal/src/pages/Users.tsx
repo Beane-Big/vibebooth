@@ -1028,7 +1028,7 @@ function AppPermissions({ user }: { user: User }) {
   const shown = data.modules.filter((m) => (!onlyOn || m.access.allowed) && (!q || m.name.toLowerCase().includes(q)));
   // 单独设置过的显示“恢复默认”，管理员的权限不能改。
   const reset = (kind: GrantKind, module: string, g: Grant) =>
-    !admin &&
+    (!admin || g.optIn) &&
     g.override !== null && (
       <Button type="link" size="small" onClick={() => set(kind, module, g.id, null)}>
         恢复默认
@@ -1041,7 +1041,7 @@ function AppPermissions({ user }: { user: User }) {
         title={g.name}
         description={g.description}
         checked={g.allowed}
-        disabled={admin || !m.access.allowed}
+        disabled={(admin && !g.optIn) || !m.access.allowed}
         onChange={() => toggle(kind, m.id, g)}
         extra={reset(kind, m.id, g)}
       />
@@ -1051,7 +1051,7 @@ function AppPermissions({ user }: { user: User }) {
     <Flex vertical gap={12}>
       <Typography.Text type="secondary">
         {admin
-          ? "管理员拥有全部权限，不能单独修改。"
+          ? "管理员自动拥有常规权限，需要手动开通的功能可单独设置。"
           : "关掉一个应用，它就对这个账号隐藏，改网址也打不开。关掉“平台”后，他打不开门户，只能直接打开自己能用的应用。"}
       </Typography.Text>
       {data.modules.length > MANY_APPS && (
