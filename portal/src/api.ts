@@ -52,6 +52,7 @@ export type App = {
   glyph?: string;
   color?: string;
   healthy: boolean;
+  loginRequired?: boolean;
 };
 
 // 已安装的主题包，字段和 theme.yaml 一样（见 docs/theme-spec.md）；文件在 /api/platform/themes/<id>/<文件名>。

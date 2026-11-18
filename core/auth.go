@@ -354,8 +354,13 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleVerifyAdmin 给平台自己的管理接口（目前是安装器 /api/platform/installer/）做登录校验：
-// 只放行有“应用管理”权限的人（管理员总有）。通过时附上一个只能用于安装器的令牌，安装器再用公钥验签。
+// handleVerifyAdmin 校验平台管理请求。安装器允许应用管理权限，构建服务仅允许管理员。
+// 按目标服务签发独立 audience 的令牌，接收服务再验签和检查角色。
+func isBuilderRequest(r *http.Request) bool {
+	path := r.Header.Get("X-Forwarded-Uri")
+	return strings.HasPrefix(path, "/api/platform/builder/") || strings.HasPrefix(path, "/apps/builder/")
+}
+
 func (s *Server) handleVerifyAdmin(w http.ResponseWriter, r *http.Request) {
 	user, err := s.currentUser(r)
 	if err != nil {
@@ -363,7 +368,11 @@ func (s *Server) handleVerifyAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "未登录")
+		if strings.HasPrefix(r.Header.Get("X-Forwarded-Uri"), "/apps/builder/") {
+			http.Redirect(w, r, forwardedOrigin(r)+"/login?next="+url.QueryEscape(r.Header.Get("X-Forwarded-Uri")), http.StatusFound)
+		} else {
+			writeError(w, http.StatusUnauthorized, "未登录")
+		}
 		return
 	}
 	ok, err := s.hasPlatformPerm(r, user, permModules)
@@ -375,7 +384,15 @@ func (s *Server) handleVerifyAdmin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "没有应用管理权限")
 		return
 	}
-	token, err := s.issueToken(user, "installer", nil, []string{permModules})
+	audience := "installer"
+	if isBuilderRequest(r) {
+		if !user.IsAdmin() {
+			writeError(w, http.StatusForbidden, "只有管理员能使用构建功能")
+			return
+		}
+		audience = "platform-builder"
+	}
+	token, err := s.issueToken(user, audience, nil, []string{permModules})
 	if err != nil {
 		internalError(w, err)
 		return

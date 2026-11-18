@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BarChartOutlined, ContactsOutlined, SettingOutlined, SkinOutlined, TeamOutlined } from "@ant-design/icons";
+import { BuildOutlined, BarChartOutlined, ContactsOutlined, SettingOutlined, SkinOutlined, TeamOutlined } from "@ant-design/icons";
 import { hasPerm, isAdmin, type Me, type PlatformPerm } from "./api";
 
 // 平台自带的应用：代码在门户里，交互和模块一样，出现在应用页，点开是一个标签页。
@@ -14,9 +14,19 @@ export type BuiltinApp = {
   tint: [string, string];
   // 要有平台的哪项功能权限才能看到，everyone 表示所有人都能看到；不写表示只给管理员。
   perm?: PlatformPerm | "everyone";
+  embedded?: boolean;
 };
 
 export const builtinApps: BuiltinApp[] = [
+  {
+    id: "platform-builder",
+    name: "构建器",
+    description: "构建和安装应用",
+    url: "/apps/builder/",
+    icon: <BuildOutlined />,
+    tint: ["#5b9fff", "#5353df"],
+    embedded: true,
+  },
   {
     id: "contacts",
     name: "联系人",
@@ -74,4 +84,4 @@ export const builtinAliases: Record<string, string> = { "/admin/modules": "/sett
 export const builtinAppsFor = (me: Me) =>
   builtinApps.filter((app) => (app.perm === "everyone" || (app.perm ? hasPerm(me, app.perm) : isAdmin(me))));
 
-export const isBuiltinURL = (url: string) => builtinApps.some((app) => app.url === url);
+export const isBuiltinURL = (url: string) => builtinApps.some((app) => !app.embedded && app.url === url);

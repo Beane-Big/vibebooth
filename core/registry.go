@@ -114,9 +114,10 @@ type appView struct {
 	URL         string `json:"url"`
 	Icon        string `json:"icon,omitempty"`
 	// 图标能拆成底色和图形时才有：Glyph 是图形的网址，Color 是底色。
-	Glyph   string `json:"glyph,omitempty"`
-	Color   string `json:"color,omitempty"`
-	Healthy bool   `json:"healthy"`
+	Glyph         string `json:"glyph,omitempty"`
+	Color         string `json:"color,omitempty"`
+	Healthy       bool   `json:"healthy"`
+	LoginRequired bool   `json:"loginRequired"`
 }
 
 // handleApps 返回当前用户能用的应用（应用开关开着就有入口，里面能看哪些页面另按菜单算），并并发检查各模块健康状态。
@@ -149,7 +150,8 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) 
 	views := make([]appView, len(apps))
 	var wg sync.WaitGroup
 	for i, m := range apps {
-		views[i] = appView{ID: m.ID, Name: m.Name, Description: m.Description, Version: m.Version, URL: m.FrontendPath()}
+		// Anonymous access currently covers frontend files only; backend APIs require identity.
+		views[i] = appView{LoginRequired: user == nil && m.BackendURL() != "", ID: m.ID, Name: m.Name, Description: m.Description, Version: m.Version, URL: m.FrontendPath()}
 		if m.Icon != "" {
 			views[i].Icon = "/api/platform/apps/" + m.ID + "/icon"
 		}

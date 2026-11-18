@@ -119,7 +119,7 @@ export default function Layout({
             <PersonAvatar person={{ name, photo: user.photo }} size={28} />
             {screens.sm && <span>{name}</span>}
           </Button>
-        </Dropdown> : <Button type="primary" href="/login" style={{ marginInlineStart: "auto" }}>登录</Button>}
+        </Dropdown> : <Button type="primary" href="/login" style={{ marginInlineStart: "auto" }}>登录或注册</Button>}
       </AntLayout.Header>
       <div className="layout-content">{children}</div>
     </AntLayout>

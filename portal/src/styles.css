@@ -44,12 +44,14 @@ body {
 .ant-card-head { border-bottom: 0 !important; min-height: 48px; }
 .ant-card-head + .ant-card-body { padding-top: 4px; }
 
-/* Fluent 的输入框：底边颜色更深，聚焦时底边变成 2px 品牌色。 */
-.ant-input-outlined, .ant-input-affix-wrapper.ant-input-outlined { border-bottom-color: var(--input-bottom); }
-.ant-input-outlined:focus, .ant-input-outlined:focus-within, .ant-input-affix-wrapper.ant-input-outlined:focus-within {
-  box-shadow: inset 0 -2px 0 var(--accent);
-  border-bottom-color: var(--accent);
+/* 所有输入控件使用一致的边框和焦点光圈。 */
+.ant-input-outlined:not(.ant-input-status-error):not(.ant-input-status-warning):not(.ant-input-affix-wrapper-status-error):not(.ant-input-affix-wrapper-status-warning):focus,
+.ant-input-outlined:not(.ant-input-status-error):not(.ant-input-status-warning):not(.ant-input-affix-wrapper-status-error):not(.ant-input-affix-wrapper-status-warning):focus-within,
+.ant-input-affix-wrapper.ant-input-outlined:not(.ant-input-affix-wrapper-status-error):not(.ant-input-affix-wrapper-status-warning):focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
+.ant-input-affix-wrapper .ant-input:focus-visible { outline: none; }
 
 /* 应用卡片：图标在左，名称和说明在右。 */
 .app-card { display: flex; align-items: center; gap: 14px; }
@@ -192,3 +194,45 @@ html.vb-glass .ant-card, html.vb-glass .topbar { box-shadow: inset 0 1px 0 rgba(
 /* 主题应用里每个皮肤的截图：16:10，从顶部裁，没有截图时显示图标。 */
 .theme-card .theme-shot { display: flex; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top; background: var(--bg); color: var(--muted); font-size: 40px; border-bottom: 1px solid var(--border); }
 .theme-card .wallpaper-shot { object-position: center; }
+
+
+/* 默认皮肤与认证页共享轻玻璃层级，主题包继续由自身参数控制。 */
+html.vb-default-theme .ant-card {
+  border: 1px solid color-mix(in srgb, var(--surface) 82%, var(--border)) !important;
+}
+html.vb-default-theme .topbar {
+  border-bottom: 1px solid color-mix(in srgb, var(--surface) 72%, var(--border));
+}
+html.vb-default-theme .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous) {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, white), var(--accent));
+  border-color: var(--accent);
+  box-shadow: inset 0 1px 0 #ffffff38, 0 5px 14px -8px var(--accent);
+}
+html.vb-default-theme .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):hover { filter: brightness(1.07); }
+html.vb-default-theme .ant-btn-default,
+html.vb-default-theme .ant-input-outlined,
+html.vb-default-theme .ant-input-affix-wrapper,
+html.vb-default-theme .ant-select-selector {
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+}
+html.vb-default-theme .ant-modal-mask {
+  background: #18233a33;
+  backdrop-filter: blur(6px);
+}
+html.vb-default-theme .ant-modal-content {
+  border: 1px solid color-mix(in srgb, var(--surface) 80%, var(--border));
+  box-shadow: inset 0 1px 0 #ffffff88, 0 24px 72px -20px #23335655;
+}
+.login-confirm .ant-modal-content { padding: 30px; border-radius: 28px; }
+.login-confirm .ant-modal-confirm-title { font-size: 22px; line-height: 1.4; letter-spacing: -.02em; }
+.login-confirm .ant-modal-confirm-content { margin-top: 12px; color: var(--muted); font-size: 15px; }
+.login-confirm .ant-modal-confirm-btns { margin-top: 28px; display: flex; gap: 10px; justify-content: flex-end; }
+.login-confirm .ant-modal-confirm-btns .ant-btn { min-height: 42px; padding-inline: 20px; margin-inline-start: 0; border-radius: 999px; }
+html.vb-default-theme .app-tabbar .ant-tabs-tab { border-radius: 12px !important; }
+@media (max-width: 575px) {
+  .login-confirm .ant-modal-content { padding: 24px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  html.vb-default-theme .ant-modal-content,
+  html.vb-default-theme .ant-card { background: var(--bg); backdrop-filter: none; }
+}

@@ -79,14 +79,13 @@ docker compose ps
 
 在云服务器控制台的**防火墙**里加一条规则，放行 TCP 8080。然后在浏览器打开 `http://<公网IP>:8080`，用户名 `admin`，密码是第 3 步记下的 ADMIN_PASSWORD。
 
-## 第 5 步：装构建器，再用它安装其他模块
+## 第 5 步：安装应用
 
-服务器上没有代理，不要在服务器上运行模块仓库的 `npm run install:local`。先装一个构建器模块，以后的模块都交给它在服务器上构建。
+平台启动时已包含构建服务。以管理员登录，打开首页「构建器」，上传模块源码 ZIP（支持 GitHub 的 Download ZIP）。构建完成后点击「安装」。已有安装包可在「设置 → 应用管理」上传安装。
 
-1. **下载构建器的软件包。** 构建器模块（[vibebooth-module-builder](https://github.com/Beane-Big/vibebooth-module-builder)）的 Releases 里有打好的 zip；没有的话，在它仓库的 Actions 页面运行“发布软件包”。
-2. **上传安装。** 在门户“应用管理”页上传这个 zip。它声明了 `docker-build` 特权，页面提示时点确认。
-3. **设置镜像源。** 在门户“设置”页进入构建器的设置，Go 代理填 `https://goproxy.cn,direct`，npm 镜像源填 `https://registry.npmmirror.com`，然后保存。不设置的话，构建会卡在下载 Go 依赖（日志里能看到 `proxy.golang.org ... i/o timeout`）。
-4. **安装其他模块。** 在 GitHub 上打开模块仓库，点 Code → Download ZIP（或者直接下载 `https://github.com/<用户>/<模块仓库>/archive/refs/heads/main.zip`），上传到构建器。构建成功后点“安装到本平台”。有 `requires` 的模块要先装它依赖的模块。
+服务器使用平台 `.env` 中的 GOPROXY 和 NPM_REGISTRY 作为默认构建参数；无需再到构建器重复填写。正常联网环境可直接使用默认值。高级设置可调整构建参数和保留规则。
+
+升级前已安装独立构建器的实例，可以继续使用原应用查看旧记录。平台内置构建服务使用独立卷，旧构建记录暂不自动导入。
 
 ## 显示备案号
 
@@ -105,7 +104,7 @@ docker compose up -d
 ## 代码更新后重新部署
 
 - **平台本体：** `cd ~/vibebooth && git pull && docker compose up -d --build`。只重建平台本体，模块不受影响。
-- **模块：** 确认模块的 `module.yaml` 里 `version` 已经改大，再按第 5 步第 4 条重新下载 zip、上传给构建器构建并安装。
+- **模块：** 确认模块的 `module.yaml` 里 `version` 已经改大，再按第 5 步重新下载 zip、上传给构建器构建并安装。
 
 ## 常见问题
 
