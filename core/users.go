@@ -23,8 +23,6 @@ type userInput struct {
 	AdminPassword string `json:"adminPassword"`
 	Admin         bool   `json:"admin"`
 	Disabled      bool   `json:"disabled"`
-	// PersonID 只在新建账号时用：同时关联到这个人员。
-	PersonID *int64 `json:"personId"`
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
@@ -63,7 +61,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request, _ *Use
 	case len(in.Password) < 8:
 		writeError(w, http.StatusBadRequest, "密码至少 8 位")
 	default:
-		u, err := s.store.CreateUser(r.Context(), in.Username, in.DisplayName, in.Password, in.Admin, in.PersonID)
+		u, err := s.store.CreateUser(r.Context(), in.Username, in.DisplayName, in.Password, in.Admin)
 		if errors.Is(err, errUsernameTaken) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
@@ -103,24 +101,57 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, me *Us
 	if target == nil {
 		return
 	}
-	var in userInput
-	if !decodeJSON(w, r, &in) {
+	// 管理接口只接收权限和状态，拒绝夹带姓名、账号、头像等资料字段。
+	var in struct {
+		Admin    bool `json:"admin"`
+		Disabled bool `json:"disabled"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "只能修改账号权限和状态，资料只能由本人修改")
 		return
 	}
-	in.DisplayName = strings.TrimSpace(in.DisplayName)
 	switch {
-	case !validDisplayName(in.DisplayName):
-		writeError(w, http.StatusBadRequest, "显示名称不能超过 32 个字")
 	// 不能停用自己或取消自己的管理员，避免平台里一个管理员都没有。
 	case target.ID == me.ID && (in.Disabled || !in.Admin):
 		writeError(w, http.StatusBadRequest, "不能停用自己，也不能取消自己的管理员")
 	default:
-		if err := s.store.UpdateUser(r.Context(), target.ID, in.DisplayName, in.Admin, in.Disabled); err != nil {
+		if err := s.store.UpdateUser(r.Context(), target.ID, in.Admin, in.Disabled); err != nil {
 			internalError(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// handleSetUserRemark 只更新原管理员备注，不允许通过备注接口改动身份资料。
+func (s *Server) handleSetUserRemark(w http.ResponseWriter, r *http.Request, _ *User) {
+	target := s.targetUser(w, r)
+	if target == nil {
+		return
+	}
+	var in struct {
+		Remark string `json:"remark"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	in.Remark = strings.TrimSpace(in.Remark)
+	if utf8.RuneCountInString(in.Remark) > 200 {
+		writeError(w, http.StatusBadRequest, "备注不能超过 200 个字")
+		return
+	}
+	tag, err := s.store.pool.Exec(r.Context(), `UPDATE persons SET note=$1, updated_at=now() WHERE id=$2`, in.Remark, target.PersonID)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "账号不存在")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleSetPassword 重置别人的密码，要管理员再输入一次自己的密码，防止离开时被人用已登录的页面改掉密码。
@@ -201,30 +232,6 @@ func (s *Server) handleSetMyPassword(w http.ResponseWriter, r *http.Request, me 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleSetUserPerson 把已有账号关联到人员，personId 为 null 时解除关联。账号已经关联了别人时直接改过来。
-func (s *Server) handleSetUserPerson(w http.ResponseWriter, r *http.Request, _ *User) {
-	target := s.targetUser(w, r)
-	if target == nil {
-		return
-	}
-	var in struct {
-		PersonID *int64 `json:"personId"`
-	}
-	if !decodeJSON(w, r, &in) {
-		return
-	}
-	err := s.store.SetUserPerson(r.Context(), target.ID, in.PersonID)
-	if errors.Is(err, errPersonNotFound) {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err != nil {
-		internalError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // ---- 按人授权菜单和功能权限 ----
 
 // grantView 是一个菜单或一项功能权限对某个人的授权状态。
@@ -273,7 +280,7 @@ func (s *Server) handleUserMenus(w http.ResponseWriter, r *http.Request, _ *User
 		}
 		menus := grantedMenus(target, m, g)
 		view.Access = grantView{ID: m.ID, Name: m.Name, Allowed: appAllowed(target, m, g),
-			Default: target.IsAdmin() || m == platformModule || len(menus) > 0}
+			Default: target.IsAdmin() || m == platformModule || publicPageDefault(m, g) || len(menus) > 0}
 		if o, ok := g.Apps[m.ID]; ok {
 			view.Access.Override = &o
 		}
@@ -289,8 +296,13 @@ func (s *Server) handleUserMenus(w http.ResponseWriter, r *http.Request, _ *User
 		allowed := menuIDs(menus)
 		for _, menu := range m.Menus {
 			if menu.Requires == "" {
-				view.Menus = append(view.Menus, grantFor(target, menu.ID, menu.Name, "", menu.Default,
-					g.Menus[m.ID], slices.Contains(allowed, menu.ID)))
+				grant := grantFor(target, menu.ID, menu.Name, "", menu.Default,
+					g.Menus[m.ID], slices.Contains(allowed, menu.ID))
+				// 默认值与实际授权使用同一公开范围，恢复默认时也能正确回到开启状态。
+				if publicPageDefault(m, g) {
+					grant.Default = true
+				}
+				view.Menus = append(view.Menus, grant)
 			}
 		}
 		modules = append(modules, view)

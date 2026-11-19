@@ -276,3 +276,8 @@ pre.log {
 }
 
 code { font-size: 13px; }
+
+/* 合并到应用管理时取消第二层限宽和页面滚动，由门户承接自然高度。 */
+html.platform-managed, html.platform-managed body, html.platform-managed #root { height: auto; min-height: 0; }
+html.platform-managed { overflow: hidden; }
+html.platform-managed .content { width: 100%; max-width: none; margin: 0; padding: 0 0 2px; }

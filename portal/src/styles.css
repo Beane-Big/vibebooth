@@ -236,3 +236,6 @@ html.vb-default-theme .app-tabbar .ant-tabs-tab { border-radius: 12px !important
   html.vb-default-theme .ant-modal-content,
   html.vb-default-theme .ant-card { background: var(--bg); backdrop-filter: none; }
 }
+
+/* 构建内容高度随实际内容同步，滚动由门户页面统一处理。 */
+.application-builder-frame { display: block; width: 100%; border: 0; background: transparent; }

@@ -6,7 +6,7 @@ export type User = {
   displayName: string;
   roles: string[];
   disabled: boolean;
-  // 账号属于哪个人员，没有关联时为 null。一个人员可以有多个账号。
+  // 账号一一对应的人员 id；迁移后每个账号都有自己的人员。
   personId: number | null;
 };
 
@@ -39,7 +39,7 @@ export const hasPerm = (me: Me, perm: PlatformPerm) => me.perms.includes(perm);
 
 export type AppScope = "restricted" | "signed-in" | "public";
 export type AppAccess = { scope: AppScope; version: string };
-export type Contact = { id: number; name: string; username?: string; email?: string };
+export type Contact = { id: number; name: string; username: string; photo: string; remark: string };
 
 export type App = {
   id: string;
@@ -117,8 +117,6 @@ export type UserInput = {
   password?: string;
   admin: boolean;
   disabled?: boolean;
-  // 只在新建账号时用：同时关联到这个人员。
-  personId?: number;
 };
 
 // 站点的公开信息：ICP 备案号和公安备案号，没配置时为空；policeCode 是公安备案号里的数字。
@@ -210,6 +208,7 @@ export const api = {
   contacts: () => request<Contact[]>("/api/platform/contacts"),
   addContact: (identifier: string) =>
     request<void>("/api/platform/contacts", { method: "POST", body: JSON.stringify({ identifier }) }),
+  setContactRemark: (id: number, remark: string) => put(`/api/platform/contacts/${id}/remark`, { remark }),
   removeContact: (id: number) => request<void>("/api/platform/contacts/" + id, { method: "DELETE" }),
   apps: () => request<App[]>("/api/platform/apps"),
   authOptions: () => request<{ terms: string; privacy: string }>("/api/platform/auth/options"),
@@ -270,17 +269,13 @@ export const api = {
 
   // 人员、账号与权限（只有管理员能调用）
   persons: () => request<Person[]>("/api/platform/persons"),
-  createPerson: (input: PersonInput) =>
-    request<Person>("/api/platform/persons", { method: "POST", body: JSON.stringify(input) }),
   updatePerson: (id: number, input: PersonInput) =>
     request<Person>(`/api/platform/persons/${id}`, { method: "PUT", body: JSON.stringify(input) }),
-  deletePerson: (id: number) => request<void>(`/api/platform/persons/${id}`, { method: "DELETE" }),
-  // personId 为 null 表示解除关联。
-  setUserPerson: (id: number, personId: number | null) => put(`/api/platform/users/${id}/person`, { personId }),
   users: () => request<User[]>("/api/platform/users"),
   createUser: (input: UserInput) =>
     request<User>("/api/platform/users", { method: "POST", body: JSON.stringify(input) }),
-  updateUser: (id: number, input: UserInput) => put(`/api/platform/users/${id}`, input),
+  setUserRemark: (id: number, remark: string) => put(`/api/platform/users/${id}/remark`, { remark }),
+  updateUser: (id: number, input: { admin: boolean; disabled: boolean }) => put(`/api/platform/users/${id}`, input),
   // adminPassword 是当前管理员自己的密码，重置别人的密码前要再确认一次。
   setPassword: (id: number, password: string, adminPassword: string) =>
     put(`/api/platform/users/${id}/password`, { password, adminPassword }),

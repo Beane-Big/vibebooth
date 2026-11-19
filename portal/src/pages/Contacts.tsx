@@ -1,20 +1,32 @@
 import { useEffect, useState } from "react";
-import { Alert, App, Button, Card, Empty, Flex, Form, Input, List, Space, Typography } from "antd";
-import { api, type Contact } from "../api";
+import { Alert, App, Button, Card, Empty, Form, Input, Space, Tag } from "antd";
+import { SearchOutlined } from "@ant-design/icons";
+import { api, isAdmin, userDisplayName, type Contact, type Me } from "../api";
 import ListDetail from "../components/ListDetail";
 import PersonAvatar from "../components/PersonAvatar";
+import Users, { MemberDetail, MemberRow, SelfDetail } from "./Users";
 
-type AddContact = { identifier: string };
+// 合并后的唯一入口：管理员看统一的账号管理（Users），其他人看自己的联系人列表。
+export default function Contacts({ me, onMeChanged }: { me: Me; onMeChanged: () => void }) {
+  return isAdmin(me) ? <Users me={me} onMeChanged={onMeChanged} /> : <ContactList me={me} onMeChanged={onMeChanged} />;
+}
 
-export default function Contacts() {
+// 显示名称优先级：备注 > 姓名 > 账号。
+function contactDisplayName(c: Contact) {
+  return c.remark.trim() || c.name.trim() || c.username;
+}
+
+function ContactList({ me, onMeChanged }: { me: Me; onMeChanged: () => void }) {
   const { message } = App.useApp();
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [removing, setRemoving] = useState<number | null>(null);
-  const [form] = Form.useForm<AddContact>();
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const selected = contacts?.find((contact) => contact.id === selectedId);
+  const [selected, setSelected] = useState<number | "self" | null>(null);
+  const [query, setQuery] = useState("");
+  const [form] = Form.useForm<{ identifier: string }>();
+  const current = contacts?.find((c) => c.id === selected);
+  const q = query.trim().toLowerCase();
+  const shown = contacts?.filter((c) => [c.name, c.username, c.remark].some((v) => v.toLowerCase().includes(q))) ?? [];
 
   async function load() {
     try {
@@ -24,14 +36,13 @@ export default function Contacts() {
       setError(err instanceof Error ? err.message : "读取联系人失败");
     }
   }
-
   useEffect(() => { void load(); }, []);
 
-  async function add({ identifier }: AddContact) {
+  async function add({ identifier }: { identifier: string }) {
     setBusy(true);
     try {
       await api.addContact(identifier);
-      form.resetFields(["identifier"]);
+      form.resetFields();
       await load();
     } catch (err) {
       message.error(err instanceof Error ? err.message : "添加失败");
@@ -41,72 +52,57 @@ export default function Contacts() {
   }
 
   async function remove(id: number) {
-    setRemoving(id);
+    setBusy(true);
     try {
       await api.removeContact(id);
-      setSelectedId(null);
+      setSelected(null);
       await load();
     } catch (err) {
       message.error(err instanceof Error ? err.message : "移除失败");
     } finally {
-      setRemoving(null);
+      setBusy(false);
     }
   }
 
   const list = (
-    <Card title="联系人" size="small">
-      <Form form={form} onFinish={add} disabled={busy || removing !== null}>
+    <Card title="联系人" loading={contacts === null && !error} styles={{ body: { padding: "0 0 8px" } }}>
+      <Form form={form} onFinish={add} disabled={busy} style={{ padding: "0 16px" }}>
         <Space.Compact block>
-          <Form.Item name="identifier" style={{ flex: 1, minWidth: 0 }} rules={[
-            { required: true, whitespace: true, message: "请输入账号或邮箱" },
-          ]}>
+          <Form.Item name="identifier" style={{ flex: 1, minWidth: 0 }} rules={[{ required: true, whitespace: true, message: "请输入账号或邮箱" }]}>
             <Input aria-label="账号或邮箱" placeholder="账号或邮箱" maxLength={254} autoCapitalize="none" spellCheck={false} />
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={busy}>添加</Button>
         </Space.Compact>
       </Form>
-      {error && <Alert type="error" message={error} showIcon />}
-      <List
-        loading={contacts === null && !error}
-        dataSource={contacts ?? []}
-        rowKey="id"
-        split={false}
-        style={{ maxHeight: "min(62vh, 600px)", overflowY: "auto" }}
-        locale={{ emptyText: "暂无联系人" }}
-        renderItem={(contact) => (
-          <List.Item style={{ padding: 0 }}>
-            <button type="button"
-              className={`member-row${selectedId === contact.id ? " active" : ""}`}
-              style={{ border: 0, backgroundColor: selectedId === contact.id ? undefined : "transparent", color: "inherit", width: "100%", margin: 0, textAlign: "start" }}
-              aria-pressed={selectedId === contact.id} onClick={() => setSelectedId(contact.id)}>
-              <PersonAvatar person={{ name: contact.name, photo: "" }} size={36} />
-              <Typography.Text strong ellipsis title={contact.name}>{contact.name}</Typography.Text>
-            </button>
-          </List.Item>
-        )}
-      />
+      <div style={{ padding: "0 16px 8px" }}>
+        <Input aria-label="搜索联系人" allowClear prefix={<SearchOutlined />} placeholder="搜索姓名、账号或备注" value={query} onChange={(e) => setQuery(e.target.value)} />
+      </div>
+      {error && <Alert type="error" message={error} showIcon style={{ margin: "0 16px 8px" }} />}
+      <MemberRow avatar={<PersonAvatar person={{ name: userDisplayName(me), photo: me.photo }} />} title={userDisplayName(me)} subtitle="我的账号" tags={<Tag color="blue">我</Tag>} active={selected === "self"} onClick={() => setSelected("self")} />
+      <div style={{ maxHeight: "min(62vh, 600px)", overflowY: "auto" }}>
+        {shown.map((c) => (
+          <MemberRow
+            key={c.id}
+            avatar={<PersonAvatar person={c} />}
+            title={contactDisplayName(c)}
+            subtitle={c.username === contactDisplayName(c) ? undefined : c.username}
+            active={selected === c.id}
+            onClick={() => setSelected(c.id)}
+          />
+        ))}
+        {contacts && shown.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={q ? "没有找到" : "暂无联系人"} />}
+      </div>
     </Card>
   );
 
-  const detail = (
-    <Card style={{ minHeight: 260 }}>
-      {selected ? (
-        <Flex vertical gap={16}>
-          <Flex align="center" gap={12}>
-            <PersonAvatar person={{ name: selected.name, photo: "" }} size={52} />
-            <Flex vertical style={{ minWidth: 0 }}>
-              <Typography.Title level={4} style={{ margin: 0, overflowWrap: "anywhere" }}>{selected.name}</Typography.Title>
-              {selected.username && selected.username !== selected.name && <Typography.Text type="secondary">{selected.username}</Typography.Text>}
-            </Flex>
-          </Flex>
-          <Button danger style={{ alignSelf: "flex-start" }} loading={removing === selected.id}
-            disabled={busy} onClick={() => remove(selected.id)}>移除联系人</Button>
-        </Flex>
-      ) : (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择联系人" />
-      )}
-    </Card>
-  );
-  return <ListDetail list={list} detail={detail} selected={!!selected} onBack={() => setSelectedId(null)}
-    backLabel="联系人" listWidth={296} />;
+  const detail =
+    selected === "self" ? (
+      <SelfDetail key="self" member={{ id: me.id, name: userDisplayName(me), photo: me.photo, remark: "", self: true }} onSaved={() => { void load(); onMeChanged(); }} />
+    ) : current ? (
+      <MemberDetail key={current.id} contact={current} onSaved={() => void load()} onRemove={() => remove(current.id)} />
+    ) : (
+      <Card><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择联系人" /></Card>
+    );
+
+  return <ListDetail list={list} detail={detail} selected={selected === "self" || !!current} onBack={() => setSelected(null)} backLabel="联系人" listWidth={296} />;
 }
