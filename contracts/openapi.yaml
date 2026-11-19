@@ -5,7 +5,7 @@ info:
   description: |
     给模块后端在内部网络里调用，基础地址 http://core:8080。
     网关不转发 /api/platform/ext/，浏览器访问不到。目前不需要令牌。
-    人员由管理员在门户的“用户”应用里维护，本人可以在门户里改自己的姓名和头像；模块只读，只保存人员 id，需要姓名和照片时调用这里。
+    人员由管理员在门户的“联系人”应用里维护，本人可以在门户里改自己的姓名和头像；账号和人员一一对应（有账号就有人员）。模块只读，只保存人员 id，需要姓名和照片时调用这里。
     显示人员时用 displayName 并带上 viewer：每个人在“用户”里给别人写的备注，在各个应用里会代替姓名显示（只对他自己）。
 paths:
   /api/platform/ext/v1/persons:
@@ -38,7 +38,7 @@ paths:
   /api/platform/ext/v1/users/{id}/person:
     get:
       summary: 查询一个账号属于哪个人员，用来知道当前登录的是谁
-      description: id 是账号 id，也就是模块令牌里的 sub。一个账号最多属于一个人员。
+      description: id 是账号 id，也就是模块令牌里的 sub。账号和人员一一对应，每个账号正好属于一个人员。
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
         - { name: viewer, in: query, required: false, schema: { type: integer }, description: 看的人的账号 id（模块令牌里的 sub）；带上后 displayName 用他写的备注 }

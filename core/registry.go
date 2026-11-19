@@ -136,10 +136,14 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) 
 			return
 		}
 	}
-	scopes, err := s.store.appScopes(r.Context())
-	if err != nil {
-		internalError(w, err)
-		return
+	scopes := g.Scopes
+	if user == nil {
+		var err error
+		scopes, err = s.store.appScopes(r.Context())
+		if err != nil {
+			internalError(w, err)
+			return
+		}
 	}
 	var apps []*Module
 	for _, m := range s.registry.List() {

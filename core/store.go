@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -23,7 +24,7 @@ type User struct {
 	Roles       []string `json:"roles"`
 	// Disabled 的账号不能登录，已有的会话也立即失效。
 	Disabled bool `json:"disabled"`
-	// PersonID 是这个账号属于哪个人员，没有关联时为 nil。一个人员可以有多个账号。
+	// PersonID 是这个账号对应的人员 id。账号和人员一一对应，每个账号都有自己的人员。
 	PersonID *int64 `json:"personId"`
 }
 
@@ -166,6 +167,25 @@ INSERT INTO contacts (owner_id, target_person_id)
 SELECT u.id, p.id FROM migration CROSS JOIN users u CROSS JOIN persons p
 WHERE u.person_id IS NOT NULL AND u.person_id <> p.id
 ON CONFLICT DO NOTHING;
+-- 联系人以平台账号为目标；旧人员和邮箱记录保留，只有能匹配账号的条目迁移到新列表。
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS remark TEXT NOT NULL DEFAULT '';
+-- 已经通过账号添加的联系人也沿用原私人备注，不覆盖后来写在联系人上的内容。
+UPDATE contacts c SET remark=pr.remark
+FROM users u, person_remarks pr
+WHERE c.target_user_id=u.id AND pr.person_id=u.person_id AND pr.user_id=c.owner_id AND c.remark=''
+AND NOT EXISTS (SELECT 1 FROM settings WHERE key='contacts_users_v2');
+WITH migration AS (
+  INSERT INTO settings (key, value) VALUES ('contacts_users_v2', 'done')
+  ON CONFLICT (key) DO NOTHING RETURNING key
+)
+INSERT INTO contacts (owner_id, target_user_id, remark)
+SELECT DISTINCT ON (c.owner_id, u.id) c.owner_id, u.id, COALESCE(pr.remark, '')
+FROM migration CROSS JOIN contacts c
+JOIN users u ON u.person_id=c.target_person_id OR (c.email IS NOT NULL AND u.email=c.email)
+LEFT JOIN person_remarks pr ON pr.user_id=c.owner_id AND pr.person_id=u.person_id
+WHERE u.id<>c.owner_id AND NOT u.disabled
+ORDER BY c.owner_id, u.id, c.id
+ON CONFLICT (owner_id, target_user_id) DO NOTHING;
 -- 关联了人员的账号，显示名称就是人员姓名。改姓名、关联账号时会一起改；这里把以前不一致的数据对齐一次。
 UPDATE users u SET display_name = p.name FROM persons p WHERE p.id = u.person_id AND u.display_name <> p.name;
 `
@@ -182,8 +202,103 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx, schema)
-	return err
+	if _, err = s.pool.Exec(ctx, schema); err != nil {
+		return err
+	}
+	return s.ensurePersonsOneToOne(ctx)
+}
+
+// ensurePersonsOneToOne 让账号和人员一一对应：给没有人员的账号补建人员，把同一个人员的多个账号拆开，
+// 并对齐显示名称（人员姓名，没有姓名时用账号）。它在每次启动时运行，收敛后就是空操作。
+func (s *Store) ensurePersonsOneToOne(ctx context.Context) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// 1) 给没有人员的账号各建一个人员并关联，姓名用显示名称，没有就用账号。
+	rows, err := tx.Query(ctx, `SELECT id, username, display_name FROM users WHERE person_id IS NULL ORDER BY id`)
+	if err != nil {
+		return err
+	}
+	type unlinked struct {
+		id          int64
+		username    string
+		displayName string
+	}
+	var pending []unlinked
+	for rows.Next() {
+		var u unlinked
+		if err := rows.Scan(&u.id, &u.username, &u.displayName); err != nil {
+			rows.Close()
+			return err
+		}
+		pending = append(pending, u)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, u := range pending {
+		name := strings.TrimSpace(u.displayName)
+		if name == "" {
+			name = u.username
+		}
+		var personID int64
+		if err := tx.QueryRow(ctx, `INSERT INTO persons (name) VALUES ($1) RETURNING id`, name).Scan(&personID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE users SET person_id=$2, display_name=$3 WHERE id=$1`, u.id, personID, name); err != nil {
+			return err
+		}
+	}
+
+	// 2) 一个人员有多个账号时，保留 id 最小的账号，其余账号各补建自己的人员。
+	rows, err = tx.Query(ctx, `SELECT person_id, array_agg(id ORDER BY id) FROM users WHERE person_id IS NOT NULL GROUP BY person_id HAVING count(*) > 1 ORDER BY person_id`)
+	if err != nil {
+		return err
+	}
+	type shared struct {
+		personID int64
+		ids      []int64
+	}
+	var shares []shared
+	for rows.Next() {
+		var m shared
+		if err := rows.Scan(&m.personID, &m.ids); err != nil {
+			rows.Close()
+			return err
+		}
+		shares = append(shares, m)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, m := range shares {
+		for _, uid := range m.ids[1:] {
+			var name string
+			if err := tx.QueryRow(ctx, `SELECT COALESCE(NULLIF(display_name, ''), username) FROM users WHERE id=$1`, uid).Scan(&name); err != nil {
+				return err
+			}
+			var personID int64
+			if err := tx.QueryRow(ctx, `INSERT INTO persons (name) VALUES ($1) RETURNING id`, name).Scan(&personID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `UPDATE users SET person_id=$2 WHERE id=$1`, uid, personID); err != nil {
+				return err
+			}
+		}
+	}
+
+	// 3) 对齐显示名称：等于人员姓名，人员没有姓名时用账号。
+	_, err = tx.Exec(ctx, `UPDATE users u SET display_name = COALESCE(NULLIF(p.name, ''), u.username)
+		FROM persons p WHERE p.id = u.person_id AND u.display_name <> COALESCE(NULLIF(p.name, ''), u.username)`)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // CheckTimezone 确认 Postgres 认得这个时区名，免得统计在每次记录时才报错。
@@ -204,7 +319,7 @@ func (s *Store) EnsureAdmin(ctx context.Context, username, password string) erro
 	if len(password) < 8 {
 		return errors.New("首次启动需要在 .env 中设置至少 8 位的 ADMIN_PASSWORD")
 	}
-	_, err := s.CreateUser(ctx, username, "", password, true, nil)
+	_, err := s.CreateUser(ctx, username, "", password, true)
 	return err
 }
 
@@ -219,40 +334,38 @@ func rolesFor(admin bool) []string {
 	return []string{"user"}
 }
 
-// CreateUser 新建账号；personID 不为 nil 时同时关联到这个人员，显示名称用人员姓名，人员不存在时返回 errPersonNotFound。
-func (s *Store) CreateUser(ctx context.Context, username, displayName, password string, admin bool, personID *int64) (*User, error) {
+// CreateUser 新建账号，并自动给它创建一个一一对应的人员（姓名用显示名称，没有就用账号）。
+func (s *Store) CreateUser(ctx context.Context, username, displayName, password string, admin bool) (*User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}
-	u := &User{Username: username, DisplayName: displayName, Roles: rolesFor(admin), PersonID: personID}
-	err = s.pool.QueryRow(ctx,
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		name = username
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	var personID int64
+	if err := tx.QueryRow(ctx, `INSERT INTO persons (name) VALUES ($1) RETURNING id`, name).Scan(&personID); err != nil {
+		return nil, err
+	}
+	u := &User{Username: username, DisplayName: name, Roles: rolesFor(admin), PersonID: &personID}
+	err = tx.QueryRow(ctx,
 		`INSERT INTO users (username, display_name, password_hash, roles, person_id)
-		 VALUES ($1, COALESCE((SELECT name FROM persons WHERE id = $5), $2), $3, $4, $5)
+		 VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT (username) DO NOTHING RETURNING id, display_name`,
-		username, displayName, string(hash), u.Roles, personID).Scan(&u.ID, &u.DisplayName)
+		username, name, string(hash), u.Roles, personID).Scan(&u.ID, &u.DisplayName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, errUsernameTaken
 	}
-	if isForeignKeyViolation(err) {
-		return nil, errPersonNotFound
+	if err != nil {
+		return nil, err
 	}
-	return u, err
-}
-
-// SetUserPerson 把账号关联到人员，显示名称改成人员姓名；personID 为 nil 时解除关联并清空原成员姓名。
-func (s *Store) SetUserPerson(ctx context.Context, id int64, personID *int64) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE users SET person_id = $2,
-            display_name = CASE
-                WHEN $2::bigint IS NULL AND person_id IS NULL THEN display_name
-                ELSE COALESCE((SELECT name FROM persons WHERE id = $2), '')
-            END WHERE id = $1`,
-		id, personID)
-	if isForeignKeyViolation(err) {
-		return errPersonNotFound
-	}
-	return err
+	return u, tx.Commit(ctx)
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
@@ -277,13 +390,13 @@ func (s *Store) UserByID(ctx context.Context, id int64) (*User, error) {
 	return &u, err
 }
 
-// UpdateUser 修改显示名、是否管理员、是否停用；关联了人员的账号显示名称跟着人员姓名，传入的 displayName 不生效。
+// UpdateUser 只更新管理员角色和停用状态，不写入账号资料。
 // 停用时删除这个人的全部会话，让他立即退出。
-func (s *Store) UpdateUser(ctx context.Context, id int64, displayName string, admin, disabled bool) error {
+func (s *Store) UpdateUser(ctx context.Context, id int64, admin, disabled bool) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE users SET display_name = COALESCE((SELECT name FROM persons WHERE id = users.person_id), $2), roles = CASE WHEN NOT $5 AND (email_verified OR self_registered) THEN '{}'::text[] ELSE $3 END, disabled = $4
+		`UPDATE users SET roles = CASE WHEN NOT $4 AND (email_verified OR self_registered) THEN '{}'::text[] ELSE $2 END, disabled = $3
 		 WHERE id = $1`,
-		id, displayName, rolesFor(admin), disabled, admin)
+		id, rolesFor(admin), disabled, admin)
 	if err == nil && disabled {
 		_, err = s.pool.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, id)
 	}
@@ -356,11 +469,6 @@ func (s *Store) PersonByUser(ctx context.Context, userID int64) (*Person, error)
 		 FROM users u JOIN persons p ON p.id = u.person_id WHERE u.id = $1`, userID))
 }
 
-func (s *Store) CreatePerson(ctx context.Context, name, note, photo string) (*Person, error) {
-	return scanPerson(s.pool.QueryRow(ctx,
-		`INSERT INTO persons (name, note, photo) VALUES ($1, $2, $3) RETURNING `+personColumns, name, note, photo))
-}
-
 // UpdatePerson 和 UpdatePersonName 改姓名时，关联的账号显示名称一起改。
 func (s *Store) UpdatePerson(ctx context.Context, id int64, name, note, photo string) (*Person, error) {
 	return scanPerson(s.pool.QueryRow(ctx, syncAccountNames(
@@ -386,31 +494,7 @@ func (s *Store) UpdatePersonPhoto(ctx context.Context, id int64, photo string) (
 		`UPDATE persons SET photo = $2, updated_at = now() WHERE id = $1 RETURNING `+personColumns, id, photo))
 }
 
-// DeletePerson 删除人员并清除关联账号继承的姓名，保留账号。
-func (s *Store) DeletePerson(ctx context.Context, id int64) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	// 先锁住人员，避免清空姓名与删除之间又有账号关联进来。
-	var lockedID int64
-	err = tx.QueryRow(ctx, `SELECT id FROM persons WHERE id = $1 FOR UPDATE`, id).Scan(&lockedID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return errPersonNotFound
-	}
-	if err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `UPDATE users SET person_id = NULL, display_name = '' WHERE person_id = $1`, lockedID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM persons WHERE id = $1`, lockedID); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
-}
-
+// DeletePerson 已移除：账号和人员一一对应，人员随账号一起创建和管理，不再单独删除人员。
 // Member 是“成员”权限看到的成员：只有姓名、照片和自己写的备注，没有管理员的备注和账号。Self 表示是不是自己。
 type Member struct {
 	ID     int64  `json:"id"`
@@ -426,7 +510,11 @@ func (s *Store) ListMembers(ctx context.Context, userID int64) ([]Member, error)
 		SELECT p.id, p.name, p.photo, COALESCE(r.remark, ''),
 		       p.id IS NOT DISTINCT FROM (SELECT person_id FROM users WHERE id = $1)
 		FROM persons p LEFT JOIN person_remarks r ON r.person_id = p.id AND r.user_id = $1
-		ORDER BY p.id`, userID)
+        WHERE p.id = (SELECT person_id FROM users WHERE id=$1) OR EXISTS (
+          SELECT 1 FROM contacts c JOIN users u ON u.id=c.target_user_id
+          WHERE c.owner_id=$1 AND u.person_id=p.id AND NOT u.disabled
+        )
+        ORDER BY p.id`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -457,19 +545,34 @@ func (s *Store) Remarks(ctx context.Context, userID int64) (map[int64]string, er
 }
 
 // SetRemark 保存 userID 给成员写的备注；remark 为空时删除。成员不存在时返回 errPersonNotFound。
+// SetRemark 保留旧成员备注接口，但必须是本人或已经添加的账号关联人员。
 func (s *Store) SetRemark(ctx context.Context, userID, personID int64, remark string) error {
-	if remark == "" {
-		_, err := s.pool.Exec(ctx, `DELETE FROM person_remarks WHERE user_id = $1 AND person_id = $2`, userID, personID)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
 		return err
 	}
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO person_remarks (user_id, person_id, remark) VALUES ($1, $2, $3)
-		ON CONFLICT (user_id, person_id) DO UPDATE SET remark = EXCLUDED.remark`,
-		userID, personID, remark)
-	if isForeignKeyViolation(err) {
+	defer tx.Rollback(ctx)
+	var id int64
+	err = tx.QueryRow(ctx, `INSERT INTO person_remarks (user_id, person_id, remark)
+        SELECT $1, p.id, $3 FROM persons p WHERE p.id=$2 AND (
+            p.id=(SELECT person_id FROM users WHERE id=$1) OR EXISTS (
+                SELECT 1 FROM contacts c JOIN users u ON u.id=c.target_user_id
+                WHERE c.owner_id=$1 AND u.person_id=p.id AND NOT u.disabled
+            ))
+        ON CONFLICT (user_id, person_id) DO UPDATE SET remark=excluded.remark
+        RETURNING person_id`, userID, personID, remark).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return errPersonNotFound
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE contacts c SET remark=$3 FROM users u
+        WHERE c.owner_id=$1 AND c.target_user_id=u.id AND u.person_id=$2`, userID, personID, remark)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // Setting 读一项平台设置，没设过时返回空字符串。
@@ -504,6 +607,8 @@ type grants struct {
 	Apps  map[string]bool
 	Menus grantMap
 	Perms grantMap
+	// Scopes 保存当前平台访问范围，按模块版本计算默认权限，不写入个人授权记录。
+	Scopes map[string]appAccess
 }
 
 func (s *Store) Grants(ctx context.Context, userID int64) (grants, error) {
@@ -529,7 +634,15 @@ func (s *Store) Grants(ctx context.Context, userID int64) (grants, error) {
 		}
 		apps[module] = allowed
 	}
-	return grants{Apps: apps, Menus: menus, Perms: perms}, rows.Err()
+	if err := rows.Err(); err != nil {
+		return grants{}, err
+	}
+	rows.Close()
+	scopes, err := s.appScopes(ctx)
+	if err != nil {
+		return grants{}, err
+	}
+	return grants{Apps: apps, Menus: menus, Perms: perms, Scopes: scopes}, nil
 }
 
 func (s *Store) grantMap(ctx context.Context, query string, userID int64) (grantMap, error) {

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BuildOutlined, BarChartOutlined, ContactsOutlined, SettingOutlined, SkinOutlined, TeamOutlined } from "@ant-design/icons";
+import { BarChartOutlined, ContactsOutlined, SettingOutlined, SkinOutlined } from "@ant-design/icons";
 import { hasPerm, isAdmin, type Me, type PlatformPerm } from "./api";
 
 // 平台自带的应用：代码在门户里，交互和模块一样，出现在应用页，点开是一个标签页。
@@ -19,13 +19,15 @@ export type BuiltinApp = {
 
 export const builtinApps: BuiltinApp[] = [
   {
-    id: "platform-builder",
-    name: "构建器",
-    description: "构建和安装应用",
-    url: "/apps/builder/",
-    icon: <BuildOutlined />,
-    tint: ["#5b9fff", "#5353df"],
-    embedded: true,
+    id: "applications",
+    name: "应用管理",
+    description: "安装、管理和构建应用",
+    url: "/applications",
+    icon: <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" aria-hidden="true">
+      <path d="m8 4 11 16M15 4 4 20M3 15h12" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
+    </svg>,
+    tint: ["#54bcff", "#3168e9"],
+    perm: "modules",
   },
   {
     id: "contacts",
@@ -36,21 +38,10 @@ export const builtinApps: BuiltinApp[] = [
     tint: ["#54bcff", "#3168e9"],
     perm: "everyone",
   },
-  // 管理员在这里管成员、账号和权限；有“成员”权限的普通用户只能看成员、给他们写自己的备注。
-  // 能管账号的人可以给自己勾上任何权限，等于管理员，所以账号和权限只给管理员。
-  {
-    id: "users",
-    name: "用户",
-    description: "家庭成员和他们的账号",
-    url: "/admin/users",
-    icon: <TeamOutlined />,
-    tint: ["#4fd2ff", "#0a5cff"],
-    perm: "members",
-  },
   {
     id: "settings",
     name: "设置",
-    description: "平台的系统设置和应用管理",
+    description: "平台的系统设置",
     url: "/settings",
     icon: <SettingOutlined />,
     tint: ["#ff7a6b", "#9b4dff"],
@@ -77,8 +68,8 @@ export const builtinApps: BuiltinApp[] = [
   },
 ];
 
-// 以前单独存在、现在并进别的自带应用的网址：“应用管理”在“设置”里。
-export const builtinAliases: Record<string, string> = { "/admin/modules": "/settings" };
+// 旧入口统一指向合并后的平台应用；构建服务原地址仍供内嵌页使用。
+export const builtinAliases: Record<string, string> = { "/admin/modules": "/applications", "/apps/builder/": "/applications", "/admin/users": "/contacts" };
 
 // 这个人能看到的自带应用。其他人输入网址也只会看到首页，接口本身也会拒绝。
 export const builtinAppsFor = (me: Me) =>

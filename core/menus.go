@@ -16,7 +16,7 @@ var platformModule = &Module{Manifest: &manifest.Manifest{
 	Name: "平台",
 	Permissions: []manifest.Permission{
 		{ID: permSettings, Name: "设置", Description: "打开“设置”应用", Default: []string{"user"}},
-		{ID: permModules, Name: "应用管理", Description: "在“设置”里安装、升级和卸载应用，要同时有“设置”", Default: []string{"admin"}},
+		{ID: permModules, Name: "应用管理", Description: "安装、升级和卸载应用", Default: []string{"admin"}},
 		{ID: permMembers, Name: "成员", Description: "打开“用户”应用查看家庭成员，给他们写只有自己看得到的备注（其他应用里会代替姓名显示）", Default: []string{"admin"}},
 	},
 }}
@@ -44,6 +44,12 @@ func menusFor(user *User, m *Module, g grants) []manifest.Menu {
 	return grantedMenus(user, m, g)
 }
 
+// publicPageDefault 为当前版本已公开的前端应用提供应用和普通页面的默认授权。
+// 单独设置仍优先；功能权限及其绑定页面不在这里自动放开。
+func publicPageDefault(m *Module, g grants) bool {
+	return m != platformModule && canBrowseApp(m, g.Scopes[m.ID].forModule(m), false)
+}
+
 // appAllowed 判断一个人能不能用整个应用，也就是门户里有没有它的入口；里面能看哪些页面另按菜单算，可能一个都没有。
 // 有单独设置的按设置；没有的，平台默认都能用，模块按菜单的默认值和单独设置至少有一个菜单才能用（和以前一样）。
 // 管理员总能用，避免把自己锁在外面。只有后端的模块没有入口，谁都不能用，它的接口只给其他模块在内部调用。
@@ -57,7 +63,7 @@ func appAllowed(user *User, m *Module, g grants) bool {
 	if allowed, set := g.Apps[m.ID]; set {
 		return allowed
 	}
-	return m == platformModule || len(grantedMenus(user, m, g)) > 0
+	return m == platformModule || publicPageDefault(m, g) || len(grantedMenus(user, m, g)) > 0
 }
 
 // grantedPerms 按单独设置和清单里的默认角色算出功能权限，不看应用开关。管理员只自动拥有非手动开通的权限。
@@ -77,7 +83,7 @@ func grantedMenus(user *User, m *Module, g grants) []manifest.Menu {
 	perms := grantedPerms(user, m, g)
 	var menus []manifest.Menu
 	for _, menu := range m.Menus {
-		if (user.IsAdmin() && menu.Requires == "") || menuAllowed(user, m.ID, menu, g, perms) {
+		if (user.IsAdmin() && menu.Requires == "") || menuAllowed(user, m.ID, menu, g, perms, publicPageDefault(m, g)) {
 			menus = append(menus, menu)
 		}
 	}
@@ -85,12 +91,12 @@ func grantedMenus(user *User, m *Module, g grants) []manifest.Menu {
 }
 
 // menuAllowed：写了 requires 的菜单跟着那项功能权限走；其他的有单独设置按设置，没有的按清单里的默认角色。
-func menuAllowed(user *User, module string, menu manifest.Menu, g grants, perms []string) bool {
+func menuAllowed(user *User, module string, menu manifest.Menu, g grants, perms []string, publicDefault bool) bool {
 	if menu.Requires != "" {
 		return slices.Contains(perms, menu.Requires)
 	}
 	allowed, set := g.Menus[module][menu.ID]
-	return (set && allowed) || (!set && hasAnyRole(user.Roles, menu.Default))
+	return (set && allowed) || (!set && (publicDefault || hasAnyRole(user.Roles, menu.Default)))
 }
 
 func menuIDs(menus []manifest.Menu) []string {

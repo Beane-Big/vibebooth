@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Dropdown, Tabs, Tooltip } from "antd";
 import { ExportOutlined, HomeOutlined, ReloadOutlined } from "@ant-design/icons";
-import { isBuiltinURL } from "../builtin";
+import { builtinAliases, builtinApps, isBuiltinURL } from "../builtin";
 
 // 在门户里打开的应用：每个应用一个标签页，内容是同一个网站下的内嵌页，登录状态天然共享。
 // 平台自带的应用（见 builtin.tsx）也占一个标签，内容由门户直接渲染，不放在内嵌页里。
@@ -23,13 +23,18 @@ type Saved = { tabs: AppTab[]; active: string };
 function load(): Saved {
   try {
     const v = JSON.parse(sessionStorage.getItem(storageKey) ?? "null");
-    const tabs: AppTab[] = Array.isArray(v?.tabs)
-      ? v.tabs.filter(
+    const restored: AppTab[] = Array.isArray(v?.tabs)
+      ? v.tabs.map((t: AppTab) => {
+          const url = builtinAliases[t?.url] ?? t?.url;
+          return { ...t, url, title: builtinApps.find((app) => app.url === url)?.name ?? t?.title };
+        }).filter(
           (t: AppTab) =>
             typeof t?.url === "string" && (t.url.startsWith("/apps/") || isBuiltinURL(t.url)) && typeof t.title === "string",
         )
       : [];
-    const active = tabs.some((t) => t.url === v?.active) ? v.active : PORTAL_TAB;
+    const tabs = restored.filter((tab, index) => restored.findIndex((item) => item.url === tab.url) === index);
+    const previousActive = builtinAliases[v?.active] ?? v?.active;
+    const active = tabs.some((t) => t.url === previousActive) ? previousActive : PORTAL_TAB;
     return { tabs, active };
   } catch {
     // 浏览器禁用了存储时不恢复，这次打开页面内照常可用。

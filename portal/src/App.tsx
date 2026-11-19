@@ -9,9 +9,9 @@ import Layout from "./components/Layout";
 import Login from "./pages/AuthForm";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
+import AppManagement from "./pages/AppManagement";
 import Stats from "./pages/Stats";
 import Themes from "./pages/Themes";
-import Users from "./pages/Users";
 import Contacts from "./pages/Contacts";
 import { useThemeMode } from "./theme";
 import { useActiveTheme } from "./themeHost";
@@ -234,7 +234,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   }
 
   // 头像菜单里的“用户信息”打开“用户”应用，自己排在第一个；没有“用户”应用的人没有这一项。
-  const usersApp = builtins.find((app) => app.id === "users");
+  const usersApp = builtins.find((app) => app.id === "contacts");
   // 备案号放在首页和自带应用的底部；模块应用的内嵌页占满顶栏下面的区域，不放。
   const frameActive = tabs.active !== PORTAL_TAB && !isBuiltinURL(tabs.active);
 
@@ -264,9 +264,9 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
             className="content"
             style={t.url !== tabs.active ? { display: "none" } : undefined}
           >
-            {t.url === "/contacts" && <Contacts />}
-            {t.url === "/admin/users" && <Users me={user} onMeChanged={onMeChanged} />}
-            {t.url === "/settings" && <Settings me={user} />}
+            {t.url === "/contacts" && <Contacts me={user} onMeChanged={onMeChanged} />}
+            {t.url === "/applications" && <AppManagement me={user} />}
+            {t.url === "/settings" && <Settings />}
             {t.url === "/themes" && <Themes me={user} themes={theme.themes} />}
             {t.url === "/stats" && <Stats onChanged={onMeChanged} />}
           </div>

@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-// ---- 人员管理（只有管理员能用，门户“用户”应用调用）----
+// ---- 人员管理（只有管理员能用，门户“联系人”应用调用）----
 
 type personInput struct {
 	Name  string `json:"name"`
@@ -90,40 +90,9 @@ func (s *Server) handleListPersons(w http.ResponseWriter, r *http.Request, _ *Us
 	writeJSON(w, http.StatusOK, list)
 }
 
-func (s *Server) handleCreatePerson(w http.ResponseWriter, r *http.Request, _ *User) {
-	in, ok := readPersonInput(w, r)
-	if !ok {
-		return
-	}
-	p, err := s.store.CreatePerson(r.Context(), in.Name, in.Note, in.Photo)
-	if !personFailed(w, err) {
-		writeJSON(w, http.StatusCreated, p)
-	}
-}
-
+// handleUpdatePerson 拒绝旧版管理员资料编辑请求；本人仍通过 /me/name 和 /me/photo 修改。
 func (s *Server) handleUpdatePerson(w http.ResponseWriter, r *http.Request, _ *User) {
-	id, ok := personID(w, r)
-	if !ok {
-		return
-	}
-	in, ok := readPersonInput(w, r)
-	if !ok {
-		return
-	}
-	p, err := s.store.UpdatePerson(r.Context(), id, in.Name, in.Note, in.Photo)
-	if !personFailed(w, err) {
-		writeJSON(w, http.StatusOK, p)
-	}
-}
-
-func (s *Server) handleDeletePerson(w http.ResponseWriter, r *http.Request, _ *User) {
-	id, ok := personID(w, r)
-	if !ok {
-		return
-	}
-	if !personFailed(w, s.store.DeletePerson(r.Context(), id)) {
-		w.WriteHeader(http.StatusNoContent)
-	}
+	writeError(w, http.StatusForbidden, "资料只能由本人修改")
 }
 
 // ---- 成员备注（有平台“成员”权限的人用，管理员也能用）----
@@ -159,9 +128,9 @@ func (s *Server) handleSetRemark(w http.ResponseWriter, r *http.Request, me *Use
 	}
 }
 
-// 每个人可以改自己的姓名和头像，改的是账号关联的成员。别人的资料只有管理员能在“用户”里改，模块不能改。
+// 每个人可以改自己的姓名和头像，改的是自己一一对应的人员。别人的资料只有管理员能改，模块不能改。
 
-// myPerson 返回当前账号关联的成员；没有关联时已经写好 400。
+// myPerson 返回当前账号对应的人员；没有人员时已经写好 400。
 func (s *Server) myPerson(w http.ResponseWriter, r *http.Request, me *User) (*Person, bool) {
 	p, err := s.store.PersonByUser(r.Context(), me.ID)
 	if errors.Is(err, errPersonNotFound) {

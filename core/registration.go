@@ -50,16 +50,31 @@ func (s *Server) mountRegistration(mux *http.ServeMux) {
 			internalError(w, err)
 			return
 		}
-		tag, err := s.store.pool.Exec(r.Context(), `INSERT INTO users (username, email, display_name, password_hash, roles, self_registered)
-			SELECT $1, NULLIF($2, ''), '', $3, '{}', true
+		tx, err := s.store.pool.Begin(r.Context())
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		defer tx.Rollback(r.Context())
+		var personID int64
+		if err := tx.QueryRow(r.Context(), `INSERT INTO persons (name) VALUES ($1) RETURNING id`, username).Scan(&personID); err != nil {
+			internalError(w, err)
+			return
+		}
+		tag, err := tx.Exec(r.Context(), `INSERT INTO users (username, email, display_name, password_hash, roles, self_registered, person_id)
+			SELECT $1, NULLIF($2, ''), $1, $3, '{}', true, $4
 			WHERE $2 = '' OR NOT EXISTS (SELECT 1 FROM users WHERE lower(username) = $2)
-			ON CONFLICT DO NOTHING`, username, email, string(hash))
+			ON CONFLICT DO NOTHING`, username, email, string(hash), personID)
 		if err != nil {
 			internalError(w, err)
 			return
 		}
 		if tag.RowsAffected() == 0 {
 			writeError(w, http.StatusConflict, "无法使用此账号或邮箱注册，请更换后重试。")
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			internalError(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
