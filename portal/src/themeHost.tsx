@@ -137,14 +137,17 @@ export function loadTheme(t: ThemeInfo): Promise<ThemeDefinition> {
 export const THEMES_CHANGED_EVENT = "vb-themes-changed";
 
 // useActiveTheme 读出已安装的主题和平台默认的皮肤，加载当前皮肤对应的主题包：套上它的颜色参数和样式表，返回它注册的内容。
+// platformOnly 用于游客入口：服务端只返回平台默认主题，同时不改动浏览器里登录账号保存的个人选择。
 // 自己选的主题被卸载了就改回跟随平台默认；加载失败时返回错误，由首页提示并退回经典皮肤。
-export function useActiveTheme() {
+export function useActiveTheme({ platformOnly = false }: { platformOnly?: boolean } = {}) {
   const { skin, ownSkin, setSkin, setDefaultSkin, setOverrides, ownWallpaper, setWallpaper, setDefaultWallpaper } =
     useThemeMode();
   const [themes, setThemes] = React.useState<ThemeInfo[]>([]);
   const [loaded, setLoaded] = React.useState<{ key: string; def?: ThemeDefinition; error?: string } | null>(null);
-  // 读到过主题列表没有。列表回来之前它是空的，不能据此判断自己选的主题被卸载了。
+  // 登录态仅在成功读取列表后确认主题是否被卸载；游客失败时也可以继续进入门户。
   const [listed, setListed] = React.useState(false);
+  // 游客首页等默认外观返回后再显示，避免先画出缓存或内置皮肤造成闪烁。
+  const [appearanceReady, setAppearanceReady] = React.useState(false);
 
   React.useEffect(() => {
     const reload = () => {
@@ -153,30 +156,34 @@ export function useActiveTheme() {
           setThemes(list);
           setListed(true);
         },
-        () => setThemes([]),
+        () => {
+          // 请求失败时保留上一次成功的列表和个人选择。
+          if (platformOnly) setListed(true);
+        },
       );
       api.appearance().then(
         (a) => {
           setDefaultSkin(a.defaultSkin);
           setDefaultWallpaper(a.defaultWallpaper ?? "");
+          setAppearanceReady(true);
         },
-        () => {},
+        () => setAppearanceReady(true),
       );
     };
     reload();
     window.addEventListener(THEMES_CHANGED_EVENT, reload);
     return () => window.removeEventListener(THEMES_CHANGED_EVENT, reload);
-  }, []);
+  }, [platformOnly]);
 
   React.useEffect(() => {
-    if (!listed) return;
+    if (platformOnly || !listed) return;
     const own = ownSkin && themeID(ownSkin);
     if (own && !themes.some((t) => t.id === own)) setSkin(null);
-  }, [themes, listed]);
+  }, [themes, listed, platformOnly]);
 
   // 自己选的上传壁纸被管理员删了，也改回跟随平台默认。
   React.useEffect(() => {
-    if (!ownWallpaper || ownWallpaper === "bing") return;
+    if (platformOnly || !ownWallpaper || ownWallpaper === "bing") return;
     let current = true;
     api.wallpapers().then(
       (list) => current && !list.some((w) => w.id === ownWallpaper) && setWallpaper(null),
@@ -185,7 +192,7 @@ export function useActiveTheme() {
     return () => {
       current = false;
     };
-  }, [ownWallpaper, themes]);
+  }, [ownWallpaper, themes, platformOnly]);
 
   const active = themes.find((t) => t.id === themeID(skin)) ?? null;
   const key = active ? `${active.id}@${active.version}` : "";
@@ -201,14 +208,20 @@ export function useActiveTheme() {
     };
   }, [key]);
 
-  const ready = active && loaded?.key === key ? loaded : null;
-  const def = ready?.def ?? null;
+  const loadedTheme = active && loaded?.key === key ? loaded : null;
+  const def = loadedTheme?.def ?? null;
   React.useEffect(() => {
     setOverrides(def);
     return () => setOverrides(null);
   }, [def]);
   useThemeStyle(active);
-  return { themes, active, def, error: ready?.error ?? "" };
+  return {
+    themes,
+    active,
+    def,
+    error: loadedTheme?.error ?? "",
+    ready: listed && appearanceReady && (!active || loadedTheme !== null),
+  };
 }
 
 // useThemeStyle 在选用主题时挂上它的样式表，换掉或不用时移走。

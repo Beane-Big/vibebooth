@@ -96,11 +96,23 @@ func (s *Server) handleWallpapers(w http.ResponseWriter, _ *http.Request, _ *Use
 }
 
 // handleWallpaperFile 发一张壁纸的大图（image）或缩略图（thumb）。必应壁纸在这里按需更新。
-func (s *Server) handleWallpaperFile(w http.ResponseWriter, r *http.Request, _ *User) {
+func (s *Server) handleWallpaperFile(w http.ResponseWriter, r *http.Request, user *User) {
 	id, size := r.PathValue("id"), r.PathValue("size")
 	if size != "image" && size != "thumb" {
 		http.NotFound(w, r)
 		return
+	}
+	// 游客只能读取平台正在使用的默认壁纸，其他上传图片仍属于登录后的主题管理范围。
+	if user == nil {
+		a, err := s.currentAppearance(r.Context())
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		if a.DefaultWallpaper != id {
+			http.NotFound(w, r)
+			return
+		}
 	}
 	name := id + ".jpg"
 	if size == "thumb" {
