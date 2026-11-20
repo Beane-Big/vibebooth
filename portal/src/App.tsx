@@ -175,7 +175,7 @@ function GuestPortal({ theme }: { theme: ReturnType<typeof useActiveTheme> }) {
 
   return (
     <Layout user={null}
-      tabs={guestTabs.tabs.length ? <AppTabBar state={guestTabs} onRefresh={(key) => key === PORTAL_TAB ? location.reload() : reloadFrame(key)} /> : null}
+      tabs={<AppTabBar state={guestTabs} onRefresh={(key) => key === PORTAL_TAB ? location.reload() : reloadFrame(key)} />}
       onHome={() => tabs.activate(PORTAL_TAB)} onLogout={() => {}}
       activeTheme={theme.active?.id} TopbarBackground={theme.def?.TopbarBackground}
       plain={skin === "tiles" && guestTabs.active === PORTAL_TAB && !wallpaper}>

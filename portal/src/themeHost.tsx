@@ -144,7 +144,7 @@ export function useActiveTheme({ platformOnly = false }: { platformOnly?: boolea
     useThemeMode();
   const [themes, setThemes] = React.useState<ThemeInfo[]>([]);
   const [loaded, setLoaded] = React.useState<{ key: string; def?: ThemeDefinition; error?: string } | null>(null);
-  // 读到过主题列表没有。列表回来之前它是空的，不能据此判断自己选的主题被卸载了。
+  // 登录态仅在成功读取列表后确认主题是否被卸载；游客失败时也可以继续进入门户。
   const [listed, setListed] = React.useState(false);
   // 游客首页等默认外观返回后再显示，避免先画出缓存或内置皮肤造成闪烁。
   const [appearanceReady, setAppearanceReady] = React.useState(false);
@@ -157,8 +157,8 @@ export function useActiveTheme({ platformOnly = false }: { platformOnly?: boolea
           setListed(true);
         },
         () => {
-          setThemes([]);
-          setListed(true);
+          // 请求失败时保留上一次成功的列表和个人选择。
+          if (platformOnly) setListed(true);
         },
       );
       api.appearance().then(
@@ -173,7 +173,7 @@ export function useActiveTheme({ platformOnly = false }: { platformOnly?: boolea
     reload();
     window.addEventListener(THEMES_CHANGED_EVENT, reload);
     return () => window.removeEventListener(THEMES_CHANGED_EVENT, reload);
-  }, []);
+  }, [platformOnly]);
 
   React.useEffect(() => {
     if (platformOnly || !listed) return;
