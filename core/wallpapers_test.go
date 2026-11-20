@@ -19,9 +19,40 @@ import (
 func wallpaperMux(s *Server) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/platform/wallpapers", func(w http.ResponseWriter, r *http.Request) { s.handleWallpapers(w, r, nil) })
-	mux.HandleFunc("GET /api/platform/wallpapers/{id}/{size}", func(w http.ResponseWriter, r *http.Request) { s.handleWallpaperFile(w, r, nil) })
+	mux.HandleFunc("GET /api/platform/wallpapers/{id}/{size}", func(w http.ResponseWriter, r *http.Request) { s.handleWallpaperFile(w, r, &User{}) })
 	mux.HandleFunc("POST /api/platform/wallpapers", func(w http.ResponseWriter, r *http.Request) { s.handleUploadWallpaper(w, r, nil) })
 	return mux
+}
+
+// TestGuestWallpaperAccess 验证游客只能读取平台默认壁纸，不会枚举或打开其他上传图片。
+func TestGuestWallpaperAccess(t *testing.T) {
+	store := contactTestStore(t)
+	s := &Server{store: store, cfg: config{DataDir: t.TempDir()}, registry: NewRegistry(t.TempDir())}
+	for _, id := range []string{"111111111111", "222222222222"} {
+		if err := saveWallpaper(s.wallpapersDir(), id, image.NewRGBA(image.Rect(0, 0, 40, 20))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.SetSetting(t.Context(), defaultWallpaperKey, "111111111111"); err != nil {
+		t.Fatal(err)
+	}
+	request := func(id string, user *User) int {
+		req := httptest.NewRequest(http.MethodGet, "/api/platform/wallpapers/"+id+"/thumb", nil)
+		req.SetPathValue("id", id)
+		req.SetPathValue("size", "thumb")
+		w := httptest.NewRecorder()
+		s.handleWallpaperFile(w, req, user)
+		return w.Code
+	}
+	if got := request("111111111111", nil); got != http.StatusOK {
+		t.Errorf("游客读取默认壁纸返回 %d", got)
+	}
+	if got := request("222222222222", nil); got != http.StatusNotFound {
+		t.Errorf("游客读取非默认壁纸返回 %d", got)
+	}
+	if got := request("222222222222", &User{}); got != http.StatusOK {
+		t.Errorf("登录用户读取其他壁纸返回 %d", got)
+	}
 }
 
 func pngOf(w, h int) []byte {

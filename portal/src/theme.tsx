@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { App as AntApp, ConfigProvider, theme as antTheme, type ThemeConfig } from "antd";
 import zhCN from "antd/locale/zh_CN";
 
@@ -250,6 +250,8 @@ const ModeContext = createContext<{
   // 平台默认的壁纸，由管理员在“主题”应用里设置。
   defaultWallpaper: string;
   setDefaultWallpaper: (id: string) => void;
+  // 游客态只使用平台默认外观，不继承这台浏览器里上一个登录账号的个人选择。
+  setPlatformDefaultsOnly: (enabled: boolean) => void;
 }>({
   mode: "system",
   setMode: () => {},
@@ -267,9 +269,20 @@ const ModeContext = createContext<{
   setWallpaper: () => {},
   defaultWallpaper: "",
   setDefaultWallpaper: () => {},
+  setPlatformDefaultsOnly: () => {},
 });
 
 export const useThemeMode = () => useContext(ModeContext);
+
+// 未登录入口在浏览器绘制页面前切到平台默认外观；卸载后恢复账号自己的选择。
+// useLayoutEffect 避免先画出个人壁纸或皮肤，再闪成游客主题。
+export function usePlatformDefaultsOnly() {
+  const { setPlatformDefaultsOnly } = useThemeMode();
+  useLayoutEffect(() => {
+    setPlatformDefaultsOnly(true);
+    return () => setPlatformDefaultsOnly(false);
+  }, [setPlatformDefaultsOnly]);
+}
 
 // ThemeProvider 按外观模式套上 Ant Design 的主题，同时把颜色写成 CSS 变量，给门户自己的少量样式用。
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -281,7 +294,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return v ? (v as Skin) : null;
   });
   const [defaultSkin, setDefaultSkinState] = useState<Skin>(() => saved(defaultSkinKey, validSkin, "classic"));
-  const skin = ownSkin ?? defaultSkin;
+  const [platformDefaultsOnly, setPlatformDefaultsOnly] = useState(false);
+  const skin = platformDefaultsOnly ? defaultSkin : (ownSkin ?? defaultSkin);
   const [overrides, setOverrides] = useState<ThemeOverrides | null>(null);
   const [ownWallpaper, setOwnWallpaper] = useState<string | null>(() => {
     try {
@@ -293,7 +307,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return null;
   });
   const [defaultWallpaper, setDefaultWallpaperState] = useState(() => saved<string>(defaultWallpaperKey, validWallpaper, ""));
-  const wallpaper = ownWallpaper ?? defaultWallpaper;
+  const wallpaper = platformDefaultsOnly ? defaultWallpaper : (ownWallpaper ?? defaultWallpaper);
   const systemDark = useSystemDark();
   const dark = mode === "dark" || (mode === "system" && systemDark);
   const effectiveOverrides = overrides ?? defaultOverrides;
@@ -332,7 +346,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     <ModeContext.Provider
       value={{
         mode, setMode, skin, ownSkin, setSkin, defaultSkin, setDefaultSkin, dark, themedIcons, wordmark, setOverrides,
-        wallpaper, ownWallpaper, setWallpaper, defaultWallpaper, setDefaultWallpaper,
+        wallpaper, ownWallpaper, setWallpaper, defaultWallpaper, setDefaultWallpaper, setPlatformDefaultsOnly,
       }}
     >
       {/* 关掉按钮文字自动加空格，“保存”不会显示成“保 存”。 */}

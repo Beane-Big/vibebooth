@@ -233,9 +233,9 @@ export const api = {
   uninstallModule: (id: string, purge: boolean) =>
     request<{ log: string }>(`/api/platform/installer/modules/${id}?purge=${purge}`, { method: "DELETE" }),
 
-  // 主题：所有登录的人都能列出和选用；安装和卸载要有“应用管理”权限。
+  // 主题：登录用户能列出全部主题；游客只会收到平台默认主题。安装和卸载要有“应用管理”权限。
   themes: () => request<ThemeInfo[]>("/api/platform/themes"),
-  // 平台默认的皮肤和壁纸：没自己选过的人用它。设置要有“应用管理”权限。defaultWallpaper 为空表示不用壁纸。
+  // 平台默认的皮肤和壁纸允许游客读取；设置仍要有“应用管理”权限。defaultWallpaper 为空表示不用壁纸。
   appearance: () => request<{ defaultSkin: Skin; defaultWallpaper: string }>("/api/platform/appearance"),
   setDefaultSkin: (defaultSkin: Skin) => put("/api/platform/appearance", { defaultSkin }),
   setDefaultWallpaper: (defaultWallpaper: string) => put("/api/platform/appearance", { defaultWallpaper }),

@@ -7,6 +7,7 @@ import type { AppTab } from "../components/AppTabs";
 import { inPlace } from "../components/Layout";
 import { useThemeMode, wallpaperURL } from "../theme";
 import { ThemeBoundary, ThemeFallback, type ThemeApp, type ThemeDefinition } from "../themeHost";
+import GuestHome from "./GuestHome";
 
 type Props = {
   apps: App[];
@@ -26,8 +27,9 @@ export default function Home({
   theme: { active: ThemeInfo | null; def: ThemeDefinition | null; error: string } | null;
 }) {
   const { skin, dark, wallpaper } = useThemeMode();
+  if (!user) return <GuestHome apps={props.apps} onOpen={props.onOpen} />;
   if (props.apps.length === 0 && props.builtins.length === 0) return <Empty description="还没有可用的应用。" />;
-  if (user && theme?.active) {
+  if (theme?.active) {
     const { name } = theme.active;
     if (theme.error) return <ThemeFallback name={name} error={theme.error} fallback={<ClassicHome {...props} />} />;
     if (!theme.def) return <Spin style={{ display: "block", margin: "48px auto" }} />;

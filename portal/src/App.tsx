@@ -13,7 +13,7 @@ import AppManagement from "./pages/AppManagement";
 import Stats from "./pages/Stats";
 import Themes from "./pages/Themes";
 import Contacts from "./pages/Contacts";
-import { useThemeMode } from "./theme";
+import { usePlatformDefaultsOnly, useThemeMode } from "./theme";
 import { useActiveTheme } from "./themeHost";
 
 export default function App() {
@@ -38,23 +38,7 @@ export default function App() {
       </div>
     );
 
-  if (!user) {
-    const path = location.pathname;
-    if (path !== "/login" && !isBuiltinURL(path) && !builtinAliases[path]) {
-      return <GuestPortal />;
-    }
-    const needsLogin = path !== "/login" || new URLSearchParams(location.search).has("next");
-    if (needsLogin && !loginConfirmed) {
-      return <LoginPrompt onContinue={() => setLoginConfirmed(true)} />;
-    }
-    return <Login onLogin={(u) => {
-      setUser(u);
-      const next = new URLSearchParams(location.search).get("next") ?? (path !== "/login" ? path : null);
-      // 只允许跳回本站路径，防止被利用跳到外部网站。没有门户权限的人跳回门户也只会看到“没有权限”。
-      if (next && /^\/(?![\/\\])[^\\\s]*$/.test(next)) location.href = next;
-      else history.replaceState(null, "", "/");
-    }} />;
-  }
+  if (!user) return <PublicEntry loginConfirmed={loginConfirmed} setLoginConfirmed={setLoginConfirmed} onLogin={setUser} />;
 
   // 不能用门户的人（例如只给了一个应用的平板）打开门户时直接拒绝，不自动跳转；他只能直接打开自己能用的应用。
   if (!user.platform) {
@@ -84,9 +68,43 @@ export default function App() {
   );
 }
 
-function LoginPrompt({ onContinue }: { onContinue: () => void }) {
+// 未登录入口统一加载平台默认外观；准备好之前不绘制页面，避免个人缓存或内置皮肤短暂闪现。
+function PublicEntry({
+  loginConfirmed,
+  setLoginConfirmed,
+  onLogin,
+}: {
+  loginConfirmed: boolean;
+  setLoginConfirmed: (confirmed: boolean) => void;
+  onLogin: (user: Me) => void;
+}) {
+  usePlatformDefaultsOnly();
+  const theme = useActiveTheme({ platformOnly: true });
+  if (!theme.ready) {
+    return <div className="auth-shell auth-loading"><Spin /></div>;
+  }
+
+  const path = location.pathname;
+  if (path !== "/login" && !isBuiltinURL(path) && !builtinAliases[path]) {
+    return <GuestPortal theme={theme} />;
+  }
+  const needsLogin = path !== "/login" || new URLSearchParams(location.search).has("next");
+  if (needsLogin && !loginConfirmed) {
+    return <LoginPrompt theme={theme} onContinue={() => setLoginConfirmed(true)} />;
+  }
+  return <Login onLogin={(user) => {
+    onLogin(user);
+    const next = new URLSearchParams(location.search).get("next") ?? (path !== "/login" ? path : null);
+    // 只允许跳回本站路径，防止被利用跳到外部网站。没有门户权限的人跳回门户也只会看到“没有权限”。
+    if (next && /^\/(?![\/\\])[^\\\s]*$/.test(next)) location.href = next;
+    else history.replaceState(null, "", "/");
+  }} />;
+}
+
+function LoginPrompt({ theme, onContinue }: { theme: ReturnType<typeof useActiveTheme>; onContinue: () => void }) {
   return (
-    <Layout user={null} tabs={null} onHome={() => location.assign("/")} onLogout={() => {}}>
+    <Layout user={null} tabs={null} onHome={() => location.assign("/")} onLogout={() => {}}
+      activeTheme={theme.active?.id} TopbarBackground={theme.def?.TopbarBackground}>
       <Flex align="center" justify="center" style={{ minHeight: "min(65vh, 560px)", padding: 24 }}>
         <Card style={{ width: "100%", maxWidth: 440, textAlign: "center" }}>
           <Result status="info" title="此功能需要登录"
@@ -102,8 +120,9 @@ function LoginPrompt({ onContinue }: { onContinue: () => void }) {
   );
 }
 
-function GuestPortal() {
+function GuestPortal({ theme }: { theme: ReturnType<typeof useActiveTheme> }) {
   const { modal } = AntApp.useApp();
+  const { skin, wallpaper } = useThemeMode();
   const [apps, setApps] = useState<AppInfo[] | null>(null);
   const [error, setError] = useState("");
   const tabs = useAppTabs();
@@ -155,11 +174,14 @@ function GuestPortal() {
   }
 
   return (
-    <Layout user={null} tabs={<AppTabBar state={guestTabs} onRefresh={(key) => key === PORTAL_TAB ? location.reload() : reloadFrame(key)} />}
-      onHome={() => tabs.activate(PORTAL_TAB)} onLogout={() => {}}>
+    <Layout user={null}
+      tabs={guestTabs.tabs.length ? <AppTabBar state={guestTabs} onRefresh={(key) => key === PORTAL_TAB ? location.reload() : reloadFrame(key)} /> : null}
+      onHome={() => tabs.activate(PORTAL_TAB)} onLogout={() => {}}
+      activeTheme={theme.active?.id} TopbarBackground={theme.def?.TopbarBackground}
+      plain={skin === "tiles" && guestTabs.active === PORTAL_TAB && !wallpaper}>
       <div className="content" style={guestTabs.active !== PORTAL_TAB ? { display: "none" } : undefined}>
         {error ? <Alert type="error" message={error} showIcon />
-          : apps ? <Home apps={apps} builtins={[]} user={null} theme={null} onOpen={openApp} />
+          : apps ? <Home apps={apps} builtins={[]} user={null} theme={theme.active && theme} onOpen={openApp} />
           : <Spin />}
       </div>
       <AppFrames state={guestTabs} onEmbeddedPortal={onEmbeddedPortal} />

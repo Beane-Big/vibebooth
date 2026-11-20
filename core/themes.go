@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -41,9 +42,23 @@ func (s *Server) themes() []*manifest.Theme {
 	return list
 }
 
-// handleThemes 返回已安装的主题，所有登录的人都能看到，在“主题”应用里选用。
-func (s *Server) handleThemes(w http.ResponseWriter, _ *http.Request, _ *User) {
-	writeJSON(w, http.StatusOK, s.themes())
+// handleThemes 给登录用户返回全部主题；游客只拿到平台默认主题，既能还原默认外观，也不会浏览其他主题。
+func (s *Server) handleThemes(w http.ResponseWriter, r *http.Request, user *User) {
+	themes := s.themes()
+	if user == nil {
+		a, err := s.currentAppearance(r.Context())
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		id, ok := strings.CutPrefix(a.DefaultSkin, "theme:")
+		if !ok {
+			themes = []*manifest.Theme{}
+		} else {
+			themes = slices.DeleteFunc(themes, func(t *manifest.Theme) bool { return t.ID != id })
+		}
+	}
+	writeJSON(w, http.StatusOK, themes)
 }
 
 // Go 自带的类型表里没有字体。
@@ -53,8 +68,19 @@ var themeTypes = map[string]string{".woff": "font/woff", ".woff2": "font/woff2"}
 // 门户的网址带着版本号，这里允许浏览器缓存一会儿，升级主题后版本号变了会重新下载。
 // 主题文件和门户同源：直接在浏览器里打开时（比如嵌了脚本的 SVG）不许运行脚本，否则不带脚本的主题能绕过安装时的确认。
 // 门户用 <script>、<link>、<img> 加载这些文件时不受这个响应头影响。
-func (s *Server) handleThemeFile(w http.ResponseWriter, r *http.Request, _ *User) {
+func (s *Server) handleThemeFile(w http.ResponseWriter, r *http.Request, user *User) {
 	id, name := r.PathValue("id"), r.PathValue("path")
+	if user == nil {
+		a, err := s.currentAppearance(r.Context())
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		if a.DefaultSkin != "theme:"+id {
+			http.NotFound(w, r)
+			return
+		}
+	}
 	var theme *manifest.Theme
 	for _, t := range s.themes() {
 		if t.ID == id {
@@ -141,6 +167,25 @@ type appearance struct {
 	DefaultWallpaper string `json:"defaultWallpaper"`
 }
 
+// currentAppearance 统一计算有效的平台默认外观；游客接口和登录后的主题应用必须得到同一结果。
+func (s *Server) currentAppearance(ctx context.Context) (appearance, error) {
+	skin, err := s.store.Setting(ctx, defaultSkinKey)
+	if err != nil {
+		return appearance{}, err
+	}
+	if !validSkin(skin, s.themes()) {
+		skin = "classic"
+	}
+	wp, err := s.store.Setting(ctx, defaultWallpaperKey)
+	if err != nil {
+		return appearance{}, err
+	}
+	if wp != "" && !s.wallpaperExists(wp) {
+		wp = ""
+	}
+	return appearance{DefaultSkin: skin, DefaultWallpaper: wp}, nil
+}
+
 // validSkin 判断一个皮肤能不能用：内置的两种，或者已安装的主题。
 func validSkin(skin string, themes []*manifest.Theme) bool {
 	if skin == "classic" || skin == "tiles" {
@@ -153,23 +198,12 @@ func validSkin(skin string, themes []*manifest.Theme) bool {
 // handleAppearance 返回平台默认的皮肤和壁纸。设成默认的主题被卸载了，或者从没设过，按经典皮肤；
 // 默认壁纸被删了时按不用壁纸。
 func (s *Server) handleAppearance(w http.ResponseWriter, r *http.Request, _ *User) {
-	skin, err := s.store.Setting(r.Context(), defaultSkinKey)
+	a, err := s.currentAppearance(r.Context())
 	if err != nil {
 		internalError(w, err)
 		return
 	}
-	if !validSkin(skin, s.themes()) {
-		skin = "classic"
-	}
-	wp, err := s.store.Setting(r.Context(), defaultWallpaperKey)
-	if err != nil {
-		internalError(w, err)
-		return
-	}
-	if wp != "" && !s.wallpaperExists(wp) {
-		wp = ""
-	}
-	writeJSON(w, http.StatusOK, appearance{DefaultSkin: skin, DefaultWallpaper: wp})
+	writeJSON(w, http.StatusOK, a)
 }
 
 // handleSetAppearance 设置平台默认的皮肤和壁纸，要有“应用管理”权限，和安装主题一样。
