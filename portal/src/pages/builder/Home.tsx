@@ -1,5 +1,5 @@
 import { Alert, Button, Card, List, Tag, Typography, Upload } from "antd";
-import { InboxOutlined } from "@ant-design/icons";
+import { InboxOutlined, SettingOutlined } from "@ant-design/icons";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   api,
@@ -14,8 +14,8 @@ import {
   type Installed,
   type Me,
   type Rules,
-} from "../api";
-import { SettingsIcon } from "../icons";
+} from "./api";
+
 
 // 展开在某条记录下方的内容：构建日志或安装日志，同一时间只展开一个。
 type Expanded = { id: number; panel: "build" | "install" };
@@ -38,7 +38,7 @@ function loadAuto(): number[] {
 }
 
 // 构建器首页：上传源码包、查看构建记录，日志在记录下方展开；成功的可以下载软件包或一键装到本平台。
-export default function Home() {
+export default function Home({ onSettings }: { onSettings: () => void }) {
   const [me, setMe] = useState<Me | null>(null);
   const [rules, setRules] = useState<Rules | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -334,12 +334,12 @@ export default function Home() {
   }
 
   return (
-    <main className="content stack">
+    <section className="builder-page">
       <Card
         title="上传源码包"
         extra={
           me?.menus.includes("settings") && (
-            <Button href="/apps/builder/settings/" icon={<SettingsIcon />}>
+            <Button onClick={onSettings} icon={<SettingOutlined />}>
               设置
             </Button>
           )
@@ -614,7 +614,7 @@ export default function Home() {
           />
         </section>
       </Card>
-    </main>
+    </section>
   );
 }
 

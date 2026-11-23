@@ -1,10 +1,10 @@
 import { Alert, Button, Card, Input, InputNumber, Typography } from "antd";
 import { useEffect, useState, type FormEvent } from "react";
-import { api, type BuildArg, type Settings as SettingsData } from "../api";
-import { BackIcon } from "../icons";
+import { api, type BuildArg, type Settings as SettingsData } from "./api";
+import { ArrowLeftOutlined } from "@ant-design/icons";
 
 // 构建器的设置页，从首页右上角的“设置”进入，左上角“构建记录”回首页；保存时由后端检查“设置”菜单权限。
-export default function Settings() {
+export default function Settings({ onBack }: { onBack: () => void }) {
   const [form, setForm] = useState<SettingsData | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -57,9 +57,9 @@ export default function Settings() {
     });
 
   return (
-    <main className="content stack">
+    <section className="builder-page">
       <div className="page-head">
-        <Button href="/apps/builder/" icon={<BackIcon />}>
+        <Button onClick={onBack} icon={<ArrowLeftOutlined />}>
           构建记录
         </Button>
         <Typography.Title level={5} style={{ margin: 0 }}>
@@ -184,6 +184,6 @@ export default function Settings() {
           </div>
         </form>
       )}
-    </main>
+    </section>
   );
 }

@@ -123,7 +123,6 @@ services:
       dockerfile: builder/Dockerfile
       args:
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
-        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     restart: unless-stopped
     environment:
       DOCKER_HOST: tcp://build-proxy:2375
