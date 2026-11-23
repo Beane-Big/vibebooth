@@ -1,0 +1,46 @@
+/* 玻璃效果：卡片、顶栏和弹出层的底色由 theme.tsx 改成半透明，这里模糊后面的背景，上沿加一道亮边，像 iOS 的毛玻璃。 */
+html.vb-glass .ant-card,
+html.vb-glass .topbar,
+html.vb-glass .vb-popup,
+html.vb-glass .ant-dropdown-menu,
+html.vb-glass .ant-select-dropdown,
+html.vb-glass .ant-modal-content,
+html.vb-glass .ant-popover-inner,
+html.vb-glass .ant-message-notice-content {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+}
+html.vb-glass .ant-card, html.vb-glass .topbar { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), var(--shadow); }
+
+/* 默认皮肤与认证页共享轻玻璃层级，主题包继续由自身参数控制。 */
+html.vb-default-theme .ant-card {
+  border: 1px solid color-mix(in srgb, var(--surface) 82%, var(--border)) !important;
+}
+html.vb-default-theme .topbar {
+  border-bottom: 1px solid color-mix(in srgb, var(--surface) 72%, var(--border));
+}
+html.vb-default-theme .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous) {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, white), var(--accent));
+  border-color: var(--accent);
+  box-shadow: inset 0 1px 0 #ffffff38, 0 5px 14px -8px var(--accent);
+}
+html.vb-default-theme .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):hover { filter: brightness(1.07); }
+html.vb-default-theme .ant-btn-default,
+html.vb-default-theme .ant-input-outlined,
+html.vb-default-theme .ant-input-affix-wrapper,
+html.vb-default-theme .ant-select-selector {
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+}
+html.vb-default-theme .ant-modal-mask {
+  background: #18233a33;
+  backdrop-filter: blur(6px);
+}
+html.vb-default-theme .ant-modal-content {
+  border: 1px solid color-mix(in srgb, var(--surface) 80%, var(--border));
+  box-shadow: inset 0 1px 0 #ffffff88, 0 24px 72px -20px #23335655;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html.vb-default-theme .ant-modal-content,
+  html.vb-default-theme .ant-card { background: var(--bg); backdrop-filter: none; }
+}
