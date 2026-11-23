@@ -3,7 +3,3 @@
 node_modules/
 dist/
 *.tsbuildinfo
-
-/builder/webdist/*
-!/builder/webdist/.gitkeep
-/builder/frontend/dist/

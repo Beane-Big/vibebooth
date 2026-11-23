@@ -201,6 +201,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   const theme = useActiveTheme();
   // 每个标签被刷新的次数：平台自带的应用用它作 key 重新挂载，首页变了就重新取应用列表。
   const [reloads, setReloads] = useState<Record<string, number>>({});
+  const [entryPath] = useState(() => location.pathname);
   const builtins = builtinAppsFor(user);
   const findBuiltin = (path: string) => builtins.find((app) => app.url === (builtinAliases[path] ?? path));
   useActivityBeat(tabs.active);
@@ -287,7 +288,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
             style={t.url !== tabs.active ? { display: "none" } : undefined}
           >
             {t.url === "/contacts" && <Contacts me={user} onMeChanged={onMeChanged} />}
-            {t.url === "/applications" && <AppManagement me={user} />}
+            {t.url === "/applications" && <AppManagement me={user} entryPath={entryPath} />}
             {t.url === "/settings" && <Settings />}
             {t.url === "/themes" && <Themes me={user} themes={theme.themes} />}
             {t.url === "/stats" && <Stats onChanged={onMeChanged} />}
