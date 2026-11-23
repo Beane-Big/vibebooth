@@ -1,10 +1,4 @@
-import {
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type SyntheticEvent,
-} from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { ConfigProvider, Tabs } from "antd";
 import { isAdmin, type Me } from "../api";
 import Modules from "./Modules";
@@ -39,13 +33,29 @@ function BuilderContent() {
     updateTheme.current?.();
   }, [componentTheme]);
   const [height, setHeight] = useState(520);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  useEffect(() => {
+    // 子页可能在 load 通知前后才挂载，也可能在设置页导航后重新加载；以实际就绪通知重连。
+    const ready = (event: MessageEvent) => {
+      if (
+        event.origin !== location.origin ||
+        event.source !== frameRef.current?.contentWindow ||
+        event.data?.type !== "vibebooth:builder-ready"
+      )
+        return;
+      connect();
+    };
+    window.addEventListener("message", ready);
+    return () => window.removeEventListener("message", ready);
+  }, []);
   const dispose = useRef<(() => void) | null>(null);
   useEffect(() => () => dispose.current?.(), []);
 
-  function loaded(event: SyntheticEvent<HTMLIFrameElement>) {
+  function connect() {
     dispose.current?.();
     dispose.current = null;
-    const frame = event.currentTarget;
+    const frame = frameRef.current;
+    if (!frame) return;
     const doc = frame.contentDocument;
     if (!doc) return;
     if (doc.location.pathname === "/login") {
@@ -119,7 +129,8 @@ function BuilderContent() {
       title="应用构建"
       src="/apps/builder/"
       style={{ height }}
-      onLoad={loaded}
+      ref={frameRef}
+      onLoad={connect}
     />
   );
 }
