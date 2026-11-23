@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { Upload } from "antd";
+import { InboxOutlined } from "@ant-design/icons";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   api,
   ApiError,
@@ -13,7 +15,7 @@ import {
   type Me,
   type Rules,
 } from "../api";
-import { ArchiveIcon, CloseIcon, SettingsIcon, UploadIcon } from "../icons";
+import { ArchiveIcon, CloseIcon, SettingsIcon } from "../icons";
 
 // 展开在某条记录下方的内容：构建日志或安装日志，同一时间只展开一个。
 type Expanded = { id: number; panel: "build" | "install" };
@@ -486,21 +488,15 @@ function FileDrop({
   onRemove: (f: File) => void;
   onError: (message: string) => void;
 }) {
-  const [over, setOver] = useState(false);
+
   const disabled = uploading !== null;
 
-  function choose(list: FileList | null | undefined) {
+  function choose(list: File[]) {
     const picked = Array.from(list ?? []);
     const zips = picked.filter((f) => f.name.toLowerCase().endsWith(".zip"));
     if (zips.length) onAdd(zips);
     const skipped = picked.filter((f) => !zips.includes(f)).map((f) => f.name);
     if (skipped.length) onError(`只能上传 .zip 格式的源码包，没有加入：${skipped.join("、")}`);
-  }
-
-  function drop(e: DragEvent) {
-    e.preventDefault();
-    setOver(false);
-    if (!disabled) choose(e.dataTransfer.files);
   }
 
   return (
@@ -534,44 +530,23 @@ function FileDrop({
           ))}
         </ul>
       )}
-      <label
-        className={"drop" + (over ? " over" : "") + (files.length ? " more" : "") + (disabled ? " disabled" : "")}
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (!disabled) setOver(true);
+      {/* 与应用管理使用同一种上传控件；文件仍由本页统一校验和排队，不自动上传。 */}
+      <Upload.Dragger
+        className="source-upload"
+        accept=".zip"
+        multiple
+        disabled={disabled}
+        showUploadList={false}
+        beforeUpload={(file, list) => {
+          if (file === list[list.length - 1]) choose(list);
+          return false;
         }}
-        onDragLeave={() => setOver(false)}
-        onDrop={drop}
       >
-        <input
-          className="sr-only"
-          type="file"
-          accept=".zip"
-          multiple
-          disabled={disabled}
-          onChange={(e) => {
-            choose(e.target.files);
-            // 清掉输入框，去掉一个文件后还能再选回来。
-            e.target.value = "";
-          }}
-        />
-        <span className="drop-icon">
-          <UploadIcon />
-        </span>
-        <span className="drop-text">
-          {files.length ? (
-            <>
-              <span className="drop-name">继续添加源码包</span>
-              <span className="muted">点击选择，或把 zip 拖到这里</span>
-            </>
-          ) : (
-            <>
-              <span className="drop-name">点击选择，或把 zip 拖到这里</span>
-              <span className="muted">可以一次选多个；模块仓库打成的 zip，不要带 node_modules、dist</span>
-            </>
-          )}
-        </span>
-      </label>
+        <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+        <p className="ant-upload-text">
+          {files.length ? "点击或把源码包拖到这里，继续添加" : "点击或把源码包拖到这里，可以多选"}
+        </p>
+      </Upload.Dragger>
     </div>
   );
 }

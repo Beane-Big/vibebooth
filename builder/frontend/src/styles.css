@@ -281,3 +281,16 @@ code { font-size: 13px; }
 html.platform-managed, html.platform-managed body, html.platform-managed #root { height: auto; min-height: 0; }
 html.platform-managed { overflow: hidden; }
 html.platform-managed .content { width: 100%; max-width: none; margin: 0; padding: 0 0 2px; }
+
+/* 上传框沿用应用管理的布局，并使用模块已有主题变量适配门户皮肤。 */
+.source-upload .ant-upload.ant-upload-drag {
+  border-color: var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+}
+.source-upload .ant-upload.ant-upload-drag:not(.ant-upload-disabled):hover,
+.source-upload .ant-upload.ant-upload-drag-hover,
+.source-upload .ant-upload.ant-upload-drag:focus-within { border-color: var(--accent); }
+.source-upload .ant-upload.ant-upload-drag p.ant-upload-drag-icon .anticon { color: var(--accent); }
+.source-upload .ant-upload.ant-upload-drag p.ant-upload-text { color: var(--text); }
+.source-upload .ant-upload.ant-upload-disabled p.ant-upload-text { color: var(--muted); }
