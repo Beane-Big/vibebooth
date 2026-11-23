@@ -68,8 +68,8 @@ export const builtinApps: BuiltinApp[] = [
   },
 ];
 
-// 旧入口统一指向合并后的平台应用；构建服务原地址仍供内嵌页使用。
-export const builtinAliases: Record<string, string> = { "/admin/modules": "/applications", "/apps/builder/": "/applications", "/admin/users": "/contacts" };
+// 旧入口统一指向合并后的平台应用。
+export const builtinAliases: Record<string, string> = { "/applications/build": "/applications", "/applications/build/settings": "/applications", "/admin/modules": "/applications", "/apps/builder/": "/applications", "/admin/users": "/contacts" };
 
 // 这个人能看到的自带应用。其他人输入网址也只会看到首页，接口本身也会拒绝。
 export const builtinAppsFor = (me: Me) =>

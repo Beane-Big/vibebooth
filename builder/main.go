@@ -69,7 +69,9 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.Handle("/api/platform/builder/", verifier.Middleware(adminOnly(api)))
-	mux.Handle("/apps/builder/", verifier.Middleware(adminOnly(builderFrontend())))
+	mux.Handle("GET /apps/builder/{$}", verifier.Middleware(adminOnly(http.RedirectHandler("/applications/build", http.StatusFound))))
+	mux.Handle("GET /apps/builder/settings", verifier.Middleware(adminOnly(http.RedirectHandler("/applications/build/settings", http.StatusFound))))
+	mux.Handle("GET /apps/builder/settings/{$}", verifier.Middleware(adminOnly(http.RedirectHandler("/applications/build/settings", http.StatusFound))))
 	// 平台安装器在内部网络里下载软件包，见 installlink.go。
 	mux.HandleFunc("GET /internal/packages/{token}", h.internalPackage)
 

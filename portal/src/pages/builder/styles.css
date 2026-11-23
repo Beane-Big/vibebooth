@@ -1,0 +1,24 @@
+.builder-page { display: flex; flex-direction: column; gap: 16px; }
+.builder-page .ant-card-body > .stack { display: flex; flex-direction: column; gap: 16px; }
+.builder-page .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.builder-page .page-head { display: flex; align-items: center; gap: 12px; }
+.builder-page .build-row.ant-list-item { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.builder-page .build-head { display: flex; flex-direction: column; gap: 4px; min-width: min(100%, 200px); flex: 1; }
+.builder-page .build-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.builder-page .build-title .ant-tag { margin-inline-end: 0; }
+.builder-page .item-name { font-weight: 600; }
+.builder-page .meta { display: flex; flex-wrap: wrap; }
+.builder-page .meta > span { white-space: nowrap; }
+.builder-page .meta > span:not(:last-child)::after { content: "·"; margin: 0 0.35em; }
+.builder-page .detail { flex-basis: 100%; min-width: 0; padding-top: 12px; }
+.builder-page .detail > ul { margin: 0; }
+.builder-page .file-row { display: flex; align-items: center; gap: 12px; width: 100%; }
+.builder-page .file-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.builder-page .field { display: flex; flex-direction: column; gap: 6px; }
+.builder-page .arg-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto; gap: 8px; align-items: center; }
+/* 窄屏参数单独一行；操作换行后仍留在对应记录下方。 */
+@media (max-width: 600px) {
+  .builder-page .arg-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .builder-page .arg-row > :first-child { grid-column: 1 / -1; }
+}
+.builder-page pre.log { margin: 0; padding: 12px; max-height: 480px; overflow: auto; background: var(--bg, #edf2fb); color: var(--text, #18233a); border-radius: 10px; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
