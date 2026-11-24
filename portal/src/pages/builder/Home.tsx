@@ -444,6 +444,9 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
                       <span className="item-name">{b.moduleName}</span>
                       <Tag>{b.version}</Tag>
                       <Tag
+                        className={
+                          b.status === "building" ? "tag-progress" : undefined
+                        }
                         color={
                           b.status === "success"
                             ? "success"
@@ -458,7 +461,9 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
                       </Tag>
                       {auto.includes(b.id) && <Tag>构建后安装</Tag>}
                       {installing === b.id ? (
-                        <Tag color="processing">安装中</Tag>
+                        <Tag className="tag-progress" color="processing">
+                          安装中
+                        </Tag>
                       ) : (
                         b.installStatus && (
                           <Tag
