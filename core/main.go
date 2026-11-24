@@ -155,10 +155,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/members", s.requirePerm(permMembers, s.handleListMembers))
 	mux.HandleFunc("PUT /api/platform/members/{id}/remark", s.requirePerm(permMembers, s.handleSetRemark))
 	// 对外接口：给模块后端在内部网络里直接调用（http://core:8080），网关不转发 /api/platform/ext/，浏览器访问不到。
-	// 和模块的对外接口一样目前没有服务令牌，只返回模块需要的字段（不含备注）。契约见 contracts/openapi.yaml。
-	mux.HandleFunc("GET /api/platform/ext/v1/persons", s.handleExtPersons)
-	mux.HandleFunc("GET /api/platform/ext/v1/persons/{id}", s.handleExtPerson)
-	mux.HandleFunc("GET /api/platform/ext/v1/users/{id}/person", s.handleExtUserPerson)
+	// 不再对外暴露全平台人员列表，模块只能按当前用户读取其联系人，或按已知用户 ID 批量解析资料。契约见 contracts/openapi.yaml。
+	mux.HandleFunc("GET /api/platform/ext/v1/users/{id}/contacts", s.handleExtUserContacts)
+	mux.HandleFunc("GET /api/platform/ext/v1/users", s.handleExtUsers)
 	s.mountRegistration(mux)
 	return mux
 }

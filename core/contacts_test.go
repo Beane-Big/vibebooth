@@ -225,3 +225,104 @@ func TestPersonsOneToOne(t *testing.T) {
 		}
 	}
 }
+
+// TestContactsMutualFriendsAndExtAPI 验证双向好友请求、同意/拒绝、互删以及对外联系人与批量资料接口。
+func TestContactsMutualFriendsAndExtAPI(t *testing.T) {
+	store := contactTestStore(t)
+	ctx := context.Background()
+	_, err := store.pool.Exec(ctx, `
+        INSERT INTO users (id,username,display_name,password_hash,email) VALUES
+          (1,'alice','爱丽丝','unused','alice@example.com'),
+          (2,'bob','鲍勃','unused','bob@example.com'),
+          (3,'carol','卡罗尔','unused','carol@example.com');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store}
+	alice, bob, carol := &User{ID: 1}, &User{ID: 2}, &User{ID: 3}
+
+	// Alice 添加 Bob -> Alice 侧为 pending，Bob 收到好友请求。
+	w := httptest.NewRecorder()
+	s.handleAddContact(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"identifier":"bob"}`)), alice)
+	if w.Code != 204 {
+		t.Fatalf("alice add bob: %d %s", w.Code, w.Body)
+	}
+	w = httptest.NewRecorder()
+	s.handleContacts(w, httptest.NewRequest(http.MethodGet, "/", nil), alice)
+	var aliceContacts []contactView
+	json.Unmarshal(w.Body.Bytes(), &aliceContacts)
+	if len(aliceContacts) != 1 || aliceContacts[0].Status != "pending" || aliceContacts[0].UserID != 2 {
+		t.Fatalf("alice contacts before accept: %+v", aliceContacts)
+	}
+
+	w = httptest.NewRecorder()
+	s.handleContactRequests(w, httptest.NewRequest(http.MethodGet, "/", nil), bob)
+	var bobReqs []contactRequestView
+	json.Unmarshal(w.Body.Bytes(), &bobReqs)
+	if len(bobReqs) != 1 || bobReqs[0].UserID != 1 {
+		t.Fatalf("bob requests: %+v", bobReqs)
+	}
+
+	// 未同意前，ext/v1 mutual=1 为空。
+	req := httptest.NewRequest(http.MethodGet, "/?mutual=1", nil)
+	req.SetPathValue("id", "1")
+	w = httptest.NewRecorder()
+	s.handleExtUserContacts(w, req)
+	var extMutual []extUser
+	json.Unmarshal(w.Body.Bytes(), &extMutual)
+	if len(extMutual) != 0 {
+		t.Fatalf("expected 0 mutual before accept, got %+v", extMutual)
+	}
+
+	// Bob 同意请求 -> 双方互为好友。
+	req = httptest.NewRequest(http.MethodPost, "/", nil)
+	req.SetPathValue("id", fmt.Sprint(bobReqs[0].ID))
+	w = httptest.NewRecorder()
+	s.handleAcceptContactRequest(w, req, bob)
+	if w.Code != 204 {
+		t.Fatalf("bob accept: %d %s", w.Code, w.Body)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/?mutual=1", nil)
+	req.SetPathValue("id", "1")
+	w = httptest.NewRecorder()
+	s.handleExtUserContacts(w, req)
+	json.Unmarshal(w.Body.Bytes(), &extMutual)
+	if len(extMutual) != 1 || extMutual[0].ID != 2 || !extMutual[0].Mutual {
+		t.Fatalf("expected mutual bob, got %+v", extMutual)
+	}
+
+	// Carol 添加 Alice 后被拒绝 -> Carol 侧记录删除。
+	w = httptest.NewRecorder()
+	s.handleAddContact(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"identifier":"alice"}`)), carol)
+	if w.Code != 204 {
+		t.Fatalf("carol add alice: %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	s.handleContactRequests(w, httptest.NewRequest(http.MethodGet, "/", nil), alice)
+	var aliceReqs []contactRequestView
+	json.Unmarshal(w.Body.Bytes(), &aliceReqs)
+	if len(aliceReqs) != 1 || aliceReqs[0].UserID != 3 {
+		t.Fatalf("alice requests: %+v", aliceReqs)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/", nil)
+	req.SetPathValue("id", fmt.Sprint(aliceReqs[0].ID))
+	w = httptest.NewRecorder()
+	s.handleRejectContactRequest(w, req, alice)
+	if w.Code != 204 {
+		t.Fatalf("alice reject: %d", w.Code)
+	}
+
+	// 批量查询 ext/v1/users?ids=1,2&viewer=1。
+	req = httptest.NewRequest(http.MethodGet, "/?ids=1,2&viewer=1", nil)
+	w = httptest.NewRecorder()
+	s.handleExtUsers(w, req)
+	var batch []extUser
+	json.Unmarshal(w.Body.Bytes(), &batch)
+	if len(batch) != 2 || batch[0].ID != 1 || batch[1].ID != 2 || !batch[1].Mutual {
+		t.Fatalf("ext users batch: %+v", batch)
+	}
+}
