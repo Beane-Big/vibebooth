@@ -295,7 +295,12 @@ function QueueRow({
         <Flex vertical gap={4} style={{ minWidth: 200, flex: 1 }}>
           <Space size={8} wrap>
             <Typography.Text strong>{item.file.name}</Typography.Text>
-            <Tag color={tag.color}>{tag.text}</Tag>
+            <Tag
+              className={item.status === "installing" ? "tag-progress" : undefined}
+              color={tag.color}
+            >
+              {tag.text}
+            </Tag>
           </Space>
           <Typography.Text type="secondary">
             {formatSize(item.file.size)}
