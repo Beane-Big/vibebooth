@@ -169,6 +169,8 @@ WHERE u.person_id IS NOT NULL AND u.person_id <> p.id
 ON CONFLICT DO NOTHING;
 -- 联系人以平台账号为目标；旧人员和邮箱记录保留，只有能匹配账号的条目迁移到新列表。
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS remark TEXT NOT NULL DEFAULT '';
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
 -- 已经通过账号添加的联系人也沿用原私人备注，不覆盖后来写在联系人上的内容。
 UPDATE contacts c SET remark=pr.remark
 FROM users u, person_remarks pr
@@ -186,6 +188,16 @@ LEFT JOIN person_remarks pr ON pr.user_id=c.owner_id AND pr.person_id=u.person_i
 WHERE u.id<>c.owner_id AND NOT u.disabled
 ORDER BY c.owner_id, u.id, c.id
 ON CONFLICT (owner_id, target_user_id) DO NOTHING;
+-- 双向好友迁移：历史数据中互为联系人的记录标记为 accepted。
+WITH migration AS (
+  INSERT INTO settings (key, value) VALUES ('contacts_mutual_v3', 'done')
+  ON CONFLICT (key) DO NOTHING RETURNING key
+)
+UPDATE contacts c SET status = 'accepted'
+FROM migration, contacts rev
+WHERE c.target_user_id IS NOT NULL
+  AND rev.owner_id = c.target_user_id
+  AND rev.target_user_id = c.owner_id;
 -- 关联了人员的账号，显示名称就是人员姓名。改姓名、关联账号时会一起改；这里把以前不一致的数据对齐一次。
 UPDATE users u SET display_name = p.name FROM persons p WHERE p.id = u.person_id AND u.display_name <> p.name;
 `

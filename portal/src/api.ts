@@ -39,7 +39,9 @@ export const hasPerm = (me: Me, perm: PlatformPerm) => me.perms.includes(perm);
 
 export type AppScope = "restricted" | "signed-in" | "public";
 export type AppAccess = { scope: AppScope; version: string };
-export type Contact = { id: number; name: string; username: string; photo: string; remark: string };
+export type ContactStatus = "pending" | "accepted";
+export type Contact = { id: number; userId: number; name: string; username: string; photo: string; remark: string; status: ContactStatus };
+export type ContactRequest = { id: number; userId: number; name: string; username: string; photo: string };
 
 export type App = {
   id: string;
@@ -208,6 +210,9 @@ export const api = {
   contacts: () => request<Contact[]>("/api/platform/contacts"),
   addContact: (identifier: string) =>
     request<void>("/api/platform/contacts", { method: "POST", body: JSON.stringify({ identifier }) }),
+  contactRequests: () => request<ContactRequest[]>("/api/platform/contacts/requests"),
+  acceptContactRequest: (id: number) => request<void>(`/api/platform/contacts/requests/${id}/accept`, { method: "POST" }),
+  rejectContactRequest: (id: number) => request<void>(`/api/platform/contacts/requests/${id}/reject`, { method: "POST" }),
   setContactRemark: (id: number, remark: string) => put(`/api/platform/contacts/${id}/remark`, { remark }),
   removeContact: (id: number) => request<void>("/api/platform/contacts/" + id, { method: "DELETE" }),
   apps: () => request<App[]>("/api/platform/apps"),

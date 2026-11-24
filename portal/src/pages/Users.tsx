@@ -75,9 +75,12 @@ export function MemberDetail({ contact, onSaved, onRemove }: {
       <Flex gap={16} align="center">
         <PersonAvatar person={contact} size={56} />
         <Flex vertical gap={2} style={{ flex: 1, minWidth: 0 }}>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {display}
-          </Typography.Title>
+          <Flex gap={8} align="center" wrap="wrap">
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              {display}
+            </Typography.Title>
+            {contact.status === "accepted" ? <Tag color="green">互为好友</Tag> : <Tag color="orange">待对方确认</Tag>}
+          </Flex>
           <Typography.Text type="secondary">{contact.username}</Typography.Text>
         </Flex>
       </Flex>

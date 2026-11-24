@@ -5,58 +5,47 @@ info:
   description: |
     给模块后端在内部网络里调用，基础地址 http://core:8080。
     网关不转发 /api/platform/ext/，浏览器访问不到。目前不需要令牌。
-    人员由管理员在门户的“联系人”应用里维护，本人可以在门户里改自己的姓名和头像；账号和人员一一对应（有账号就有人员）。模块只读，只保存人员 id，需要姓名和照片时调用这里。
-    显示人员时用 displayName 并带上 viewer：每个人在“用户”里给别人写的备注，在各个应用里会代替姓名显示（只对他自己）。
+    平台不再对外公开全量人员名单。模块只保存账号 id（即令牌里的 sub），
+    需要读取当前用户的联系人或按已知账号 id 解析头像与称呼时调用这里。
+    displayName 按 备注 > 姓名 > 账号 解析（备注仅对 viewer 自己生效）。
 paths:
-  /api/platform/ext/v1/persons:
+  /api/platform/ext/v1/users/{id}/contacts:
     get:
-      summary: 列出全部人员
+      summary: 列出某个账号的联系人
       parameters:
-        - { name: viewer, in: query, required: false, schema: { type: integer }, description: 看的人的账号 id（模块令牌里的 sub）；带上后 displayName 用他写的备注 }
+        - { name: id, in: path, required: true, schema: { type: integer }, description: 当前用户的账号 id（模块令牌里的 sub） }
+        - { name: mutual, in: query, required: false, schema: { type: string, enum: ["1", "true"] }, description: 传入 1 或 true 时只返回互为好友的联系人 }
       responses:
         "200":
-          description: 人员列表，按 id 升序
+          description: 联系人列表
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/Person" }
-  /api/platform/ext/v1/persons/{id}:
+                items: { $ref: "#/components/schemas/ExtUser" }
+  /api/platform/ext/v1/users:
     get:
-      summary: 查询一个人员
+      summary: 按指定账号 id 批量查询基础展示资料
       parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-        - { name: viewer, in: query, required: false, schema: { type: integer }, description: 看的人的账号 id（模块令牌里的 sub）；带上后 displayName 用他写的备注 }
+        - { name: ids, in: query, required: true, schema: { type: string }, description: 逗号分隔的账号 id，单次最多 200 个 }
+        - { name: viewer, in: query, required: false, schema: { type: integer }, description: 查看者的账号 id；带上后 displayName 优先使用其给对方写的联系人备注 }
       responses:
         "200":
-          description: 人员信息
+          description: 用户资料列表，按 id 升序
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Person" }
-        "404":
-          description: 人员不存在
-  /api/platform/ext/v1/users/{id}/person:
-    get:
-      summary: 查询一个账号属于哪个人员，用来知道当前登录的是谁
-      description: id 是账号 id，也就是模块令牌里的 sub。账号和人员一一对应，每个账号正好属于一个人员。
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-        - { name: viewer, in: query, required: false, schema: { type: integer }, description: 看的人的账号 id（模块令牌里的 sub）；带上后 displayName 用他写的备注 }
-      responses:
-        "200":
-          description: 账号所属的人员
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Person" }
-        "404":
-          description: 账号不存在，或者没有关联人员
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ExtUser" }
 components:
   schemas:
-    Person:
+    ExtUser:
       type: object
-      required: [id, name, photo, displayName]
+      required: [id, username, name, displayName, photo]
       properties:
-        id: { type: integer, description: 人员 id，模块只保存它 }
-        name: { type: string, description: 姓名 }
-        displayName: { type: string, description: 给人看的称呼：带了 viewer 且他给这个人写过备注时是备注，否则同 name。模块显示人员时用它 }
+        id: { type: integer, description: 账号 id，模块只保存它 }
+        username: { type: string, description: 账号名 }
+        name: { type: string, description: 姓名（可能为空） }
+        displayName: { type: string, description: 给人看的称呼：按 备注 > 姓名 > 账号 解析 }
         photo: { type: string, description: 头像，JPEG 的 data URL；没有时为空字符串 }
+        mutual: { type: boolean, description: 是否与查询者互为好友 }
