@@ -17,6 +17,7 @@ import Themes from "./pages/Themes";
 import Contacts from "./pages/Contacts";
 import { usePlatformDefaultsOnly, useThemeMode } from "./theme";
 import { useActiveTheme } from "./themeHost";
+import { loginActionText, preloadSiteInfo, useSiteInfo } from "./site";
 
 export default function App() {
   const [user, setUser] = useState<Me | null>(null);
@@ -24,13 +25,15 @@ export default function App() {
   const [loginConfirmed, setLoginConfirmed] = useState(() => new URLSearchParams(location.search).get("confirmed") === "1");
 
   useEffect(() => {
-    api
-      .me()
-      .then(setUser)
-      .catch((err) => {
-        if (!(err instanceof ApiError && err.status === 401)) console.error(err);
-      })
-      .finally(() => setLoading(false));
+    Promise.all([
+      api
+        .me()
+        .then(setUser)
+        .catch((err) => {
+          if (!(err instanceof ApiError && err.status === 401)) console.error(err);
+        }),
+      preloadSiteInfo(),
+    ]).finally(() => setLoading(false));
   }, []);
 
   if (loading)
@@ -104,16 +107,18 @@ function PublicEntry({
 }
 
 function LoginPrompt({ theme, onContinue }: { theme: ReturnType<typeof useActiveTheme>; onContinue: () => void }) {
+  const site = useSiteInfo();
+  const loginAction = loginActionText(site.allowRegistration);
   return (
     <Layout user={null} tabs={null} onHome={() => location.assign("/")} onLogout={() => {}}
       activeTheme={theme.active?.id} TopbarBackground={theme.def?.TopbarBackground}>
       <Flex align="center" justify="center" style={{ minHeight: "min(65vh, 560px)", padding: 24 }}>
         <Card style={{ width: "100%", maxWidth: 440, textAlign: "center" }}>
           <Result status="info" title="此功能需要登录"
-            subTitle="是否前往登录或注册？"
+            subTitle={`是否前往${loginAction}？`}
             extra={[
               <Button key="cancel" onClick={() => location.assign("/")}>暂不登录</Button>,
-              <Button key="continue" type="primary" onClick={onContinue}>登录或注册</Button>,
+              <Button key="continue" type="primary" onClick={onContinue}>{loginAction}</Button>,
             ]} />
         </Card>
       </Flex>
@@ -124,6 +129,8 @@ function LoginPrompt({ theme, onContinue }: { theme: ReturnType<typeof useActive
 
 function GuestPortal({ theme }: { theme: ReturnType<typeof useActiveTheme> }) {
   const { modal } = AntApp.useApp();
+  const site = useSiteInfo();
+  const loginAction = loginActionText(site.allowRegistration);
   const { skin, wallpaper } = useThemeMode();
   const [apps, setApps] = useState<AppInfo[] | null>(null);
   const [error, setError] = useState("");
@@ -139,8 +146,8 @@ function GuestPortal({ theme }: { theme: ReturnType<typeof useActiveTheme> }) {
         centered: true,
         className: "login-confirm",
         title: "此功能需要登录",
-        content: "是否前往登录或注册？",
-        okText: "登录或注册",
+        content: `是否前往${loginAction}？`,
+        okText: loginAction,
         cancelText: "暂不登录",
         onOk: () => { location.href = "/login?next=%2F&confirmed=1"; },
       });
@@ -163,8 +170,8 @@ function GuestPortal({ theme }: { theme: ReturnType<typeof useActiveTheme> }) {
         centered: true,
         className: "login-confirm",
         title: "此功能需要登录",
-        content: "是否前往登录或注册？",
-        okText: "登录或注册",
+        content: `是否前往${loginAction}？`,
+        okText: loginAction,
         cancelText: "暂不登录",
         onOk: () => { location.href = "/login?next=%2F&confirmed=1"; },
         onCancel: () => { tabs.close(tab.url); },
@@ -196,6 +203,7 @@ function GuestPortal({ theme }: { theme: ReturnType<typeof useActiveTheme> }) {
 // 直接访问自带应用的网址（例如按住 Ctrl 点卡片）时打开它的标签，地址栏回到首页；旧网址 /admin/modules 打开“设置”。
 function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => void; onLogout: () => void }) {
   const { modal } = AntApp.useApp();
+  const site = useSiteInfo();
   const [apps, setApps] = useState<AppInfo[] | null>(null);
   const [error, setError] = useState("");
   const tabs = useAppTabs();
@@ -299,13 +307,14 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   function onEmbeddedPortal(tab: AppTab, url: string, frame: HTMLIFrameElement) {
     if (url.startsWith("/login")) {
       const target = "/login?next=%2F";
+      const loginAction = loginActionText(site.allowRegistration);
       modal.confirm({
         icon: null,
         centered: true,
         className: "login-confirm",
         title: "此功能需要登录",
-        content: "是否前往登录或注册？",
-        okText: "登录或注册",
+        content: `是否前往${loginAction}？`,
+        okText: loginAction,
         cancelText: "暂不登录",
         onOk: () => { location.href = target + "&confirmed=1"; },
         onCancel: () => { tabs.close(tab.url); },
