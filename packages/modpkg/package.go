@@ -373,6 +373,14 @@ func (c *Compose) Render() ([]byte, error) {
 		if _, ok := out["restart"]; !ok {
 			out["restart"] = "unless-stopped"
 		}
+		// 统一给模块容器加上日志轮转，防止单个应用日志失控写满宿主机磁盘。
+		out["logging"] = map[string]any{
+			"driver": "json-file",
+			"options": map[string]string{
+				"max-size": "10m",
+				"max-file": "3",
+			},
+		}
 		out["networks"] = []string{"platform"}
 		out["environment"] = withEnv(out["environment"], "JWKS_URL", "http://core:8080/api/platform/.well-known/jwks.json")
 		// 有构建特权的模块，后端额外接上构建代理所在的内部网络。DOCKER_HOST 由平台决定，模块写了也会被覆盖。

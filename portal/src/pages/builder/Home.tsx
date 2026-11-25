@@ -1,5 +1,5 @@
-import { Alert, Button, Card, List, Tag, Typography, Upload } from "antd";
-import { InboxOutlined, SettingOutlined } from "@ant-design/icons";
+import { Alert, App as AntApp, Button, Card, List, Space, Tag, Typography, Upload } from "antd";
+import { ClearOutlined, CopyOutlined, DownloadOutlined, InboxOutlined, SettingOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   api,
@@ -8,8 +8,10 @@ import {
   isRunning,
   packageUrl,
   privilegeInfo,
+  skillUrl,
   statusText,
   type Build,
+  type BuildArg,
   type BuildDetail,
   type Installed,
   type Me,
@@ -338,11 +340,16 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
       <Card
         title="上传源码包"
         extra={
-          me?.menus.includes("settings") && (
-            <Button onClick={onSettings} icon={<SettingOutlined />}>
-              设置
+          <Space>
+            <Button href={skillUrl} icon={<DownloadOutlined />}>
+              下载开发 Skill
             </Button>
-          )
+            {me?.menus.includes("settings") && (
+              <Button onClick={onSettings} icon={<SettingOutlined />}>
+                设置
+              </Button>
+            )}
+          </Space>
         }
       >
         <form className="stack" onSubmit={upload}>
@@ -796,8 +803,16 @@ async function retry(fn: () => Promise<void>, times: number) {
 
 // BuildLog 显示一次构建的日志，构建没结束时每两秒刷新，结束后通知列表刷新。
 function BuildLog({ id, onFinish }: { id: number; onFinish: () => void }) {
+  const { message } = AntApp.useApp();
   const [detail, setDetail] = useState<BuildDetail | null>(null);
   const [error, setError] = useState("");
+  const [fixing, setFixing] = useState(false);
+
+  const reloadDetail = () =>
+    api
+      .build(id)
+      .then(setDetail)
+      .catch((err) => setError(err.message));
 
   useEffect(() => {
     let stopped = false;
@@ -819,6 +834,48 @@ function BuildLog({ id, onFinish }: { id: number; onFinish: () => void }) {
     };
   }, [id]);
 
+  async function applyMirrors(suggested: BuildArg[]) {
+    setFixing(true);
+    try {
+      const current = await api.settings();
+      const merged = [...current.buildArgs];
+      for (const arg of suggested) {
+        if (!merged.some((x) => x.name === arg.name)) {
+          merged.push(arg);
+        }
+      }
+      await api.saveSettings({ ...current, buildArgs: merged });
+      message.success("已配置国内镜像源，重新上传源码包即可构建");
+      reloadDetail();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "配置失败");
+    } finally {
+      setFixing(false);
+    }
+  }
+
+  async function pruneCache() {
+    setFixing(true);
+    try {
+      const res = await api.pruneCache();
+      message.success(`已清理缓存，释放 ${formatSize(res.reclaimedBytes)}`);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "清理失败");
+    } finally {
+      setFixing(false);
+    }
+  }
+
+  async function copyForAI(b: Build, logText: string, hintText: string) {
+    const prompt = buildAIPrompt("构建失败", b, b.error, hintText, logText);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      message.success("已复制诊断信息");
+    } catch {
+      message.error("复制失败");
+    }
+  }
+
   if (!detail)
     return (
       <div className="detail">
@@ -830,6 +887,8 @@ function BuildLog({ id, onFinish }: { id: number; onFinish: () => void }) {
       </div>
     );
   const b = detail.build;
+  const diag = detail.diagnosis;
+  const hintText = diag?.summary || b.hint;
   return (
     <div className="detail stack">
       {b.status === "queued" && (
@@ -840,7 +899,39 @@ function BuildLog({ id, onFinish }: { id: number; onFinish: () => void }) {
       {b.status === "failed" && (
         <Alert type="error" showIcon message={<>{b.error}</>} />
       )}
-      {b.hint && <Alert type="warning" showIcon message={<>{b.hint}</>} />}
+      {hintText && <Alert type="warning" showIcon message={<span style={{ whiteSpace: "pre-line" }}>{hintText}</span>} />}
+      {b.status === "failed" && (
+        <Space wrap>
+          {diag?.suggestedArgs && diag.suggestedArgs.length > 0 && (
+            <Button
+              type="primary"
+              size="small"
+              icon={<ThunderboltOutlined />}
+              loading={fixing}
+              onClick={() => applyMirrors(diag.suggestedArgs!)}
+            >
+              一键配置国内源（{diag.suggestedArgs.map((a) => a.name).join("、")}）
+            </Button>
+          )}
+          {diag?.canPruneCache && (
+            <Button
+              size="small"
+              icon={<ClearOutlined />}
+              loading={fixing}
+              onClick={pruneCache}
+            >
+              清理构建缓存
+            </Button>
+          )}
+          <Button
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={() => copyForAI(b, detail.log, hintText)}
+          >
+            复制给 AI 修复
+          </Button>
+        </Space>
+      )}
       {detail.logTruncated && (
         <Typography.Text type="secondary">
           日志太长，只显示最后一段。
@@ -853,6 +944,7 @@ function BuildLog({ id, onFinish }: { id: number; onFinish: () => void }) {
 
 // InstallLog 显示在构建器里最近一次安装的结果和日志。
 function InstallLog({ build }: { build: Build }) {
+  const { message } = AntApp.useApp();
   const [log, setLog] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -863,17 +955,47 @@ function InstallLog({ build }: { build: Build }) {
       .catch((err) => setError(err.message));
   }, [build.id]);
 
+  async function copyForAI() {
+    const prompt = buildAIPrompt("安装失败", build, "", "", log ?? "");
+    try {
+      await navigator.clipboard.writeText(prompt);
+      message.success("已复制诊断信息");
+    } catch {
+      message.error("复制失败");
+    }
+  }
+
   return (
     <>
-      <Typography.Text type="secondary">
-        {build.installedBy} 于{" "}
-        {build.installedAt && formatTime(build.installedAt)}{" "}
-        {build.installStatus === "success" ? "安装成功" : "安装失败"}
-      </Typography.Text>
+      <Space wrap>
+        <Typography.Text type="secondary">
+          {build.installedBy} 于{" "}
+          {build.installedAt && formatTime(build.installedAt)}{" "}
+          {build.installStatus === "success" ? "安装成功" : "安装失败"}
+        </Typography.Text>
+        {build.installStatus === "failed" && log !== null && (
+          <Button size="small" icon={<CopyOutlined />} onClick={copyForAI}>
+            复制给 AI 修复
+          </Button>
+        )}
+      </Space>
       {error && <Alert type="error" showIcon message={<>{error}</>} />}
       {log !== null && <pre className="log">{log || "安装器没有返回日志"}</pre>}
     </>
   );
+}
+
+function buildAIPrompt(stage: string, b: Build, errMsg: string, hint: string, log: string) {
+  const tailLines = log.trim().split("\n").slice(-80).join("\n");
+  const parts = [
+    `我的 Vibebooth 应用在「${stage}」阶段出错，请帮我定位并修改代码：`,
+    `- 应用：${b.moduleName}（id: ${b.moduleId}，version: ${b.version}）`,
+    errMsg ? `- 错误：${errMsg}` : "",
+    hint ? `- 平台诊断：${hint}` : "",
+    "请遵循 Vibebooth platform: 1 规范修复问题（检查 module.yaml、compose.yaml、Dockerfile 的 ARG 镜像源及 /api/<id>/health 健康检查）。",
+    tailLines ? `\n\`\`\`text\n${tailLines}\n\`\`\`` : "",
+  ];
+  return parts.filter(Boolean).join("\n");
 }
 
 // retentionText 按保留规则说明这条记录什么时候会被删除；排队和构建中的不会被清理。

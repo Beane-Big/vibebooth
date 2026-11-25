@@ -12,5 +12,6 @@ FROM alpine:3.22
 RUN adduser -D -u 10001 app && mkdir /data && chown app /data
 USER app
 COPY --from=build /out/builder /usr/local/bin/builder
+COPY skills/vibebooth-app-dev /usr/local/share/vibebooth/skill
 EXPOSE 8000
 ENTRYPOINT ["builder"]

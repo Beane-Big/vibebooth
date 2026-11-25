@@ -58,6 +58,8 @@ func main() {
 	// 保留规则和镜像源属于设置，只有有“设置”菜单的人能改；门户只是对他们显示设置入口，权限以这里为准。
 	api.HandleFunc("GET /api/platform/builder/settings", h.settings)
 	api.HandleFunc("PUT /api/platform/builder/settings", h.saveSettings)
+	api.HandleFunc("POST /api/platform/builder/cache/prune", h.pruneCache)
+	api.HandleFunc("GET /api/platform/builder/skill", h.downloadSkill)
 
 	mux := http.NewServeMux()
 	// 健康检查由平台在内部网络直接调用，不经过网关，也不需要令牌。
@@ -191,7 +193,27 @@ func (h *handlers) detail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log, truncated := tail(h.builder.logPath(rec.ID), maxLogSize)
-	writeJSON(w, http.StatusOK, map[string]any{"build": rec, "log": log, "logTruncated": truncated})
+	var diagnosis *BuildDiagnosis
+	if rec.Status == statusFailed {
+		if st, err := h.store.Settings(r.Context()); err == nil {
+			diagnosis = diagnoseBuild(log, st)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"build":        rec,
+		"log":          log,
+		"logTruncated": truncated,
+		"diagnosis":    diagnosis,
+	})
+}
+
+func (h *handlers) pruneCache(w http.ResponseWriter, r *http.Request) {
+	reclaimed, err := h.builder.docker.pruneCache(r.Context(), 0)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"reclaimedBytes": reclaimed})
 }
 
 func tail(path string, limit int64) (string, bool) {
