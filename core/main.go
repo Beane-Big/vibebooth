@@ -84,9 +84,11 @@ func main() {
 		key:      key,
 		registry: registry,
 		limiter:  newLoginLimiter(10, 15*time.Minute),
+		hub:      newNotifHub(),
 	}
 	go s.cleanupSessions(ctx)
 	go s.cleanupStats(ctx)
+	go s.cleanupNotifications(ctx)
 	go registry.Watch(ctx, 5*time.Second)
 
 	srv := &http.Server{
@@ -113,8 +115,12 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
-	// 站点的公开信息（备案号），登录页也要用，不用登录。
+	// 站点的公开信息（产品名称、Logo、备案号与注册开关），登录页也要用，不用登录。
 	mux.HandleFunc("GET /api/platform/site", s.handleSite)
+	mux.HandleFunc("PUT /api/platform/site", s.requireRole("admin", s.handleUpdateSite))
+	mux.HandleFunc("GET /api/platform/site/logo", s.handleSiteLogo)
+	mux.HandleFunc("POST /api/platform/site/logo", s.requireRole("admin", s.handleUploadSiteLogo))
+	mux.HandleFunc("DELETE /api/platform/site/logo", s.requireRole("admin", s.handleDeleteSiteLogo))
 	mux.HandleFunc("GET /api/platform/me", s.requireUser(s.handleMe))
 	mux.HandleFunc("PUT /api/platform/me/photo", s.requireUser(s.handleSetMyPhoto))
 	mux.HandleFunc("PUT /api/platform/me/name", s.requireUser(s.handleSetMyName))
@@ -123,6 +129,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/app-access", s.requireRole("admin", s.handleAppAccess))
 	mux.HandleFunc("PUT /api/platform/app-access/{id}", s.requireRole("admin", s.handleSetAppAccess))
 	s.mountContacts(mux)
+	s.mountNotifications(mux)
 	mux.HandleFunc("GET /api/platform/apps/{id}/icon", s.optionalUser(s.handleAppIcon))
 	mux.HandleFunc("GET /api/platform/apps/{id}/glyph", s.optionalUser(s.handleAppGlyph))
 	mux.HandleFunc("GET /api/platform/apps/{id}/menus", s.requireUser(s.handleAppMenus))

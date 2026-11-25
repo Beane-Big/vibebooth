@@ -6,6 +6,7 @@ import { builtinAliases, builtinAppsFor, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
 import Beian from "./components/Beian";
 import Layout from "./components/Layout";
+import NotificationBell from "./components/NotificationBell";
 import Login from "./pages/AuthForm";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
@@ -201,7 +202,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   const theme = useActiveTheme();
   // 每个标签被刷新的次数：平台自带的应用用它作 key 重新挂载，首页变了就重新取应用列表。
   const [reloads, setReloads] = useState<Record<string, number>>({});
-  const [entryPath] = useState(() => location.pathname);
+  const [entryPath, setEntryPath] = useState(() => location.pathname);
   const builtins = builtinAppsFor(user);
   const findBuiltin = (path: string) => builtins.find((app) => app.url === (builtinAliases[path] ?? path));
   useActivityBeat(tabs.active);
@@ -224,6 +225,21 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   function refresh(key: string) {
     if (key !== PORTAL_TAB && !isBuiltinURL(key)) reloadFrame(key);
     else setReloads((r) => ({ ...r, [key]: (r[key] ?? 0) + 1 }));
+  }
+
+  function openLink(link: string) {
+    const path = link.split("?")[0];
+    const builtin = findBuiltin(path);
+    if (builtin) {
+      setEntryPath(path);
+      tabs.open({ url: builtin.url, title: builtin.name });
+      if (builtin.url === "/applications") {
+        setReloads((r) => ({ ...r, [builtin.url]: (r[builtin.url] ?? 0) + 1 }));
+      }
+      return;
+    }
+    const matched = apps?.find((app) => link.startsWith(app.url));
+    tabs.open({ url: link, title: matched?.name ?? path });
   }
 
   // 应用的标签页里加载到了门户自己：登录过期时整页去登录，登录后回到门户并恢复标签；
@@ -265,6 +281,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
     <Layout
       user={user}
       tabs={<AppTabBar state={tabs} onRefresh={refresh} />}
+      notifications={<NotificationBell onNavigate={openLink} />}
       onHome={() => tabs.activate(PORTAL_TAB)}
       onUserInfo={usersApp && (() => tabs.open({ url: usersApp.url, title: usersApp.name }))}
       onLogout={onLogout}
@@ -289,7 +306,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
           >
             {t.url === "/contacts" && <Contacts me={user} onMeChanged={onMeChanged} />}
             {t.url === "/applications" && <AppManagement me={user} entryPath={entryPath} />}
-            {t.url === "/settings" && <Settings />}
+            {t.url === "/settings" && <Settings me={user} />}
             {t.url === "/themes" && <Themes me={user} themes={theme.themes} />}
             {t.url === "/stats" && <Stats onChanged={onMeChanged} />}
           </div>

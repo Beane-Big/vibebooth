@@ -150,6 +150,8 @@ func (s *Server) handleAddContact(w http.ResponseWriter, r *http.Request, me *Us
 	defer tx.Rollback(r.Context())
 
 	var reverseID int64
+	var becameMutual bool
+	var createdPending bool
 	err = tx.QueryRow(r.Context(), `SELECT id FROM contacts WHERE owner_id=$1 AND target_user_id=$2`, targetID, me.ID).Scan(&reverseID)
 	switch {
 	case err == nil:
@@ -161,10 +163,13 @@ func (s *Server) handleAddContact(w http.ResponseWriter, r *http.Request, me *Us
 		_, err = tx.Exec(r.Context(), `INSERT INTO contacts (owner_id, target_user_id, status)
             VALUES ($1, $2, 'accepted')
             ON CONFLICT (owner_id, target_user_id) DO UPDATE SET status='accepted'`, me.ID, targetID)
+		becameMutual = true
 	case errors.Is(err, pgx.ErrNoRows):
-		_, err = tx.Exec(r.Context(), `INSERT INTO contacts (owner_id, target_user_id, status)
+		tag, execErr := tx.Exec(r.Context(), `INSERT INTO contacts (owner_id, target_user_id, status)
             VALUES ($1, $2, 'pending')
             ON CONFLICT (owner_id, target_user_id) DO NOTHING`, me.ID, targetID)
+		err = execErr
+		createdPending = execErr == nil && tag.RowsAffected() > 0
 	default:
 		internalError(w, err)
 		return
@@ -180,6 +185,27 @@ func (s *Server) handleAddContact(w http.ResponseWriter, r *http.Request, me *Us
 	if err = tx.Commit(r.Context()); err != nil {
 		internalError(w, err)
 		return
+	}
+	if becameMutual {
+		_, _ = s.notify(r.Context(), pushInput{
+			Target:   pushTarget{UserIDs: []int64{targetID}},
+			AppID:    "contacts",
+			Title:    "已成为互为好友",
+			Body:     me.Name() + " 已添加你为联系人，现在互为好友。",
+			Link:     "/contacts",
+			DedupKey: "contact-mutual-" + strconv.FormatInt(me.ID, 10),
+			Urgent:   true,
+		})
+	} else if createdPending {
+		_, _ = s.notify(r.Context(), pushInput{
+			Target:   pushTarget{UserIDs: []int64{targetID}},
+			AppID:    "contacts",
+			Title:    "新的好友请求",
+			Body:     me.Name() + " 请求添加你为联系人。",
+			Link:     "/contacts",
+			DedupKey: "contact-req-" + strconv.FormatInt(me.ID, 10),
+			Urgent:   true,
+		})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -219,6 +245,15 @@ func (s *Server) handleAcceptContactRequest(w http.ResponseWriter, r *http.Reque
 		internalError(w, err)
 		return
 	}
+	_, _ = s.notify(r.Context(), pushInput{
+		Target:   pushTarget{UserIDs: []int64{requesterID}},
+		AppID:    "contacts",
+		Title:    "好友请求已通过",
+		Body:     me.Name() + " 同意了你的好友请求。",
+		Link:     "/contacts",
+		DedupKey: "contact-accepted-" + strconv.FormatInt(me.ID, 10),
+		Urgent:   true,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 

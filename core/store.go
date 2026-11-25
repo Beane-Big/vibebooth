@@ -200,6 +200,32 @@ WHERE c.target_user_id IS NOT NULL
   AND rev.target_user_id = c.owner_id;
 -- 关联了人员的账号，显示名称就是人员姓名。改姓名、关联账号时会一起改；这里把以前不一致的数据对齐一次。
 UPDATE users u SET display_name = p.name FROM persons p WHERE p.id = u.person_id AND u.display_name <> p.name;
+-- 平台通知中心：站内通知记录与外部推送通道（支持个人通道与系统级管理员通道）。
+CREATE TABLE IF NOT EXISTS notifications (
+	id         BIGSERIAL PRIMARY KEY,
+	user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	app_id     TEXT NOT NULL DEFAULT 'platform',
+	title      TEXT NOT NULL,
+	body       TEXT NOT NULL DEFAULT '',
+	link       TEXT NOT NULL DEFAULT '',
+	dedup_key  TEXT NOT NULL DEFAULT '',
+	read_at    TIMESTAMPTZ,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications (user_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS notifications_user_unread_idx ON notifications (user_id) WHERE read_at IS NULL;
+CREATE INDEX IF NOT EXISTS notifications_dedup_idx ON notifications (user_id, app_id, dedup_key) WHERE dedup_key <> '' AND read_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS notification_channels (
+	id         BIGSERIAL PRIMARY KEY,
+	user_id    BIGINT REFERENCES users(id) ON DELETE CASCADE,
+	kind       TEXT NOT NULL CHECK (kind IN ('webhook', 'bark', 'wecom', 'feishu', 'dingtalk')),
+	name       TEXT NOT NULL DEFAULT '',
+	target_url TEXT NOT NULL,
+	enabled    BOOLEAN NOT NULL DEFAULT true,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS notification_channels_user_idx ON notification_channels (user_id);
 `
 
 func (s *Store) Migrate(ctx context.Context) error {
@@ -602,6 +628,27 @@ func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 		INSERT INTO settings (key, value) VALUES ($1, $2)
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, key, value)
 	return err
+}
+
+// SettingsByKeys 一次读取多项设置，返回的 map 只包含数据库里已有记录的键，调用方据此区分“未设置”和“显式设为空”。
+func (s *Store) SettingsByKeys(ctx context.Context, keys ...string) (map[string]string, error) {
+	out := make(map[string]string, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT key, value FROM settings WHERE key = ANY($1)`, keys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, rows.Err()
 }
 
 func isForeignKeyViolation(err error) bool {

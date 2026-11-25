@@ -2,6 +2,7 @@ import { theme } from "antd";
 import { useMemo } from "react";
 import url from "../assets/wordmark.svg";
 import svg from "../assets/wordmark.svg?raw";
+import { useSiteInfo } from "../site";
 import { themeID, useThemeMode } from "../theme";
 
 // 字标原来的渐变（从左到右四个颜色），以及从渐变中间的颜色调深得到的投影色和描边色。
@@ -39,16 +40,53 @@ function fromPrimary(color: string) {
   return [-60, 0, 60].map((shift) => `hsl(${Math.round(h * 60 + shift + 360) % 360}, ${pct(s)}, ${pct(l)})`);
 }
 
-// Wordmark 是顶栏的平台字标。主题指定了字标颜色（ThemeOverrides.wordmark）时换成主题的颜色；
-// 主题包没指定时跟着主题的主色；内置皮肤是原来的蓝紫粉渐变。
+// Wordmark 是顶栏的平台字标：上传了自定义 Logo 时显示 Logo 与站点名；修改了站点名时按主题渐变色渲染文字字标；默认使用 Vibebooth 矢量字标。
 export default function Wordmark() {
+  const site = useSiteInfo();
   const { wordmark, skin } = useThemeMode();
   const { token } = theme.useToken();
   const colors = wordmark ?? (themeID(skin) ? fromPrimary(token.colorPrimary) : undefined);
-  const key = colors?.join("|") ?? "";
-  const src = useMemo(() => {
-    const colors = key.split("|").filter((c) => safeColor.test(c)).slice(0, 4);
-    return colors.length ? `data:image/svg+xml,${encodeURIComponent(recolor(colors))}` : url;
-  }, [key]);
-  return <img src={src} alt="Vibebooth" />;
+  const safeColors = useMemo(
+    () => (colors ?? []).filter((c) => safeColor.test(c)).slice(0, 4),
+    [colors?.join("|")],
+  );
+  const src = useMemo(
+    () => (safeColors.length ? `data:image/svg+xml,${encodeURIComponent(recolor(safeColors))}` : url),
+    [safeColors.join("|")],
+  );
+
+  if (site.hasLogo && site.logoUrl) {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        <img src={site.logoUrl} alt={site.name} style={{ height: 26, width: "auto", maxWidth: 120, borderRadius: 6, objectFit: "contain" }} />
+        <span style={{ fontWeight: 700, fontSize: 16, letterSpacing: "-0.01em", color: "var(--text)" }}>{site.name}</span>
+      </span>
+    );
+  }
+
+  if (site.name && site.name !== "Vibebooth") {
+    const gradient = safeColors.length >= 2
+      ? `linear-gradient(90deg, ${safeColors.join(", ")})`
+      : safeColors.length === 1
+        ? safeColors[0]
+        : "linear-gradient(90deg, #4b8bff, #7b63e6, #e668c4)";
+    return (
+      <span
+        style={{
+          fontWeight: 800,
+          fontSize: 18,
+          letterSpacing: "-0.02em",
+          background: gradient,
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: safeColors.length === 1 ? undefined : "transparent",
+          color: safeColors.length === 1 ? safeColors[0] : undefined,
+          lineHeight: 1,
+        }}
+      >
+        {site.name}
+      </span>
+    );
+  }
+
+  return <img src={src} alt={site.name || "Vibebooth"} />;
 }

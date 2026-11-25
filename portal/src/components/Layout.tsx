@@ -13,6 +13,7 @@ import { ThemeBoundary, type TopbarProps } from "../themeHost";
 export default function Layout({
   user,
   tabs,
+  notifications,
   onHome,
   onUserInfo,
   onLogout,
@@ -23,6 +24,7 @@ export default function Layout({
 }: {
   user: Me | null;
   tabs: ReactNode;
+  notifications?: ReactNode;
   onHome: () => void;
   onUserInfo?: () => void;
   onLogout: () => void;
@@ -70,6 +72,7 @@ export default function Layout({
           </a>
         )}
         {tabs}
+        {user && notifications}
         {user ? <Dropdown
           trigger={["click"]}
           placement="bottomRight"

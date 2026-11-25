@@ -5,11 +5,11 @@ import liquidBg from "../assets/liquid-bg.jpg";
 import { api, ApiError, type Me } from "../api";
 import Beian from "../components/Beian";
 import { confirmRules } from "../password";
+import { useSiteInfo } from "../site";
 import "./Auth.css";
 
 type Mode = "login" | "register" | "complete";
 type Fields = { username: string; email?: string; password: string; confirm?: string; remember?: boolean };
-const titles = { login: "登录 Vibebooth", register: "创建 Vibebooth 账号", complete: "注册完成" };
 const required = (message: string) => ({ required: true, message });
 const emailRule = { type: "email" as const, message: "请输入有效的邮箱地址" };
 const usernameRules = [required("请输入账号"), {
@@ -35,6 +35,7 @@ function PasswordField(props: InputProps) {
 }
 
 function AuthForm({ onLogin }: { onLogin: (user: Me) => void }) {
+  const site = useSiteInfo();
   const [mode, setMode] = useState<Mode>("login");
   const [policies, setPolicies] = useState({ terms: "", privacy: "" });
   const [error, setError] = useState("");
@@ -42,8 +43,16 @@ function AuthForm({ onLogin }: { onLogin: (user: Me) => void }) {
   const [form] = Form.useForm<Fields>();
   const watched = Form.useWatch("password", form) ?? "";
   const strength = Math.min(3, Number(watched.length >= 8) + Number(watched.length >= 12) + Number(/[\p{L}]/u.test(watched) && /[^\p{L}]/u.test(watched)));
+  const brand = site.name || "Vibebooth";
+  const titles: Record<Mode, string> = {
+    login: `登录 ${brand}`,
+    register: `创建 ${brand} 账号`,
+    complete: "注册完成",
+  };
 
-  useEffect(() => { api.authOptions().then(setPolicies).catch(() => {}); }, []);
+  useEffect(() => {
+    api.authOptions().then((opt) => setPolicies({ terms: opt.terms, privacy: opt.privacy })).catch(() => {});
+  }, []);
 
   function go(next: Mode) {
     setMode(next);
@@ -79,8 +88,11 @@ function AuthForm({ onLogin }: { onLogin: (user: Me) => void }) {
       <section className="auth-card" aria-labelledby="auth-title">
         <header className={mode === "complete" ? "auth-heading auth-success" : "auth-heading"}>
           {mode === "complete" && <span className="auth-success-mark" aria-hidden="true"><CheckOutlined /></span>}
+          {mode !== "complete" && site.hasLogo && site.logoUrl && (
+            <img src={site.logoUrl} alt={brand} style={{ height: 40, width: "auto", maxWidth: 160, objectFit: "contain", marginBottom: 8, borderRadius: 8 }} />
+          )}
           <h1 id="auth-title" role={mode === "complete" ? "status" : undefined}>{titles[mode]}</h1>
-          {mode === "login" && (
+          {mode === "login" && site.allowRegistration && (
             <p className="auth-signup">还没有账号？<Button type="link" disabled={busy} onClick={() => go("register")}>注册账号</Button></p>
           )}
         </header>
