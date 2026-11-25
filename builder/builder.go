@@ -335,7 +335,7 @@ func mirrorHint(log string, settings Settings) string {
 		}
 	}
 	if dockerHub {
-		hints = append(hints, "服务器拉不到 Docker Hub 上的基础镜像。这要给服务器的 Docker 配镜像加速，见平台仓库的 DEPLOY-SERVER.md，构建器的设置管不到。")
+		hints = append(hints, "服务器拉不到 Docker Hub 上的基础镜像。请给宿主机的 Docker 配置镜像加速（例如在 /etc/docker/daemon.json 中配置 registry-mirrors 或在 Docker Desktop 的 Docker Engine 中添加镜像源），构建器的设置管不到。")
 	}
 	return strings.Join(hints, "\n")
 }

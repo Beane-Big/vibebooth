@@ -1,6 +1,6 @@
 # Vibebooth 架构说明
 
-> 对应代码版本：平台本体（含模块安装器、用户与菜单权限）。模块在各自的仓库里，不属于本仓库；下文用两个假想的模块 `notes`（记事）和 `contacts`（通讯录）举例。代码里的服务、路由、登录流程有变化时，要同步更新本文档。部署步骤见 [DEPLOY.md](DEPLOY.md)，模块开发规范见 [docs/module-spec.md](docs/module-spec.md)，门户主题规范见 [docs/theme-spec.md](docs/theme-spec.md)。
+> 对应代码版本：平台本体（含模块安装器、用户与菜单权限）。模块在各自的仓库里，不属于本仓库；下文用两个假想的模块 `notes`（记事）和 `contacts`（通讯录）举例。代码里的服务、路由、登录流程有变化时，要同步更新本文档。模块开发规范见 [docs/module-spec.md](docs/module-spec.md)，门户主题规范见 [docs/theme-spec.md](docs/theme-spec.md)。
 
 ## 一句话总结
 

@@ -302,7 +302,7 @@ func TestMirrorHint(t *testing.T) {
 		{"Go 代理设置了", goLog, Settings{BuildArgs: []BuildArg{{"GOPROXY", "https://goproxy.cn,direct"}}}, []string{"ARG GOPROXY"}},
 		{"别的源没设置", "构建参数 HF_ENDPOINT" + unsetArg + "\nurlopen error [Errno 110] Connection timed out ETIMEDOUT\n", Settings{}, []string{"HF_ENDPOINT"}},
 		{"npm 镜像源没设置", npmLog, Settings{}, []string{"registry.npmmirror.com"}},
-		{"Docker Hub", hubLog, Settings{}, []string{"DEPLOY-SERVER.md"}},
+		{"Docker Hub", hubLog, Settings{}, []string{"registry-mirrors"}},
 		{"几种一起", goLog + npmLog, Settings{}, []string{"goproxy.cn", "registry.npmmirror.com"}},
 		{"不是网络问题", okLog + "main.go:3: undefined: foo\n", Settings{}, nil},
 	}
@@ -319,7 +319,7 @@ func TestMirrorHint(t *testing.T) {
 				t.Errorf("%s：提示 %q 里应该有 %q", c.name, got, w)
 			}
 		}
-		if strings.Contains(got, "DEPLOY-SERVER") && !strings.Contains(c.log, "docker.io") {
+		if strings.Contains(got, "registry-mirrors") && !strings.Contains(c.log, "docker.io") {
 			t.Errorf("%s：不该提示 Docker Hub", c.name)
 		}
 	}
