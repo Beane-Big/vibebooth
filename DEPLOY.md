@@ -269,3 +269,19 @@ Windows 上的 `C:\Users\<你的用户名>\...\home-platform` 和 Ubuntu 里的 
 平台自带管理员构建服务。在首页「应用管理 → 应用构建」上传源码 ZIP，构建成功后安装；也支持直接上传已构建安装包。首次部署无需额外安装构建器。部署网络、Go/npm 镜像源配置与平台共用。
 
 构建器页面随 Portal 发布，构建 API 由 builder 服务提供。从独立构建页面升级时，同时重新构建并部署这两个服务（`docker compose up -d --build portal builder`）。
+
+## 一键安装与备份恢复
+
+下载仓库后，可以直接运行一键脚本自动生成 `.env` 并启动平台（默认使用 `docker-compose.prebuilt.yml` 预构建镜像，免本地编译）：
+
+```bash
+bash scripts/install.sh            # 国内网络可加 --cn；需要源码构建加 --from-source
+```
+
+日常备份与迁移可使用内置备份脚本（包含平台数据库、核心数据、已安装模块清单以及所有 `mod-*` 模块数据卷）：
+
+```bash
+bash scripts/backup.sh export
+bash scripts/backup.sh restore vibebooth-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
