@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { App as AntApp, Button, Card, Empty, Flex, Form, Input, List, Modal, Select, Space, Switch, Tabs, Tag, Typography, Upload } from "antd";
+import { Alert, App as AntApp, Button, Card, Empty, Flex, Form, Input, List, Modal, Select, Space, Switch, Tabs, Tag, Typography, Upload } from "antd";
 import { DeleteOutlined, PlusOutlined, SendOutlined, UploadOutlined } from "@ant-design/icons";
 import {
   api,
@@ -12,11 +12,19 @@ import {
 import { setSiteInfo, useSiteInfo } from "../site";
 
 const channelKindLabel: Record<ChannelKind, string> = {
-  bark: "Bark",
-  wecom: "企业微信",
-  feishu: "飞书",
-  dingtalk: "钉钉",
-  webhook: "Webhook",
+  bark: "Bark（iPhone 推送）",
+  wecom: "企业微信群机器人",
+  feishu: "飞书群机器人",
+  dingtalk: "钉钉群机器人",
+  webhook: "通用 Webhook",
+};
+
+const channelKindHelp: Record<ChannelKind, string> = {
+  bark: "在 iPhone 安装免费 App「Bark」，打开首页直接复制推送链接粘贴到这里即可。",
+  wecom: "在企业微信群右上角点「添加群机器人」，创建后复制 Webhook 地址。",
+  feishu: "在飞书群「设置 → 群机器人 → 添加自定义机器人」，创建后复制 Webhook 地址。",
+  dingtalk: "在钉钉群「设置 → 机器人 → 添加自定义机器人」，创建后复制 Webhook 地址。",
+  webhook: "填写任意接收 JSON POST 请求的自定义推送地址。",
 };
 
 export default function Settings({ me }: { me: Me }) {
@@ -164,6 +172,7 @@ function NotificationSettings({ admin }: { admin: boolean }) {
   const [saving, setSaving] = useState(false);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [form] = Form.useForm();
+  const watchedKind = (Form.useWatch("kind", form) as ChannelKind | undefined) ?? "bark";
 
   function load() {
     setLoading(true);
@@ -230,6 +239,12 @@ function NotificationSettings({ admin }: { admin: boolean }) {
 
   return (
     <Flex vertical gap={16} style={{ maxWidth: 720 }}>
+      <Alert
+        type="info"
+        showIcon
+        message="消息推送说明"
+        description="打开网页时，顶栏小铃铛会实时弹出好友申请、构建结果及各应用的提醒；关闭网页离线时，重要消息会自动通过下方配置的通道发到你的手机或聊天群。不配置也不影响站内铃铛正常使用。"
+      />
       <Card
         title="离线推送通道"
         extra={
@@ -248,7 +263,7 @@ function NotificationSettings({ admin }: { admin: boolean }) {
         <List
           loading={loading}
           dataSource={channels}
-          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无推送通道" /> }}
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂未配置离线推送通道" /> }}
           renderItem={(ch) => (
             <List.Item
               actions={[
@@ -277,7 +292,7 @@ function NotificationSettings({ admin }: { admin: boolean }) {
                   <Space size={6}>
                     <span>{ch.name || channelKindLabel[ch.kind]}</span>
                     <Tag>{channelKindLabel[ch.kind]}</Tag>
-                    {ch.scope === "system" && <Tag color="blue">管理员系统通道</Tag>}
+                    {ch.scope === "system" && <Tag color="blue">管理员系统通知</Tag>}
                   </Space>
                 }
                 description={<Typography.Text type="secondary" ellipsis>{ch.targetUrl}</Typography.Text>}
@@ -298,11 +313,15 @@ function NotificationSettings({ admin }: { admin: boolean }) {
       >
         <Form form={form} layout="vertical" onFinish={addChannel}>
           {admin && (
-            <Form.Item name="scope" label="适用范围">
+            <Form.Item
+              name="scope"
+              label="接收范围"
+              extra="选“管理员系统通知”后，构建结果及应用发给管理员的提醒都会推到此通道。"
+            >
               <Select
                 options={[
-                  { value: "user", label: "仅本人" },
-                  { value: "system", label: "系统管理员通知" },
+                  { value: "user", label: "仅本人消息" },
+                  { value: "system", label: "管理员系统通知" },
                 ]}
               />
             </Form.Item>
@@ -312,12 +331,13 @@ function NotificationSettings({ admin }: { admin: boolean }) {
               options={Object.entries(channelKindLabel).map(([value, label]) => ({ value, label }))}
             />
           </Form.Item>
-          <Form.Item name="name" label="名称" rules={[{ max: 40, message: "不能超过 40 个字符" }]}>
+          <Form.Item name="name" label="备注名称" rules={[{ max: 40, message: "不能超过 40 个字符" }]}>
             <Input maxLength={40} />
           </Form.Item>
           <Form.Item
             name="targetUrl"
             label="推送地址"
+            extra={channelKindHelp[watchedKind]}
             rules={[
               { required: true, message: "请输入推送地址" },
               { type: "url", message: "请输入有效的 URL" },

@@ -206,7 +206,7 @@ func (b *builder) build(ctx context.Context, rec *Build, log io.Writer) error {
 		}
 	}
 
-	fmt.Fprintln(log, "\n==> 导出镜像")
+	fmt.Fprintln(log, "\n==> 正在导出镜像，请稍候…")
 	imagesPath := filepath.Join(b.buildDir(rec.ID), modpkg.ImagesFile)
 	defer os.Remove(imagesPath)
 	f, err := os.Create(imagesPath)
@@ -221,7 +221,7 @@ func (b *builder) build(ctx context.Context, rec *Build, log io.Writer) error {
 		return fmt.Errorf("导出镜像失败: %w", err)
 	}
 
-	fmt.Fprintln(log, "==> 打包并校验")
+	fmt.Fprintln(log, "==> 镜像导出完成，正在打包并校验…")
 	if err := modpkg.Pack(work, imagesPath, b.packagePath(rec.ID)); err != nil {
 		return fmt.Errorf("打包失败: %w", err)
 	}

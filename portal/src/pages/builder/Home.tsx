@@ -1,6 +1,7 @@
 import { Alert, App as AntApp, Button, Card, List, Space, Tag, Typography, Upload } from "antd";
-import { ClearOutlined, CopyOutlined, DownloadOutlined, InboxOutlined, SettingOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { ClearOutlined, CopyOutlined, DownloadOutlined, InboxOutlined, LoadingOutlined, SettingOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { notifyAppsChanged } from "../../api";
 import {
   api,
   ApiError,
@@ -300,12 +301,13 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
     try {
       ({ log } = await api.install(b, allowPrivileges));
       ok = true;
+      void notifyAppsChanged(b.moduleId);
       if (b.moduleId === SELF_ID)
         message = `构建器已更新为 ${b.version}，刷新本页后生效。`;
       else if (current)
-        message = `${b.moduleName} 已更新为 ${b.version}，已经打开的页签刷新后生效。`;
+        message = `${b.moduleName} 已更新为 ${b.version}，应用列表和已打开页签已自动刷新。`;
       else
-        message = `${b.moduleName} ${b.version} 已安装，几秒后出现在应用列表里。`;
+        message = `${b.moduleName} ${b.version} 已安装，应用列表已自动刷新。`;
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setConfirming({ id: b.id, privileges: err.privileges, current });
@@ -895,6 +897,14 @@ function BuildLog({ id, onFinish }: { id: number; onFinish: () => void }) {
         <Typography.Text type="secondary">
           前面还有构建在进行，轮到时会自动开始。
         </Typography.Text>
+      )}
+      {b.status === "building" && (
+        <Alert
+          type="info"
+          showIcon
+          icon={<LoadingOutlined spin />}
+          message="正在构建中，日志会自动实时刷新（首次构建需下载基础环境与依赖，耗时可能较长，请耐心等待）"
+        />
       )}
       {b.status === "failed" && (
         <Alert type="error" showIcon message={<>{b.error}</>} />

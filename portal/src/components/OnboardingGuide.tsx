@@ -168,8 +168,8 @@ export default function OnboardingGuide({
         },
         {
           id: "appearance",
-          title: "切换主题或配置推送",
-          desc: "挑选喜欢的皮肤壁纸，或开启离线消息提醒",
+          title: "切换外观与壁纸",
+          desc: "在「外观」挑选喜欢的主题与壁纸",
           action: "选外观",
           link: "/themes",
         },

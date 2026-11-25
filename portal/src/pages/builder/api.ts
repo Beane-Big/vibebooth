@@ -114,6 +114,7 @@ async function send<T>(path: string, init?: RequestInit): Promise<{ data: T; ser
 
 export const packageUrl = (id: number) => `/api/platform/builder/builds/${id}/package`;
 export const skillUrl = "/api/platform/builder/skill";
+export const themeSkillUrl = "/api/platform/builder/theme-skill";
 
 export const api = {
   me: () => request<Me>("/api/platform/builder/me"),

@@ -16,10 +16,13 @@ import (
 //	#3 1.234 added 120 packages
 //	#3 DONE 5.6s
 //
-// 只解析用得到的字段，定义见 github.com/moby/buildkit/api/services/control/control.proto。
+// 同时解析字段 2（VertexStatus），把拉取基础镜像、解压层、导出镜像等耗时阶段的进度按节流频率写进日志，
+// 避免首次构建下载基础镜像或导出镜像时日志长时间静止让用户误以为卡死。
+// 字段定义见 github.com/moby/buildkit/api/services/control/control.proto。
 type progress struct {
 	log      io.Writer
 	vertexes map[string]*vertex
+	statuses map[string]*statusState
 	next     int
 }
 
@@ -31,8 +34,18 @@ type vertex struct {
 	finished  bool
 }
 
+type statusState struct {
+	lastLogged time.Time
+	lastPct    int
+	done       bool
+}
+
 func newProgress(log io.Writer) *progress {
-	return &progress{log: log, vertexes: map[string]*vertex{}}
+	return &progress{
+		log:      log,
+		vertexes: map[string]*vertex{},
+		statuses: map[string]*statusState{},
+	}
 }
 
 func (p *progress) vertex(digest string) *vertex {
@@ -52,7 +65,7 @@ func (p *progress) announce(v *vertex) {
 	}
 }
 
-// write 处理一条 StatusResponse：1 是 Vertex，3 是 VertexLog，4 是 VertexWarning。解析不了的部分直接跳过。
+// write 处理一条 StatusResponse：1 是 Vertex，2 是 VertexStatus，3 是 VertexLog，4 是 VertexWarning。解析不了的部分直接跳过。
 func (p *progress) write(data []byte) {
 	eachField(data, func(num protowire.Number, typ protowire.Type, b []byte) {
 		if typ != protowire.BytesType {
@@ -61,6 +74,8 @@ func (p *progress) write(data []byte) {
 		switch num {
 		case 1:
 			p.writeVertex(b)
+		case 2:
+			p.writeStatus(b)
 		case 3:
 			p.writeLog(b)
 		case 4:
@@ -121,6 +136,96 @@ func (p *progress) writeVertex(b []byte) {
 		} else {
 			fmt.Fprintf(p.log, "#%d DONE %.1fs\n", v.n, completed.Sub(v.started).Seconds())
 		}
+	}
+}
+
+// VertexStatus: 1 ID, 2 vertex, 3 name, 4 current, 5 total, 6 timestamp, 7 started, 8 completed。
+func (p *progress) writeStatus(b []byte) {
+	var id, digest, name string
+	var current, total int64
+	var ts, started, completed time.Time
+	eachField(b, func(num protowire.Number, typ protowire.Type, f []byte) {
+		switch {
+		case num == 1 && typ == protowire.BytesType:
+			id = string(f)
+		case num == 2 && typ == protowire.BytesType:
+			digest = string(f)
+		case num == 3 && typ == protowire.BytesType:
+			name = string(f)
+		case num == 4 && typ == protowire.VarintType:
+			v, _ := protowire.ConsumeVarint(f)
+			current = int64(v)
+		case num == 5 && typ == protowire.VarintType:
+			v, _ := protowire.ConsumeVarint(f)
+			total = int64(v)
+		case num == 6 && typ == protowire.BytesType:
+			ts = timestamp(f)
+		case num == 7 && typ == protowire.BytesType:
+			started = timestamp(f)
+		case num == 8 && typ == protowire.BytesType:
+			completed = timestamp(f)
+		}
+	})
+	if digest == "" || name == "" {
+		return
+	}
+	v := p.vertex(digest)
+	p.announce(v)
+	key := digest + "|" + id + "|" + name
+	st := p.statuses[key]
+	if st == nil {
+		st = &statusState{lastPct: -1}
+		p.statuses[key] = st
+	}
+	if st.done {
+		return
+	}
+	now := ts
+	if now.IsZero() {
+		now = time.Now()
+	}
+	finished := !completed.IsZero()
+	if finished {
+		st.done = true
+		if total > 0 {
+			fmt.Fprintf(p.log, "#%d %s %s done\n", v.n, name, formatBytes(total))
+		} else if !started.IsZero() {
+			fmt.Fprintf(p.log, "#%d %s done (%.1fs)\n", v.n, name, completed.Sub(started).Seconds())
+		} else {
+			fmt.Fprintf(p.log, "#%d %s done\n", v.n, name)
+		}
+		return
+	}
+
+	pct := -1
+	if total > 0 {
+		pct = int(current * 100 / total)
+	}
+	shouldLog := st.lastLogged.IsZero() ||
+		now.Sub(st.lastLogged) >= 3*time.Second ||
+		(pct >= 0 && st.lastPct >= 0 && pct-st.lastPct >= 25)
+	if !shouldLog {
+		return
+	}
+	st.lastLogged = now
+	st.lastPct = pct
+	if total > 0 {
+		fmt.Fprintf(p.log, "#%d %s %s / %s (%d%%)\n", v.n, name, formatBytes(current), formatBytes(total), pct)
+	} else if current > 0 {
+		fmt.Fprintf(p.log, "#%d %s %s\n", v.n, name, formatBytes(current))
+	} else {
+		fmt.Fprintf(p.log, "#%d %s ...\n", v.n, name)
+	}
+}
+
+func formatBytes(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
 	}
 }
 

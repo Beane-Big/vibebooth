@@ -11,14 +11,14 @@ import (
 	"strings"
 )
 
-func resolveSkillDir() string {
-	if v := strings.TrimSpace(os.Getenv("SKILL_DIR")); v != "" {
+func resolveSkillDir(envKey, skillName string) string {
+	if v := strings.TrimSpace(os.Getenv(envKey)); v != "" {
 		return v
 	}
 	for _, candidate := range []string{
-		"/usr/local/share/vibebooth/skill",
-		filepath.Join("..", "skills", "vibebooth-app-dev"),
-		filepath.Join("skills", "vibebooth-app-dev"),
+		filepath.Join("/usr/local/share/vibebooth/skills", skillName),
+		filepath.Join("..", "skills", skillName),
+		filepath.Join("skills", skillName),
 	} {
 		if st, err := os.Stat(filepath.Join(candidate, "SKILL.md")); err == nil && !st.IsDir() {
 			return candidate
@@ -27,7 +27,7 @@ func resolveSkillDir() string {
 	return ""
 }
 
-func zipSkillDir(dir string) ([]byte, error) {
+func zipSkillDir(dir, prefix string) ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
@@ -49,7 +49,7 @@ func zipSkillDir(dir string) ([]byte, error) {
 		if err != nil {
 			return err
 		}
-		hdr.Name = "vibebooth-app-dev/" + filepath.ToSlash(rel)
+		hdr.Name = prefix + "/" + filepath.ToSlash(rel)
 		hdr.Method = zip.Deflate
 		w, err := zw.CreateHeader(hdr)
 		if err != nil {
@@ -72,18 +72,26 @@ func zipSkillDir(dir string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (h *handlers) downloadSkill(w http.ResponseWriter, _ *http.Request) {
-	dir := resolveSkillDir()
+func (h *handlers) serveSkill(w http.ResponseWriter, envKey, skillName, filename string) {
+	dir := resolveSkillDir(envKey, skillName)
 	if dir == "" {
 		writeError(w, http.StatusNotFound, "未找到开发规范 Skill 文件")
 		return
 	}
-	data, err := zipSkillDir(dir)
+	data, err := zipSkillDir(dir, skillName)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="vibebooth-app-dev-skill.zip"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	_, _ = w.Write(data)
+}
+
+func (h *handlers) downloadSkill(w http.ResponseWriter, _ *http.Request) {
+	h.serveSkill(w, "SKILL_DIR", "vibebooth-app-dev", "vibebooth-app-dev-skill.zip")
+}
+
+func (h *handlers) downloadThemeSkill(w http.ResponseWriter, _ *http.Request) {
+	h.serveSkill(w, "THEME_SKILL_DIR", "vibebooth-theme-dev", "vibebooth-theme-dev-skill.zip")
 }

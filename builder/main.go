@@ -60,6 +60,7 @@ func main() {
 	api.HandleFunc("PUT /api/platform/builder/settings", h.saveSettings)
 	api.HandleFunc("POST /api/platform/builder/cache/prune", h.pruneCache)
 	api.HandleFunc("GET /api/platform/builder/skill", h.downloadSkill)
+	api.HandleFunc("GET /api/platform/builder/theme-skill", h.downloadThemeSkill)
 
 	mux := http.NewServeMux()
 	// 健康检查由平台在内部网络直接调用，不经过网关，也不需要令牌。

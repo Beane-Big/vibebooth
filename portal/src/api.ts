@@ -240,9 +240,17 @@ export const maxPackageMB = 2048;
 
 const put = (path: string, body: unknown) => request<void>(path, { method: "PUT", body: JSON.stringify(body) });
 
+export const APPS_CHANGED_EVENT = "vibebooth:apps-changed";
+
+export async function notifyAppsChanged(moduleId?: string) {
+  await api.reloadRegistry().catch(() => {});
+  window.dispatchEvent(new CustomEvent(APPS_CHANGED_EVENT, { detail: { moduleId } }));
+}
+
 export const api = {
   // 不用登录，登录页也能取到。
   site: () => request<SiteInfo>("/api/platform/site"),
+  reloadRegistry: () => request<void>("/api/platform/registry/reload", { method: "POST" }),
   updateSite: (input: SiteUpdateInput) =>
     request<SiteInfo>("/api/platform/site", { method: "PUT", body: JSON.stringify(input) }),
   uploadSiteLogo: (file: File) => {

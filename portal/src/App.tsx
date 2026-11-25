@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Card, Flex, Result, Spin } from "antd";
 import { useActivityBeat } from "./activity";
-import { api, ApiError, type App as AppInfo, type Me } from "./api";
+import { api, ApiError, APPS_CHANGED_EVENT, type App as AppInfo, type Me } from "./api";
 import { builtinAliases, builtinAppsFor, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
 import Beian from "./components/Beian";
@@ -223,6 +223,51 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
       .catch((err) => setError(err.message));
   }, [reloads[PORTAL_TAB]]);
 
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+
+  // 新装、升级或卸载应用后，无感拉取最新应用列表；已打开的模块页签同步无感刷新，已卸载的模块关闭页签。
+  useEffect(() => {
+    let active = true;
+    const onAppsChanged = () => {
+      api
+        .apps()
+        .then((next) => {
+          if (!active) return;
+          setApps(next);
+          setError("");
+          const currentTabs = tabsRef.current;
+          for (const t of currentTabs.tabs) {
+            if (isBuiltinURL(t.url)) continue;
+            const stillExists = next.some((app) => t.url === app.url || t.url.startsWith(app.url));
+            if (!stillExists) {
+              currentTabs.close(t.url);
+            } else {
+              reloadFrame(t.url);
+            }
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener(APPS_CHANGED_EVENT, onAppsChanged);
+    return () => {
+      active = false;
+      window.removeEventListener(APPS_CHANGED_EVENT, onAppsChanged);
+    };
+  }, []);
+
+  // 切回首页时静默同步一次应用列表，命令行或他处新装的应用也能无感出现。
+  useEffect(() => {
+    if (tabs.active !== PORTAL_TAB) return;
+    api
+      .apps()
+      .then((next) => {
+        setApps(next);
+        setError("");
+      })
+      .catch(() => {});
+  }, [tabs.active]);
+
   // 刷新一个标签：模块应用重新加载内嵌页，停在原来的页面；自带应用重新挂载、重新取数据；首页重新取应用列表。
   function refresh(key: string) {
     if (key !== PORTAL_TAB && !isBuiltinURL(key)) reloadFrame(key);
@@ -230,7 +275,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   }
 
   function openHomeTab(tab: AppTab) {
-    if (tab.url === "/applications" || tab.url === "/contacts") {
+    if (tab.url === "/applications" || tab.url === "/contacts" || tab.url === "/themes") {
       setEntryPath(tab.url);
     }
     tabs.open(tab);
@@ -330,7 +375,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
               <AppManagement me={user} entryPath={entryPath} hasModules={(apps?.length ?? 0) > 0} />
             )}
             {t.url === "/settings" && <Settings me={user} />}
-            {t.url === "/themes" && <Themes me={user} themes={theme.themes} />}
+            {t.url === "/themes" && <Themes me={user} themes={theme.themes} entryPath={entryPath} />}
             {t.url === "/stats" && <Stats onChanged={onMeChanged} />}
           </div>
         ))}
