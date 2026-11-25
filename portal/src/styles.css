@@ -39,6 +39,17 @@ body {
 .brand img { display: block; height: 26px; }
 /* 按钮文字加粗是 Fluent 的做法，链接按钮和顶栏的用户名保持常规字重。 */
 .ant-btn-link, .topbar .ant-btn-text { font-weight: 400; }
+/* 字母头像：去掉默认行高余量，并按拉丁字母字形边界裁剪，避免字母在圆形头像里偏下。 */
+.person-avatar .ant-avatar-string { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+.person-avatar-char { display: inline-block; line-height: 1; }
+.person-avatar-cap { text-box-trim: trim-both; text-box-edge: cap alphabetic; }
+.person-avatar-ex { text-box-trim: trim-both; text-box-edge: ex alphabetic; }
+.person-avatar-desc { text-box-trim: trim-both; text-box-edge: ex text; }
+.person-avatar-j { text-box-trim: trim-both; text-box-edge: cap text; }
+@supports not (text-box-trim: trim-both) {
+  .person-avatar-cap { transform: translateY(-0.04em); }
+  .person-avatar-ex { transform: translateY(-0.1em); }
+}
 
 /* Fluent 的卡片：没有边框，靠轻阴影和底色区分；标题下不加分隔线。 */
 .ant-card { border: 0 !important; box-shadow: var(--shadow); }

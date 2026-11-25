@@ -18,7 +18,7 @@ const palette = {
   light: {
     colorPrimary: "#245ed0",
     colorError: "#c50f1f",
-    colorSuccess: "#107c10",
+    colorSuccess: "#22c55e",
     colorWarning: "#bc4b09",
     colorText: "#18233a",
     colorTextSecondary: "#52617a",
@@ -37,7 +37,7 @@ const palette = {
   dark: {
     colorPrimary: "#479ef5",
     colorError: "#dc626d",
-    colorSuccess: "#54b054",
+    colorSuccess: "#4ade80",
     colorWarning: "#fa9e5e",
     colorText: "#edf3ff",
     colorTextSecondary: "#b0bfd6",
