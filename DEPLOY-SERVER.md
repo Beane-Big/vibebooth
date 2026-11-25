@@ -2,6 +2,12 @@
 
 在国内的云服务器（例如腾讯云轻量应用服务器，Ubuntu 24.04）上部署平台。和在自己电脑上部署（见 [DEPLOY.md](DEPLOY.md)）相比，主要差别是：服务器连不上 Docker Hub 和 Go 官方代理，要换成国内镜像；平台直接暴露在公网上，要注意安全。
 
+在国内外云服务器上，也可以直接使用一条命令自动安装 Docker、配置国内加速源、生成 `.env` 并启动平台（下文为分步手动部署说明，便于排错和自定义）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Beane-Big/vibebooth/main/scripts/install.sh | bash -s -- --cn
+```
+
 整个流程分 5 步：
 
 1. 检查服务器的网络

@@ -32,17 +32,45 @@
 
 ## 第一次启动
 
-推荐直接运行一键安装脚本（自动生成 `.env` 和随机密码；国内网络自动探测并配置 Go / npm 加速源；优先使用预构建镜像，若暂不可用则自动降级为本机源码构建）：
+运行 Vibebooth **不需要预先安装 Node.js、Go 或数据库**，只需 Docker。即使电脑上还没装 Docker，下面的一键脚本也会**自动检测并安装/启动 Docker**，同时自动下载代码、生成 `.env` 和随机强密码、探测国内网络并配置加速源，优先拉取预构建镜像（暂不可用时自动切换本机源码构建）。
+
+### Windows（PowerShell）
+
+在开始菜单打开 **PowerShell**，粘贴运行：
+
+```powershell
+irm https://raw.githubusercontent.com/Beane-Big/vibebooth/main/scripts/install.ps1 | iex
+```
+
+- 未安装 Docker 时会自动通过 `winget` 或官方安装程序安装并拉起 Docker Desktop；如首次安装系统提示需要重启电脑，重启后再次运行上述命令即可。
+- 也可以在 WSL Ubuntu 中使用下方的 Linux 命令部署（详见 [DEPLOY.md](DEPLOY.md)）。
+
+### macOS / Linux / 云服务器 / NAS / WSL Ubuntu
+
+打开 **终端（Terminal）**，粘贴运行：
 
 ```bash
-git clone https://github.com/Beane-Big/vibebooth.git ~/home-platform
-cd ~/home-platform
+curl -fsSL https://raw.githubusercontent.com/Beane-Big/vibebooth/main/scripts/install.sh | bash
+```
+
+- **Linux / WSL**：未装 Docker 时自动安装 Docker Engine 及 Compose 插件，国内网络自动配置 Docker / Go / npm 加速源。
+- **macOS**：已安装 Homebrew 时自动安装并拉起 Docker Desktop；未安装 Homebrew 时会提示安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/) 或 [OrbStack](https://orbstack.dev/)，装好后再运行一次即可。
+
+### 已下载代码到本地 / 手动启动
+
+如果你已经通过 `git clone` 下载了仓库，在项目目录中直接运行对应脚本即可：
+
+```bash
+# macOS / Linux / WSL（支持 --from-source、--cn、--port=8080）
 bash scripts/install.sh
 ```
 
-> 如需强制从当前源码构建或强制指定国内加速源，可运行 `bash scripts/install.sh --from-source --cn`。
+```powershell
+# Windows PowerShell（支持 -FromSource、-Cn、-Port 8080）
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
 
-也可以手动配置后从源码启动（在 WSL Ubuntu 或 Linux 中，代码放在 Linux 文件系统里）：
+也可以手动配置后直接用 `docker compose` 启动：
 
 ```bash
 cp .env.example .env
@@ -50,7 +78,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-浏览器打开 <http://localhost:8080>，用管理员账号登录。首次登录后可在「设置」自定义产品名称、Logo、注册开关与离线推送通道。
+启动完成后，终端会打印本机访问地址（默认 <http://localhost:8080>）、局域网访问地址以及首次生成的管理员账号密码。打开浏览器登录后，可按首页新手指引修改密码，并在「设置」里自定义站点名称、图标、消息推送与数据备份。
 
 常用命令：
 

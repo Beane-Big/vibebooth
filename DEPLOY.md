@@ -272,15 +272,24 @@ Windows 上的 `C:\Users\<你的用户名>\...\home-platform` 和 Ubuntu 里的 
 
 ## 一键安装与备份恢复
 
-下载仓库后，直接运行一键脚本即可：会自动生成 `.env` 与随机密码、自动探测网络并在国内环境配置 Go / npm 加速源；优先使用预构建镜像（`docker-compose.prebuilt.yml`），若预构建镜像暂不可用会自动切换为本机源码构建：
+无需提前安装 Node.js、Go 或数据库；如果尚未安装 Docker，一键脚本也会自动检测并安装/启动 Docker，同时自动拉取仓库、生成 `.env` 与随机密码、探测国内网络并配置加速源（优先使用 `docker-compose.prebuilt.yml` 预构建镜像，不可用时自动切换本机源码构建）：
 
-```bash
-bash scripts/install.sh
-```
+- **Windows（PowerShell）**：
+  ```powershell
+  irm https://raw.githubusercontent.com/Beane-Big/vibebooth/main/scripts/install.ps1 | iex
+  # 如已下载仓库到本地：
+  powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+  ```
+- **macOS / Linux / WSL Ubuntu**：
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/Beane-Big/vibebooth/main/scripts/install.sh | bash
+  # 如已下载仓库到本地：
+  bash scripts/install.sh
+  ```
 
-如需强制从源码构建并指定国内源，可运行 `bash scripts/install.sh --from-source --cn`。
+如需强制从源码构建并指定国内源，可运行 `bash scripts/install.sh --from-source --cn`（Windows 为 `powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -FromSource -Cn`）。
 
-日常备份与迁移可使用内置备份脚本（包含平台数据库、核心数据、已安装模块清单以及所有 `mod-*` 模块数据卷）：
+日常备份与迁移可在门户「设置 → 数据备份」中直接操作，或使用内置备份脚本（包含平台数据库、核心数据、已安装模块清单以及所有 `mod-*` 模块数据卷）：
 
 ```bash
 bash scripts/backup.sh export
