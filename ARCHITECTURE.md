@@ -260,4 +260,5 @@ permissions:
   - **外部离线推送通道**：用户在「设置 → 消息推送」可添加个人推送通道（Bark、企业微信、飞书、钉钉、通用 Webhook），管理员还可添加系统级管理员通道，支持一键测试。用户在线（存在活跃 SSE 连接）时仅走站内实时提醒；离线且消息标记为 `urgent` 时异步触发外部推送。
   - **模块统一推送接口**：`POST http://core:8080/api/platform/ext/v1/notifications`（仅内部网络可达，支持按 `userIds` 或 `role: "admin"` 投递与 `dedupKey` 5 分钟防重合并），供论坛、意见箱、私信等模块复用；平台内置的联系人好友请求/通过和构建器构建完成/失败已接入该接口。
 - **开发规范 Skill 与构建诊断**：内置构建服务新增 `GET /api/platform/builder/skill` 打包下载仓库 `skills/vibebooth-app-dev/`（含 `SKILL.md`、模板参考与零依赖自检打包脚本 `scripts/check-and-pack.mjs`）；失败构建详情返回结构化 `diagnosis`（识别 Go/npm/PyPI 镜像源、磁盘空间、OOM），前端提供「一键配置国内源」「清理构建缓存」（`POST /api/platform/builder/cache/prune`）及「复制给 AI 修复」按钮。安装器生成模块最终 compose 时自动附加日志轮转配置（`json-file`、`max-size: 10m`、`max-file: 3`）。
+- **新手指引与「应用开发」页签**：登录首页顶部按角色展示可收起的「快速开始」任务卡（管理员涵盖改初始密码、定制站点与推送、开发上架首个应用、添加成员；普通成员涵盖资料密码、联系人与外观），可随时关闭或从头像菜单「新手引导」重新打开。「应用管理」对管理员新增第三个页签「应用开发」（`/applications/dev`），提供 Skill 下载、主流 AI 工具接入路径和一键复制的常用提示词模板；管理员首次进入「应用管理」且尚未安装任何模块时，优先定位到「应用开发」页签。
 

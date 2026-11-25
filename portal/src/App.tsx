@@ -7,6 +7,7 @@ import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs
 import Beian from "./components/Beian";
 import Layout from "./components/Layout";
 import NotificationBell from "./components/NotificationBell";
+import OnboardingGuide, { useOnboarding } from "./components/OnboardingGuide";
 import Login from "./pages/AuthForm";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
@@ -203,6 +204,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   // 每个标签被刷新的次数：平台自带的应用用它作 key 重新挂载，首页变了就重新取应用列表。
   const [reloads, setReloads] = useState<Record<string, number>>({});
   const [entryPath, setEntryPath] = useState(() => location.pathname);
+  const onboarding = useOnboarding(user.id);
   const builtins = builtinAppsFor(user);
   const findBuiltin = (path: string) => builtins.find((app) => app.url === (builtinAliases[path] ?? path));
   useActivityBeat(tabs.active);
@@ -227,15 +229,19 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
     else setReloads((r) => ({ ...r, [key]: (r[key] ?? 0) + 1 }));
   }
 
+  function openHomeTab(tab: AppTab) {
+    if (tab.url === "/applications" || tab.url === "/contacts") {
+      setEntryPath(tab.url);
+    }
+    tabs.open(tab);
+  }
+
   function openLink(link: string) {
     const path = link.split("?")[0];
     const builtin = findBuiltin(path);
     if (builtin) {
       setEntryPath(path);
       tabs.open({ url: builtin.url, title: builtin.name });
-      if (builtin.url === "/applications") {
-        setReloads((r) => ({ ...r, [builtin.url]: (r[builtin.url] ?? 0) + 1 }));
-      }
       return;
     }
     const matched = apps?.find((app) => link.startsWith(app.url));
@@ -283,7 +289,11 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
       tabs={<AppTabBar state={tabs} onRefresh={refresh} />}
       notifications={<NotificationBell onNavigate={openLink} />}
       onHome={() => tabs.activate(PORTAL_TAB)}
-      onUserInfo={usersApp && (() => tabs.open({ url: usersApp.url, title: usersApp.name }))}
+      onUserInfo={usersApp && (() => openLink("/contacts/self"))}
+      onShowGuide={() => {
+        onboarding.reopen();
+        tabs.activate(PORTAL_TAB);
+      }}
       onLogout={onLogout}
       activeTheme={theme.active?.id}
       TopbarBackground={theme.def?.TopbarBackground}
@@ -292,8 +302,19 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
     >
       <div className="content" style={tabs.active !== PORTAL_TAB ? { display: "none" } : undefined}>
         {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
+        {apps && !onboarding.state.dismissed && (
+          <OnboardingGuide
+            user={user}
+            hasModules={apps.length > 0}
+            doneIds={onboarding.state.done}
+            onNavigate={openLink}
+            onMarkDone={onboarding.markDone}
+            onToggleDone={onboarding.toggleDone}
+            onDismiss={onboarding.dismiss}
+          />
+        )}
         {apps && (
-          <Home apps={apps} builtins={builtins} user={user} theme={theme.active && theme} onOpen={tabs.open} />
+          <Home apps={apps} builtins={builtins} user={user} theme={theme.active && theme} onOpen={openHomeTab} />
         )}
       </div>
       {tabs.tabs
@@ -304,8 +325,10 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
             className="content"
             style={t.url !== tabs.active ? { display: "none" } : undefined}
           >
-            {t.url === "/contacts" && <Contacts me={user} onMeChanged={onMeChanged} />}
-            {t.url === "/applications" && <AppManagement me={user} entryPath={entryPath} />}
+            {t.url === "/contacts" && <Contacts me={user} onMeChanged={onMeChanged} entryPath={entryPath} />}
+            {t.url === "/applications" && (
+              <AppManagement me={user} entryPath={entryPath} hasModules={(apps?.length ?? 0) > 0} />
+            )}
             {t.url === "/settings" && <Settings me={user} />}
             {t.url === "/themes" && <Themes me={user} themes={theme.themes} />}
             {t.url === "/stats" && <Stats onChanged={onMeChanged} />}

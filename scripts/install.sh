@@ -129,6 +129,16 @@ FINAL_NPM="$(get_env_val NPM_REGISTRY)"
 PUBLIC_PORT_VAL="$(get_env_val PUBLIC_PORT)"
 PUBLIC_PORT_VAL="${PUBLIC_PORT_VAL:-8080}"
 
+# 检查是否有其他 Compose 项目名下的旧平台实例挂在 platform 网络，防止 Traefik 路由轮询冲突。
+CONFLICT_PROJECTS="$(docker ps --filter "network=platform" --filter "label=com.docker.compose.service=portal" --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | grep -vx 'home-platform' | sort -u || true)"
+if [ -n "$CONFLICT_PROJECTS" ]; then
+  echo "警告：检测到其他同名平台实例正在运行，可能造成路由冲突或资源 404："
+  for p in $CONFLICT_PROJECTS; do
+    echo "  -> 可执行停止：docker compose -p ${p} down"
+  done
+  echo ""
+fi
+
 start_from_source() {
   echo "正在从源码构建并启动 Vibebooth（首次构建约需几分钟）..."
   docker compose up -d --build
@@ -146,10 +156,18 @@ else
   fi
 fi
 
+LAN_IP=""
+if command -v hostname >/dev/null 2>&1; then
+  LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+fi
+
 echo ""
 echo "========================================"
 echo "  Vibebooth 已启动"
-echo "  访问地址：http://localhost:${PUBLIC_PORT_VAL}"
+echo "  本机访问：http://localhost:${PUBLIC_PORT_VAL}"
+if [ -n "$LAN_IP" ] && [ "$LAN_IP" != "127.0.0.1" ]; then
+  echo "  局域网/宿主机访问：http://${LAN_IP}:${PUBLIC_PORT_VAL}"
+fi
 if [ "$NEW_ENV" -eq 1 ]; then
   echo "  初始账号：admin"
   echo "  初始密码：${INIT_ADMIN_PASS}"
