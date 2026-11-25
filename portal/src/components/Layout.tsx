@@ -6,6 +6,7 @@ import PersonAvatar from "./PersonAvatar";
 import Wordmark from "./Wordmark";
 import { useThemeMode, wallpaperURL, type Skin, type ThemeMode } from "../theme";
 import { ThemeBoundary, type TopbarProps } from "../themeHost";
+import { loginActionText, useSiteInfo } from "../site";
 
 // 门户各页面共用的顶栏，只有一行：左边是平台字标（点它回到首页），中间是标签栏（第一个固定是首页），右边是头像。
 // 用户、设置、主题都是平台自带的应用，从首页打开（应用管理在设置里，皮肤在主题里选）；点头像可以切换浅色深色、打开“用户”应用看自己的资料和账号、退出登录。
@@ -39,6 +40,7 @@ export default function Layout({
   children: ReactNode;
 }) {
   const name = user ? userDisplayName(user) : "";
+  const site = useSiteInfo();
   const { mode, setMode, skin, dark, wallpaper } = useThemeMode();
   // 手机上只显示头像，名字收进下拉菜单；平台字标也不显示，给标签栏腾地方。
   const screens = Grid.useBreakpoint();
@@ -125,7 +127,7 @@ export default function Layout({
             <PersonAvatar person={{ name, photo: user.photo }} size={28} />
             {screens.sm && <span>{name}</span>}
           </Button>
-        </Dropdown> : <Button type="primary" href="/login" style={{ marginInlineStart: "auto" }}>登录或注册</Button>}
+        </Dropdown> : <Button type="primary" href="/login" style={{ marginInlineStart: "auto" }}>{loginActionText(site.allowRegistration)}</Button>}
       </AntLayout.Header>
       <div className="layout-content">{children}</div>
     </AntLayout>

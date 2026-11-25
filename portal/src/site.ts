@@ -14,7 +14,8 @@ const defaultSite: SiteInfo = {
 };
 
 let currentSite: SiteInfo = defaultSite;
-let fetched = false;
+let version = 0;
+let pending: Promise<SiteInfo> | null = null;
 const listeners = new Set<(info: SiteInfo) => void>();
 
 function applyDocumentBranding(info: SiteInfo) {
@@ -32,25 +33,37 @@ function applyDocumentBranding(info: SiteInfo) {
 }
 
 export function setSiteInfo(info: SiteInfo) {
+  version += 1;
   currentSite = info;
-  fetched = true;
+  pending = Promise.resolve(info);
   applyDocumentBranding(info);
   for (const fn of listeners) fn(info);
 }
 
-export function loadSiteInfo() {
-  if (!fetched) {
-    fetched = true;
-    api
+export function preloadSiteInfo(): Promise<SiteInfo> {
+  if (!pending) {
+    const reqVersion = version;
+    pending = api
       .site()
       .then((info) => {
+        if (version !== reqVersion) return currentSite;
         currentSite = info;
         applyDocumentBranding(info);
         for (const fn of listeners) fn(info);
+        return info;
       })
-      .catch(() => {});
+      .catch(() => currentSite);
   }
+  return pending;
+}
+
+export function loadSiteInfo() {
+  void preloadSiteInfo();
   return currentSite;
+}
+
+export function loginActionText(allowRegistration: boolean): string {
+  return allowRegistration ? "登录或注册" : "登录";
 }
 
 export function useSiteInfo(): SiteInfo {
