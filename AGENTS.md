@@ -8,3 +8,4 @@
 - 改了 `packages/sdk-go` 要发新版本时，在 main 上打标签 `packages/sdk-go/vX.Y.Z`，模块按标签引用它；同时更新 create-vibebooth 里的 `sdkVersion`。
 - 改了 `installer/`、`packages/manifest` 或 `packages/modpkg` 要发新版本时，在 main 上打标签 `installer/vX.Y.Z`，GitHub Actions 会把安装器镜像发布为 `ghcr.io/beane-big/vibebooth-installer:X.Y.Z`，模块仓库在本机没有平台时用它打包；同时更新 create-vibebooth 里的 `installerVersion`。
 - 构建器模块按标签引用 `packages/manifest` 和 `packages/modpkg`：改了它们要发新版本时，分别打标签 `packages/manifest/vX.Y.Z`、`packages/modpkg/vX.Y.Z`，再更新构建器仓库的 `go.mod`。`packages/modpkg/go.mod` 里对 manifest 的版本要写和它一起发布的那个标签，否则构建器下载不到。
+- 页面文案约定：除非明确要求，否则不要擅自在软件页面添加说明文字、示例提示（如“例如：xxx”）或多余的引导文案，保持界面简洁克制。
