@@ -9,13 +9,30 @@ import (
 )
 
 func (s *Server) mountRegistration(mux *http.ServeMux) {
-	terms, privacy := policyURL("AUTH_TERMS_URL"), policyURL("AUTH_PRIVACY_URL")
-	mux.HandleFunc("GET /api/platform/auth/options", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"terms": terms, "privacy": privacy})
+	mux.HandleFunc("GET /api/platform/auth/options", func(w http.ResponseWriter, r *http.Request) {
+		info, err := s.currentSite(r.Context())
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"terms":             info.Terms,
+			"privacy":           info.Privacy,
+			"allowRegistration": info.AllowRegistration,
+		})
 	})
 
 	attempts := newLoginLimiter(8, 15*time.Minute)
 	mux.HandleFunc("POST /api/platform/auth/register", func(w http.ResponseWriter, r *http.Request) {
+		info, err := s.currentSite(r.Context())
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		if !info.AllowRegistration {
+			writeError(w, http.StatusForbidden, "当前未开放自助注册")
+			return
+		}
 		ip := clientIP(r)
 		if !attempts.Allow(ip) {
 			writeError(w, http.StatusTooManyRequests, "操作过于频繁，请稍后再试")

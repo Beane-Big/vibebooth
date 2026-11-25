@@ -1,5 +1,6 @@
 FROM golang:1.26-alpine AS build
 ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 WORKDIR /src
 COPY packages/manifest ./packages/manifest
 COPY packages/modpkg ./packages/modpkg
@@ -12,5 +13,6 @@ FROM alpine:3.22
 RUN adduser -D -u 10001 app && mkdir /data && chown app /data
 USER app
 COPY --from=build /out/builder /usr/local/bin/builder
+COPY skills /usr/local/share/vibebooth/skills
 EXPOSE 8000
 ENTRYPOINT ["builder"]

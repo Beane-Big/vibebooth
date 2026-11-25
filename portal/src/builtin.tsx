@@ -47,11 +47,11 @@ export const builtinApps: BuiltinApp[] = [
     tint: ["#ff7a6b", "#9b4dff"],
     perm: "settings",
   },
-  // 每个人在这里给自己选主题；有“应用管理”权限的人还能上传和卸载主题包。
+  // 每个人在这里给自己选主题和壁纸；有“应用管理”权限的人还能上传、卸载主题与壁纸，管理员可查看主题开发指引。
   {
     id: "themes",
-    name: "主题",
-    description: "换门户的外观",
+    name: "外观",
+    description: "切换主题、壁纸与开发主题",
     url: "/themes",
     icon: <SkinOutlined />,
     tint: ["#ffc75f", "#ff5f8f"],
@@ -68,8 +68,20 @@ export const builtinApps: BuiltinApp[] = [
   },
 ];
 
-// 旧入口统一指向合并后的平台应用。
-export const builtinAliases: Record<string, string> = { "/applications/build": "/applications", "/applications/build/settings": "/applications", "/admin/modules": "/applications", "/apps/builder/": "/applications", "/admin/users": "/contacts" };
+// 旧入口与子视图快捷路径统一指向合并后的平台应用。
+export const builtinAliases: Record<string, string> = {
+  "/applications/build": "/applications",
+  "/applications/build/settings": "/applications",
+  "/applications/dev": "/applications",
+  "/admin/modules": "/applications",
+  "/apps/builder/": "/applications",
+  "/admin/users": "/contacts",
+  "/contacts/self": "/contacts",
+  "/contacts/accounts": "/contacts",
+  "/themes/wallpapers": "/themes",
+  "/themes/dev": "/themes",
+  "/settings/backup": "/settings",
+};
 
 // 这个人能看到的自带应用。其他人输入网址也只会看到首页，接口本身也会拒绝。
 export const builtinAppsFor = (me: Me) =>

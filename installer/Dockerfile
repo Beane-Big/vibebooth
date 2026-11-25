@@ -2,6 +2,7 @@
 FROM golang:1.26-alpine AS build
 # 国内服务器上可以在 .env 里设置 GOPROXY 换成国内的 Go 代理，不设置时用官方代理。
 ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 WORKDIR /src
 COPY packages/manifest ./packages/manifest
 COPY packages/modpkg ./packages/modpkg
@@ -13,6 +14,7 @@ RUN go mod download && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out
 # 运行时要用 docker 命令行和 compose 插件来导入镜像、启动模块，官方 docker:cli 镜像自带这两样。
 # 以 root 运行：它通过 TCP 访问 socket-proxy，root 不会多出 Docker 权限；模块卷第一次创建时也不用操心属主。
 FROM docker:29-cli
+RUN apk add --no-cache postgresql17-client
 COPY --from=build /out/installer /usr/local/bin/installer
 EXPOSE 8000
 ENTRYPOINT ["installer"]

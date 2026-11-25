@@ -6,6 +6,10 @@
 
 ## 开发流程
 
+推荐使用官方开发规范 Skill（仓库 `skills/vibebooth-app-dev/`，或在门户「应用管理 → 应用构建」点击「下载开发 Skill」），直接让 AI 编码工具按规范开发应用、运行 `scripts/check-and-pack.mjs` 自检并打包出源码包，上传到门户内置构建器一键构建并安装。
+
+如需使用命令行脚手架本地打包：
+
 1. `npx github:Beane-Big/create-vibebooth <id>`：生成模块仓库 `vibebooth-module-<id>/`，选好前端和后端的技术栈。
 2. 写代码。平台要先用 `docker compose up -d --build` 跑起来。
 3. `npm run install:local`：在本地构建镜像、打包、装到本地平台。改了代码再运行一次即可，只重建这一个模块。
@@ -65,5 +69,6 @@
 - 接口权限用令牌里的功能权限判断（Go 里是 `auth.UserFrom(ctx).Has("<权限 id>")`，要 SDK `v0.2.0` 以上）；没有声明功能权限的模块用菜单判断（`HasMenu("<菜单 id>")`）。都不要用角色判断。前端可以让后端返回令牌里的权限，据此隐藏按钮，但真正的检查在后端。
 - 跨模块只调用对方 `/api/<id>/ext/v1/` 下的对外接口，不 import 其他模块的代码，也不读别人的数据。对外接口的契约写在 `contracts/openapi.yaml`，不兼容的改动新开 v2。
 - 联系人由平台保存，平台不对外公开全量人员名单，也不要在模块里另建人员表：模块只保存账号 id（即令牌里的 `sub`），通过 `http://core:8080/api/platform/ext/v1/users/{id}/contacts` 读取当前用户的联系人（传 `?mutual=1` 只取互为好友），或通过 `GET /api/platform/ext/v1/users?ids=...&viewer=<sub >` 批量解析已知账号的头像与称呼（`displayName` 按 备注 > 姓名 > 账号 解析，备注只对 viewer 自己生效）。契约见平台仓库的 `contracts/openapi.yaml`。
+- 消息通知由平台统一推送：模块后端可在内部网络调用 `POST http://core:8080/api/platform/ext/v1/notifications` 向指定用户或管理员发送站内实时通知，并在用户离线时触发其配置的外部推送通道（Bark、企业微信、飞书、钉钉、Webhook）。安装器生成最终 compose 时还会自动为每个模块容器启用日志轮转（`max-size: 10m`、`max-file: 3`）。
 - 前端沿用脚手架生成的 `styles.css` 里的样式变量；共享 UI 组件包做出来后优先用它。页面要适配手机和平板。
 - 门户在自己的标签页里以内嵌页（iframe）打开应用，按住 Ctrl / Cmd 点击时在浏览器新标签页打开，两种都要能用。不要设置禁止被嵌入的响应头（`X-Frame-Options`、CSP 的 `frame-ancestors`）。应用里不放回门户的链接，回门户用门户的标签栏；应用内部页面之间的返回由应用自己实现。前端的 `index.html` 要带 `Cache-Control: no-cache`（静态资源文件名带哈希，可以长期缓存），否则升级后浏览器可能一直用旧页面，标签栏的“刷新”也拿不到新版本。

@@ -84,9 +84,11 @@ func main() {
 		key:      key,
 		registry: registry,
 		limiter:  newLoginLimiter(10, 15*time.Minute),
+		hub:      newNotifHub(),
 	}
 	go s.cleanupSessions(ctx)
 	go s.cleanupStats(ctx)
+	go s.cleanupNotifications(ctx)
 	go registry.Watch(ctx, 5*time.Second)
 
 	srv := &http.Server{
@@ -113,8 +115,12 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
-	// 站点的公开信息（备案号），登录页也要用，不用登录。
+	// 站点的公开信息（产品名称、Logo、备案号与注册开关），登录页也要用，不用登录。
 	mux.HandleFunc("GET /api/platform/site", s.handleSite)
+	mux.HandleFunc("PUT /api/platform/site", s.requireRole("admin", s.handleUpdateSite))
+	mux.HandleFunc("GET /api/platform/site/logo", s.handleSiteLogo)
+	mux.HandleFunc("POST /api/platform/site/logo", s.requireRole("admin", s.handleUploadSiteLogo))
+	mux.HandleFunc("DELETE /api/platform/site/logo", s.requireRole("admin", s.handleDeleteSiteLogo))
 	mux.HandleFunc("GET /api/platform/me", s.requireUser(s.handleMe))
 	mux.HandleFunc("PUT /api/platform/me/photo", s.requireUser(s.handleSetMyPhoto))
 	mux.HandleFunc("PUT /api/platform/me/name", s.requireUser(s.handleSetMyName))
@@ -123,6 +129,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/app-access", s.requireRole("admin", s.handleAppAccess))
 	mux.HandleFunc("PUT /api/platform/app-access/{id}", s.requireRole("admin", s.handleSetAppAccess))
 	s.mountContacts(mux)
+	s.mountNotifications(mux)
 	mux.HandleFunc("GET /api/platform/apps/{id}/icon", s.optionalUser(s.handleAppIcon))
 	mux.HandleFunc("GET /api/platform/apps/{id}/glyph", s.optionalUser(s.handleAppGlyph))
 	mux.HandleFunc("GET /api/platform/apps/{id}/menus", s.requireUser(s.handleAppMenus))
@@ -158,8 +165,37 @@ func (s *Server) routes() http.Handler {
 	// 不再对外暴露全平台人员列表，模块只能按当前用户读取其联系人，或按已知用户 ID 批量解析资料。契约见 contracts/openapi.yaml。
 	mux.HandleFunc("GET /api/platform/ext/v1/users/{id}/contacts", s.handleExtUserContacts)
 	mux.HandleFunc("GET /api/platform/ext/v1/users", s.handleExtUsers)
+	mux.HandleFunc("POST /api/platform/ext/v1/auth/verify-admin-password", s.handleExtVerifyAdminPassword)
+	mux.HandleFunc("POST /api/platform/ext/v1/registry/reload", func(w http.ResponseWriter, _ *http.Request) {
+		s.registry.Load()
+		w.WriteHeader(http.StatusNoContent)
+	})
 	s.mountRegistration(mux)
 	return mux
+}
+
+func (s *Server) handleExtVerifyAdminPassword(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		UserID   int64  `json:"userId"`
+		Password string `json:"password"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.UserID <= 0 || in.Password == "" {
+		writeError(w, http.StatusUnauthorized, "密码不正确")
+		return
+	}
+	ok, err := s.store.CheckAdminPasswordByID(r.Context(), in.UserID, in.Password)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "密码不正确")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func fatal(msg string, err error) {

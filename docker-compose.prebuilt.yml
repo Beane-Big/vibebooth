@@ -1,0 +1,166 @@
+# 预构建镜像版 Compose 文件：免本地编译，配合 scripts/install.sh 实现一键安装。
+# 通过 .env 中的 VIBEBOOTH_IMAGE_PREFIX 和 VIBEBOOTH_VERSION 可切换镜像源或固定版本。
+name: home-platform
+
+services:
+  traefik:
+    image: traefik:v3.6
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=platform
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.transport.respondingTimeouts.readTimeout=2h
+      - --log.level=INFO
+    ports:
+      - "${PUBLIC_PORT:-8080}:80"
+    networks: [default, socket]
+    depends_on: [socket-proxy]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      DISABLE_IPV6: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [socket]
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: platform
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      interval: 5s
+      retries: 10
+
+  core:
+    image: ${VIBEBOOTH_IMAGE_PREFIX:-ghcr.io/beane-big/vibebooth}-core:${VIBEBOOTH_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://platform:${POSTGRES_PASSWORD}@postgres:5432/platform
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      AUTH_TERMS_URL: ${AUTH_TERMS_URL:-}
+      AUTH_PRIVACY_URL: ${AUTH_PRIVACY_URL:-}
+      ICP_BEIAN: ${ICP_BEIAN:-}
+      POLICE_BEIAN: ${POLICE_BEIAN:-}
+      STATS_TIMEZONE: ${STATS_TIMEZONE:-Asia/Shanghai}
+    volumes:
+      - core-data:/data
+      - modules-data:/modules:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.core.rule=PathPrefix(`/api/platform/`) && !PathPrefix(`/api/platform/ext/`)
+      - traefik.http.services.core.loadbalancer.server.port=8080
+      - traefik.http.middlewares.platform-auth.forwardauth.address=http://core:8080/api/platform/auth/verify
+      - traefik.http.middlewares.platform-auth.forwardauth.authResponseHeaders=Authorization,X-User-Id,X-User-Roles
+      - traefik.http.middlewares.platform-admin.forwardauth.address=http://core:8080/api/platform/auth/verify-admin
+      - traefik.http.middlewares.platform-admin.forwardauth.authResponseHeaders=Authorization
+
+  portal:
+    image: ${VIBEBOOTH_IMAGE_PREFIX:-ghcr.io/beane-big/vibebooth}-portal:${VIBEBOOTH_VERSION:-latest}
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.portal.rule=PathPrefix(`/`) && !PathPrefix(`/api/`)
+      - traefik.http.routers.portal.priority=1
+      - traefik.http.services.portal.loadbalancer.server.port=80
+
+  installer:
+    image: ${VIBEBOOTH_IMAGE_PREFIX:-ghcr.io/beane-big/vibebooth}-installer:${VIBEBOOTH_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      DOCKER_HOST: tcp://installer-proxy:2375
+      DATABASE_URL: postgres://platform:${POSTGRES_PASSWORD}@postgres:5432/platform
+      CORE_DATA_DIR: /core-data
+      BACKUPS_DIR: /backups
+      STATS_TIMEZONE: ${STATS_TIMEZONE:-Asia/Shanghai}
+    volumes:
+      - modules-data:/modules
+      - core-data:/core-data
+      - backups-data:/backups
+    networks: [default, installer-socket]
+    depends_on: [installer-proxy, postgres]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.installer.rule=PathPrefix(`/api/platform/installer/`)
+      - traefik.http.routers.installer.priority=100
+      - traefik.http.routers.installer.middlewares=platform-admin@docker
+      - traefik.http.services.installer.loadbalancer.server.port=8000
+
+  builder:
+    image: ${VIBEBOOTH_IMAGE_PREFIX:-ghcr.io/beane-big/vibebooth}-builder:${VIBEBOOTH_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      DOCKER_HOST: tcp://build-proxy:2375
+      GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+      NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+    volumes:
+      - builder-data:/data
+    networks: [default, build]
+    depends_on: [build-proxy, core]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.platform-builder.rule=PathPrefix(`/api/platform/builder/`) || PathPrefix(`/apps/builder/`)
+      - traefik.http.routers.platform-builder.priority=110
+      - traefik.http.routers.platform-builder.middlewares=platform-admin@docker
+      - traefik.http.services.platform-builder.loadbalancer.server.port=8000
+
+  installer-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    restart: unless-stopped
+    environment:
+      POST: 1
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      INFO: 1
+      DISABLE_IPV6: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [installer-socket]
+
+  build-proxy:
+    image: ${VIBEBOOTH_IMAGE_PREFIX:-ghcr.io/beane-big/vibebooth}-build-proxy:${VIBEBOOTH_VERSION:-latest}
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [build]
+
+networks:
+  default:
+    name: platform
+  socket:
+    internal: true
+  installer-socket:
+    internal: true
+  build:
+    name: platform-build
+    internal: true
+
+volumes:
+  builder-data:
+  pgdata:
+  core-data:
+  modules-data:
+  backups-data:

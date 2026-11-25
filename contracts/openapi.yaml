@@ -37,6 +37,24 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/ExtUser" }
+  /api/platform/ext/v1/notifications:
+    post:
+      summary: 向平台用户或管理员发送站内与离线推送通知
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationPushRequest"
+      responses:
+        "200":
+          description: 已投递的用户数量
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivered: { type: integer }
 components:
   schemas:
     ExtUser:
@@ -49,3 +67,24 @@ components:
         displayName: { type: string, description: 给人看的称呼：按 备注 > 姓名 > 账号 解析 }
         photo: { type: string, description: 头像，JPEG 的 data URL；没有时为空字符串 }
         mutual: { type: boolean, description: 是否与查询者互为好友 }
+    NotificationPushRequest:
+      type: object
+      required: [target, title]
+      properties:
+        target:
+          type: object
+          properties:
+            userIds:
+              type: array
+              items: { type: integer }
+              description: 目标账号 id 列表（单次最多 200 个）
+            role:
+              type: string
+              enum: [admin]
+              description: 按角色投递（目前支持 admin）
+        appId: { type: string, description: 来源模块 id，默认 platform }
+        title: { type: string, description: 通知标题（最多 120 字） }
+        body: { type: string, description: 通知正文（最多 1000 字） }
+        link: { type: string, description: 点击跳转的本站相对路径（以 / 开头） }
+        dedupKey: { type: string, description: 防重合并键；5 分钟内相同未读通知会合并更新 }
+        urgent: { type: boolean, description: 为 true 且接收者不在线时，触发已启用的外部离线推送通道 }

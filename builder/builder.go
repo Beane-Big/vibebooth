@@ -124,6 +124,14 @@ func (b *builder) runOne(ctx context.Context, id int64) {
 		fmt.Fprintf(log, "\n构建失败: %v\n", buildErr)
 		if ctx.Err() == nil {
 			hint = b.mirrorHint(context.WithoutCancel(ctx), id)
+			if hint == "" {
+				if st, err := b.store.Settings(context.WithoutCancel(ctx)); err == nil {
+					logTail, _ := tail(b.logPath(id), maxLogSize)
+					if diag := diagnoseBuild(logTail, st); diag != nil {
+						hint = diag.Summary
+					}
+				}
+			}
 		}
 		if hint != "" {
 			fmt.Fprintf(log, "\n提示：%s\n", hint)
@@ -135,6 +143,7 @@ func (b *builder) runOne(ctx context.Context, id int64) {
 		slog.Error("更新构建状态失败", "id", id, "err", err)
 	}
 	slog.Info("构建结束", "id", id, "module", rec.ModuleID, "version", rec.Version, "err", buildErr)
+	go notifyBuildResult(rec, buildErr)
 }
 
 // build 解压源码包，逐个构建服务的镜像，导出后打成和 npm run pack 一样的软件包。
@@ -197,7 +206,7 @@ func (b *builder) build(ctx context.Context, rec *Build, log io.Writer) error {
 		}
 	}
 
-	fmt.Fprintln(log, "\n==> 导出镜像")
+	fmt.Fprintln(log, "\n==> 正在导出镜像，请稍候…")
 	imagesPath := filepath.Join(b.buildDir(rec.ID), modpkg.ImagesFile)
 	defer os.Remove(imagesPath)
 	f, err := os.Create(imagesPath)
@@ -212,7 +221,7 @@ func (b *builder) build(ctx context.Context, rec *Build, log io.Writer) error {
 		return fmt.Errorf("导出镜像失败: %w", err)
 	}
 
-	fmt.Fprintln(log, "==> 打包并校验")
+	fmt.Fprintln(log, "==> 镜像导出完成，正在打包并校验…")
 	if err := modpkg.Pack(work, imagesPath, b.packagePath(rec.ID)); err != nil {
 		return fmt.Errorf("打包失败: %w", err)
 	}

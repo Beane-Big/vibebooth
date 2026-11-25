@@ -39,6 +39,7 @@ type Server struct {
 	key      *signingKey
 	registry *Registry
 	limiter  *loginLimiter
+	hub      *notifHub
 }
 
 // ---- 登录与会话 ----

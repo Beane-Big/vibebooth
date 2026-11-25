@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Card, Flex, Result, Spin } from "antd";
 import { useActivityBeat } from "./activity";
-import { api, ApiError, type App as AppInfo, type Me } from "./api";
+import { api, ApiError, APPS_CHANGED_EVENT, type App as AppInfo, type Me } from "./api";
 import { builtinAliases, builtinAppsFor, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
 import Beian from "./components/Beian";
 import Layout from "./components/Layout";
+import NotificationBell from "./components/NotificationBell";
+import OnboardingGuide, { useOnboarding } from "./components/OnboardingGuide";
 import Login from "./pages/AuthForm";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
@@ -201,7 +203,8 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   const theme = useActiveTheme();
   // 每个标签被刷新的次数：平台自带的应用用它作 key 重新挂载，首页变了就重新取应用列表。
   const [reloads, setReloads] = useState<Record<string, number>>({});
-  const [entryPath] = useState(() => location.pathname);
+  const [entryPath, setEntryPath] = useState(() => location.pathname);
+  const onboarding = useOnboarding(user.id);
   const builtins = builtinAppsFor(user);
   const findBuiltin = (path: string) => builtins.find((app) => app.url === (builtinAliases[path] ?? path));
   useActivityBeat(tabs.active);
@@ -220,10 +223,74 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
       .catch((err) => setError(err.message));
   }, [reloads[PORTAL_TAB]]);
 
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+
+  // 新装、升级或卸载应用后，无感拉取最新应用列表；已打开的模块页签同步无感刷新，已卸载的模块关闭页签。
+  useEffect(() => {
+    let active = true;
+    const onAppsChanged = () => {
+      api
+        .apps()
+        .then((next) => {
+          if (!active) return;
+          setApps(next);
+          setError("");
+          const currentTabs = tabsRef.current;
+          for (const t of currentTabs.tabs) {
+            if (isBuiltinURL(t.url)) continue;
+            const stillExists = next.some((app) => t.url === app.url || t.url.startsWith(app.url));
+            if (!stillExists) {
+              currentTabs.close(t.url);
+            } else {
+              reloadFrame(t.url);
+            }
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener(APPS_CHANGED_EVENT, onAppsChanged);
+    return () => {
+      active = false;
+      window.removeEventListener(APPS_CHANGED_EVENT, onAppsChanged);
+    };
+  }, []);
+
+  // 切回首页时静默同步一次应用列表，命令行或他处新装的应用也能无感出现。
+  useEffect(() => {
+    if (tabs.active !== PORTAL_TAB) return;
+    api
+      .apps()
+      .then((next) => {
+        setApps(next);
+        setError("");
+      })
+      .catch(() => {});
+  }, [tabs.active]);
+
   // 刷新一个标签：模块应用重新加载内嵌页，停在原来的页面；自带应用重新挂载、重新取数据；首页重新取应用列表。
   function refresh(key: string) {
     if (key !== PORTAL_TAB && !isBuiltinURL(key)) reloadFrame(key);
     else setReloads((r) => ({ ...r, [key]: (r[key] ?? 0) + 1 }));
+  }
+
+  function openHomeTab(tab: AppTab) {
+    if (tab.url === "/applications" || tab.url === "/contacts" || tab.url === "/themes" || tab.url === "/settings") {
+      setEntryPath(tab.url);
+    }
+    tabs.open(tab);
+  }
+
+  function openLink(link: string) {
+    const path = link.split("?")[0];
+    const builtin = findBuiltin(path);
+    if (builtin) {
+      setEntryPath(path);
+      tabs.open({ url: builtin.url, title: builtin.name });
+      return;
+    }
+    const matched = apps?.find((app) => link.startsWith(app.url));
+    tabs.open({ url: link, title: matched?.name ?? path });
   }
 
   // 应用的标签页里加载到了门户自己：登录过期时整页去登录，登录后回到门户并恢复标签；
@@ -265,8 +332,13 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
     <Layout
       user={user}
       tabs={<AppTabBar state={tabs} onRefresh={refresh} />}
+      notifications={<NotificationBell onNavigate={openLink} />}
       onHome={() => tabs.activate(PORTAL_TAB)}
-      onUserInfo={usersApp && (() => tabs.open({ url: usersApp.url, title: usersApp.name }))}
+      onUserInfo={usersApp && (() => openLink("/contacts/self"))}
+      onShowGuide={() => {
+        onboarding.reopen();
+        tabs.activate(PORTAL_TAB);
+      }}
       onLogout={onLogout}
       activeTheme={theme.active?.id}
       TopbarBackground={theme.def?.TopbarBackground}
@@ -275,8 +347,20 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
     >
       <div className="content" style={tabs.active !== PORTAL_TAB ? { display: "none" } : undefined}>
         {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
+        {apps && !onboarding.state.dismissed && (
+          <OnboardingGuide
+            user={user}
+            hasModules={apps.length > 0}
+            hasCustomTheme={theme.themes.length > 0 || skin !== "classic" || Boolean(wallpaper)}
+            doneIds={onboarding.state.done}
+            onNavigate={openLink}
+            onMarkDone={onboarding.markDone}
+            onToggleDone={onboarding.toggleDone}
+            onDismiss={onboarding.dismiss}
+          />
+        )}
         {apps && (
-          <Home apps={apps} builtins={builtins} user={user} theme={theme.active && theme} onOpen={tabs.open} />
+          <Home apps={apps} builtins={builtins} user={user} theme={theme.active && theme} onOpen={openHomeTab} />
         )}
       </div>
       {tabs.tabs
@@ -287,10 +371,12 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
             className="content"
             style={t.url !== tabs.active ? { display: "none" } : undefined}
           >
-            {t.url === "/contacts" && <Contacts me={user} onMeChanged={onMeChanged} />}
-            {t.url === "/applications" && <AppManagement me={user} entryPath={entryPath} />}
-            {t.url === "/settings" && <Settings />}
-            {t.url === "/themes" && <Themes me={user} themes={theme.themes} />}
+            {t.url === "/contacts" && <Contacts me={user} onMeChanged={onMeChanged} entryPath={entryPath} />}
+            {t.url === "/applications" && (
+              <AppManagement me={user} entryPath={entryPath} hasModules={(apps?.length ?? 0) > 0} />
+            )}
+            {t.url === "/settings" && <Settings me={user} entryPath={entryPath} />}
+            {t.url === "/themes" && <Themes me={user} themes={theme.themes} entryPath={entryPath} />}
             {t.url === "/stats" && <Stats onChanged={onMeChanged} />}
           </div>
         ))}

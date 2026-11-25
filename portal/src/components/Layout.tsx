@@ -1,6 +1,6 @@
 import { cloneElement, type ComponentType, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { Button, Dropdown, Grid, Layout as AntLayout, Segmented, Typography, theme } from "antd";
-import { IdcardOutlined, LogoutOutlined } from "@ant-design/icons";
+import { CompassOutlined, IdcardOutlined, LogoutOutlined } from "@ant-design/icons";
 import { api, userDisplayName, type Me } from "../api";
 import PersonAvatar from "./PersonAvatar";
 import Wordmark from "./Wordmark";
@@ -13,8 +13,10 @@ import { ThemeBoundary, type TopbarProps } from "../themeHost";
 export default function Layout({
   user,
   tabs,
+  notifications,
   onHome,
   onUserInfo,
+  onShowGuide,
   onLogout,
   activeTheme,
   TopbarBackground,
@@ -23,8 +25,10 @@ export default function Layout({
 }: {
   user: Me | null;
   tabs: ReactNode;
+  notifications?: ReactNode;
   onHome: () => void;
   onUserInfo?: () => void;
+  onShowGuide?: () => void;
   onLogout: () => void;
   // 正在用的主题包（没有时为空）。
   activeTheme?: string;
@@ -70,12 +74,14 @@ export default function Layout({
           </a>
         )}
         {tabs}
+        {user && notifications}
         {user ? <Dropdown
           trigger={["click"]}
           placement="bottomRight"
           menu={{
             items: [
               ...(onUserInfo ? [{ key: "user", icon: <IdcardOutlined />, label: "用户信息", onClick: onUserInfo }] : []),
+              ...(onShowGuide ? [{ key: "guide", icon: <CompassOutlined />, label: "新手引导", onClick: onShowGuide }] : []),
               { key: "logout", icon: <LogoutOutlined />, label: "退出登录", onClick: logout },
             ],
           }}

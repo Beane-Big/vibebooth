@@ -7,9 +7,18 @@ import PersonAvatar from "../components/PersonAvatar";
 import Users, { MemberDetail, MemberRow, SelfDetail } from "./Users";
 
 // 合并后的唯一入口：管理员可在“我的联系人”与“账号管理”之间切换；普通用户只看自己的联系人列表。
-export default function Contacts({ me, onMeChanged }: { me: Me; onMeChanged: () => void }) {
-  const [mode, setMode] = useState<"contacts" | "accounts">("contacts");
-  if (!isAdmin(me)) return <ContactList me={me} onMeChanged={onMeChanged} />;
+export default function Contacts({ me, onMeChanged, entryPath }: { me: Me; onMeChanged: () => void; entryPath?: string }) {
+  const [mode, setMode] = useState<"contacts" | "accounts">(() =>
+    isAdmin(me) && entryPath === "/contacts/accounts" ? "accounts" : "contacts",
+  );
+  useEffect(() => {
+    if (!isAdmin(me)) return;
+    if (entryPath === "/contacts/accounts") setMode("accounts");
+    else if (entryPath === "/contacts/self") setMode("contacts");
+  }, [me, entryPath]);
+
+  const focusSelf = entryPath === "/contacts/self";
+  if (!isAdmin(me)) return <ContactList me={me} onMeChanged={onMeChanged} focusSelf={focusSelf} />;
   return (
     <Flex vertical gap={12}>
       <Segmented
@@ -21,7 +30,7 @@ export default function Contacts({ me, onMeChanged }: { me: Me; onMeChanged: () 
         ]}
         style={{ alignSelf: "flex-start" }}
       />
-      {mode === "accounts" ? <Users me={me} onMeChanged={onMeChanged} /> : <ContactList me={me} onMeChanged={onMeChanged} />}
+      {mode === "accounts" ? <Users me={me} onMeChanged={onMeChanged} /> : <ContactList me={me} onMeChanged={onMeChanged} focusSelf={focusSelf} />}
     </Flex>
   );
 }
@@ -35,13 +44,16 @@ function requestDisplayName(r: ContactRequest) {
   return r.name.trim() || r.username;
 }
 
-function ContactList({ me, onMeChanged }: { me: Me; onMeChanged: () => void }) {
+function ContactList({ me, onMeChanged, focusSelf }: { me: Me; onMeChanged: () => void; focusSelf?: boolean }) {
   const { message } = App.useApp();
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [requests, setRequests] = useState<ContactRequest[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState<number | "self" | "requests" | null>(null);
+  const [selected, setSelected] = useState<number | "self" | "requests" | null>(() => (focusSelf ? "self" : null));
+  useEffect(() => {
+    if (focusSelf) setSelected("self");
+  }, [focusSelf]);
   const [query, setQuery] = useState("");
   const [form] = Form.useForm<{ identifier: string }>();
   const current = typeof selected === "number" ? contacts?.find((c) => c.id === selected) : undefined;

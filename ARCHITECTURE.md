@@ -251,3 +251,15 @@ permissions:
 上传、记录和设置页面位于 `portal/src/pages/builder/`，使用门户的 Ant Design 配置、样式和滚动容器。旧构建器首页和设置地址分别跳转到 `/applications/build` 和 `/applications/build/settings`。
 
 公开访问的应用为当前版本提供按用户授权的默认值：应用开关与可单独授权的页面默认开启，已有个人覆盖仍优先。功能权限及 requires 绑定页面继续遵循原规则。默认值读取 app_access 动态计算，不批量写入授权记录；取消公开或应用升级后自动回到原清单默认值。用户权限页、导航菜单和认证令牌使用相同的默认规则。
+
+## 站点品牌设置与消息推送
+
+- **可视化站点设置**（`core/site.go`、`portal/src/pages/Settings.tsx`）：管理员在「设置 → 站点」可实时修改产品名称、上传自定义 Logo（PNG/JPEG/WebP 缩放重编码为 PNG，SVG 校验去脚本并以 `Content-Security-Policy: sandbox` 输出，保存在 `core-data/site/`）、备案号、政策链接与是否开放自助注册。`GET /api/platform/site` 优先返回数据库保存的值，未设置时回落到 `.env`；修改后同步更新顶栏字标、登录页标题、浏览器标签标题和图标。
+- **平台消息推送底座**（`core/notifications.go`、`portal/src/components/NotificationBell.tsx`）：
+  - **站内通知与 SSE 实时推送**：`GET /api/platform/notifications/stream` 通过 Server-Sent Events 推送未读数与新通知（取消全局 30 秒写超时并带 `X-Accel-Buffering: no`）。门户顶栏铃铛实时显示未读角标与弹窗提醒，点击通知可按 `link` 直达对应平台页面或模块标签页。已读通知保留 30 天、未读保留 90 天自动清理。
+  - **外部离线推送通道**：用户在「设置 → 消息推送」可添加个人推送通道（Bark、企业微信、飞书、钉钉、通用 Webhook），管理员还可添加系统级管理员通道，支持一键测试。用户在线（存在活跃 SSE 连接）时仅走站内实时提醒；离线且消息标记为 `urgent` 时异步触发外部推送。
+  - **模块统一推送接口**：`POST http://core:8080/api/platform/ext/v1/notifications`（仅内部网络可达，支持按 `userIds` 或 `role: "admin"` 投递与 `dedupKey` 5 分钟防重合并），供论坛、意见箱、私信等模块复用；平台内置的联系人好友请求/通过和构建器构建完成/失败已接入该接口。
+- **开发规范 Skill 与构建诊断**：内置构建服务新增 `GET /api/platform/builder/skill` 与 `GET /api/platform/builder/theme-skill`，分别打包下载 `skills/vibebooth-app-dev/` 与 `skills/vibebooth-theme-dev/`（含 `SKILL.md`、模板参考与零依赖自检打包脚本）；BuildKit 进度解析新增 `VertexStatus`（实时展示镜像层下载、解压与导出进度）；失败构建详情返回结构化 `diagnosis`（识别 Go/npm/PyPI 镜像源、磁盘空间、OOM），前端提供「一键配置国内源」「清理构建缓存」（`POST /api/platform/builder/cache/prune`）及「复制给 AI 修复」按钮。安装器生成模块最终 compose 时自动附加日志轮转配置（`json-file`、`max-size: 10m`、`max-file: 3`）。
+- **新手指引、「应用开发」与「外观」页签及无感刷新**：登录首页顶部按角色展示可收起的「快速开始」任务卡（管理员 4 步：改初始密码与资料、定制站点与推送、开发上架首个应用、为自己定制主题外观），可随时关闭或从头像菜单「新手引导」重新打开。「应用管理」对管理员新增「应用开发」页签（`/applications/dev`），原「主题」应用更名为「外观」并拆分为「主题」「壁纸」「主题开发」（`/themes/dev`）三个页签。安装、升级或卸载模块后，前端自动触发 `POST /api/platform/registry/reload` 并广播 `vibebooth:apps-changed`，无感刷新首页应用列表及已打开的模块内嵌页签。
+- **Web 数据备份与恢复**（`installer/backup.go`、`portal/src/pages/Settings.tsx`）：「设置」改为左侧纵向菜单，管理员可见「数据备份」（`/settings/backup`）。备份与恢复执行器运行在受控的 `installer` 服务中（挂载 `backups-data`、`core-data` 并使用 `postgresql17-client`），避免向 `core` 开放 Docker 权限。支持立即备份、下载本地 `.tar.gz`（含数据库快照、`core-data`、`modules-data` 与可选的 `mod-*` 应用数据卷）、按天/按周定时自动备份与保留份数清理、可选 WebDAV 异地同步，以及校验管理员密码后的本地记录/上传文件恢复（恢复前自动创建保底快照）。
+

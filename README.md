@@ -32,27 +32,37 @@
 
 ## 第一次启动
 
-在 WSL 的 Ubuntu 里操作（代码放在 Linux 文件系统里，例如 `~/home-platform`，不要放在 `/mnt/c/` 下）。Docker Desktop 需要在运行，并在 Settings → Resources → WSL integration 里对 Ubuntu 打开集成。
+推荐直接运行一键安装脚本（自动生成 `.env` 和随机密码；国内网络自动探测并配置 Go / npm 加速源；优先使用预构建镜像，若暂不可用则自动降级为本机源码构建）：
 
 ```bash
 git clone https://github.com/Beane-Big/vibebooth.git ~/home-platform
 cd ~/home-platform
+bash scripts/install.sh
+```
+
+> 如需强制从当前源码构建或强制指定国内加速源，可运行 `bash scripts/install.sh --from-source --cn`。
+
+也可以手动配置后从源码启动（在 WSL Ubuntu 或 Linux 中，代码放在 Linux 文件系统里）：
+
+```bash
 cp .env.example .env
 # 编辑 .env：设置 POSTGRES_PASSWORD 和 ADMIN_PASSWORD（至少 8 位）
 docker compose up -d --build
 ```
 
-浏览器打开 <http://localhost:8080>，用 `.env` 里的管理员账号登录。这时还没有应用，在“设置 → 应用管理”上传模块包（zip）就能装上；模块包在各模块仓库里用 `npm run pack` 生成，有依赖的模块要先装它依赖的模块。
+浏览器打开 <http://localhost:8080>，用管理员账号登录。首次登录后可在「设置」自定义产品名称、Logo、注册开关与离线推送通道。
 
 常用命令：
 
 ```bash
-docker compose ps                 # 查看各服务状态
-docker compose logs -f core       # 查看平台核心日志
-docker compose up -d --build      # 改了平台本体的代码后重新构建并启动，不影响模块
-docker compose down               # 停止平台本体（数据保留在卷里）；模块容器不受影响
-scripts/module list               # 查看已安装的模块
-scripts/module install x.zip      # 在命令行安装模块包，和在门户上传一样
+docker compose ps                   # 查看各服务状态
+docker compose logs -f core         # 查看平台核心日志
+docker compose up -d --build        # 改了平台本体的代码后重新构建并启动，不影响模块
+docker compose down                 # 停止平台本体（数据保留在卷里）；模块容器不受影响
+scripts/module list                 # 查看已安装的模块
+scripts/module install x.zip        # 在命令行安装模块包，和在门户上传一样
+bash scripts/backup.sh export       # 一键备份数据库、平台数据及全部模块数据卷
+bash scripts/backup.sh restore x.tar.gz # 从备份文件恢复
 ```
 
 ## 在局域网里访问
@@ -65,7 +75,13 @@ scripts/module install x.zip      # 在命令行安装模块包，和在门户�
 
 ## 开发一个新模块
 
-每个模块一个仓库。规范见 [docs/module-spec.md](docs/module-spec.md)，大致流程（需要 Node.js 20 以上和 Docker，平台要先跑起来）：
+推荐使用 **Vibe Coding 开发规范 Skill**（`skills/vibebooth-app-dev/`，也可在门户「应用管理 → 应用构建」点击「下载开发 Skill」）：
+
+1. 把 `vibebooth-app-dev` Skill 交给你的 AI 编码工具，直接描述你想做的应用。
+2. 开发完成后运行 `node skills/vibebooth-app-dev/scripts/check-and-pack.mjs <应用目录>` 自动按平台规范自检并打包出 `<id>-<version>-source.zip`（无需本机 Docker）。
+3. 在门户「应用管理 → 应用构建」上传源码包，一键构建并安装；若构建失败可直接点击「一键配置国内源」或「复制给 AI 修复」。
+
+如需使用命令行脚手架本地打包（需要 Node.js 20+ 和 Docker，规范见 [docs/module-spec.md](docs/module-spec.md)）：
 
 ```bash
 npx github:Beane-Big/create-vibebooth notes   # 生成 vibebooth-module-notes/，可选前端（React、Vue、静态页）和后端（Go）
@@ -83,11 +99,11 @@ cd portal
 npm install
 npm run dev   # 接口请求会转发到 localhost:8080，需要先用 docker compose 启动平台
 ```
+
 ## 账号注册和登录
 
-登录页默认提供[账号注册](DEPLOY.md#账号注册)。注册时邮箱选填，登录使用账号和密码。无需配置邮件服务。
+登录页默认提供[账号注册](DEPLOY.md#账号注册)（管理员可在「设置 → 站点」中随时开启或关闭）。注册时邮箱选填，登录使用账号和密码。无需配置邮件服务。
 
-
-平台自带管理员构建服务。在首页「应用管理 → 应用构建」上传源码 ZIP，构建成功后安装；也支持直接上传已构建安装包。首次部署无需额外安装构建器。部署网络、Go/npm 镜像源配置与平台共用。
+平台自带管理员构建服务。在首页「应用管理 → 应用构建」上传源码 ZIP，构建成功后安装；也支持直接上传已构建安装包。首次部署无需额外安装构建器。部署网络、Go/npm 镜像源配置与平台共用。演进规划见 [docs/roadmap.md](docs/roadmap.md)。
 
 构建器页面随 Portal 发布，构建 API 由 builder 服务提供。从独立构建页面升级时，同时重新构建并部署这两个服务（`docker compose up -d --build portal builder`）。

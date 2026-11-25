@@ -1,23 +1,41 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Alert, Button, Card, Col, Flex, Row, Space, Tag, Typography, Upload } from "antd";
-import { CheckOutlined, DownloadOutlined, PictureOutlined, SkinOutlined, StopOutlined, UploadOutlined } from "@ant-design/icons";
-import { api, ApiError, hasPerm, maxWallpaperMB, type Me, type ThemeInfo, type Wallpaper } from "../api";
+import { Alert, App as AntApp, Button, Card, Col, Flex, Row, Segmented, Space, Steps, Tabs, Tag, Typography, Upload } from "antd";
+import {
+  CheckOutlined,
+  CopyOutlined,
+  DownloadOutlined,
+  PictureOutlined,
+  SkinOutlined,
+  StopOutlined,
+  UploadOutlined,
+} from "@ant-design/icons";
+import { api, ApiError, hasPerm, isAdmin, maxWallpaperMB, type Me, type ThemeInfo, type Wallpaper } from "../api";
 import { PackageDragger, ResultAlert, type OperationResult } from "../components/PackageUpload";
 import { themeID, useThemeMode, wallpaperURL, type Skin } from "../theme";
 import { THEMES_CHANGED_EVENT } from "../themeHost";
+import { themeSkillUrl } from "./builder/api";
 import classicShot from "../assets/skin-classic.jpg";
 import tilesShot from "../assets/skin-tiles.jpg";
 
-// 平台自带的“主题”应用：每个人在这里给自己选皮肤，选择存在自己的浏览器里；没选过的人用平台默认皮肤。
-// 皮肤有内置的两种和管理员安装的主题包。有“应用管理”权限的人还能设平台默认皮肤、上传主题包安装或升级、导出主题包，以及卸载主题。
-// 主题包的格式见 docs/theme-spec.md，用 create-vibebooth-theme 生成。
-// 下面是壁纸：同样每人自己选、没选过的用平台默认；选了以后所有皮肤和主题都用它当页面背景。管理员能上传、删除壁纸和设默认。
-export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) {
+// 平台自带的“外观”应用：分「主题」「壁纸」「主题开发」（管理员可见）三个页签。
+export default function Themes({ me, themes, entryPath }: { me: Me; themes: ThemeInfo[]; entryPath?: string }) {
   const { skin, ownSkin, setSkin, defaultSkin } = useThemeMode();
   const canManage = hasPerm(me, "modules");
+  const admin = isAdmin(me);
+  const [activeKey, setActiveKey] = useState(() => {
+    if (entryPath === "/themes/wallpapers") return "wallpapers";
+    if (admin && entryPath === "/themes/dev") return "dev";
+    return "themes";
+  });
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<OperationResult | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (entryPath === "/themes/wallpapers") setActiveKey("wallpapers");
+    else if (admin && entryPath === "/themes/dev") setActiveKey("dev");
+    else if (entryPath === "/themes") setActiveKey("themes");
+  }, [admin, entryPath]);
 
   // 选用的主题被卸载了，按经典皮肤显示，这里也标经典为使用中。
   const installed = (s: Skin) => !themeID(s) || themes.some((t) => t.id === themeID(s));
@@ -72,14 +90,14 @@ export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) 
     setSkin(item.skin === platformDefault ? null : item.skin);
   }
 
-  return (
+  const themeTab = (
     <Flex vertical gap={16}>
       {result && <ResultAlert result={result} />}
       <Flex align="center" gap={12} wrap>
         <Typography.Text type="secondary">
           {following
-            ? "你没有自己选皮肤，用的是平台默认皮肤，管理员改了默认会跟着变。"
-            : "你自己选了皮肤，不跟随平台默认。"}
+            ? "你没有自己选主题，用的是平台默认主题，管理员改了默认会跟着变。"
+            : "你自己选了主题，不跟随平台默认。"}
         </Typography.Text>
         {!following && <Button onClick={() => setSkin(null)}>跟随平台默认</Button>}
       </Flex>
@@ -104,7 +122,7 @@ export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) 
                     <Typography.Text strong>{item.name}</Typography.Text>
                     {platformDefault === item.skin && <Tag color="processing">默认</Tag>}
                   </Space>
-                  <Typography.Text type="secondary">{item.description || " "}</Typography.Text>
+                  <Typography.Text type="secondary">{item.description || "\u00a0"}</Typography.Text>
                 </Flex>
                 <Space wrap>
                   {current === item.skin ? (
@@ -122,7 +140,6 @@ export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) 
                     </Button>
                   )}
                   {canManage && item.theme && (
-                    // 导出成和上传时一样的主题包，能装到别的平台，或者在源码丢了时拿回装着的版本。
                     <Button
                       icon={<DownloadOutlined />}
                       href={`/api/platform/themes/${item.theme.id}/export`}
@@ -151,9 +168,37 @@ export default function Themes({ me, themes }: { me: Me; themes: ThemeInfo[] }) 
           </Col>
         ))}
       </Row>
-      <Wallpapers canManage={canManage} busy={busy} run={run} />
       {canManage && <InstallTheme busy={busy} run={run} />}
     </Flex>
+  );
+
+  return (
+    <Tabs
+      activeKey={activeKey}
+      onChange={setActiveKey}
+      items={[
+        { key: "themes", label: "主题", children: themeTab },
+        {
+          key: "wallpapers",
+          label: "壁纸",
+          children: (
+            <Flex vertical gap={16}>
+              {result && <ResultAlert result={result} />}
+              <Wallpapers canManage={canManage} busy={busy} run={run} />
+            </Flex>
+          ),
+        },
+        ...(admin
+          ? [
+              {
+                key: "dev",
+                label: "主题开发",
+                children: <ThemeDevGuide onGoUpload={() => setActiveKey("themes")} />,
+              },
+            ]
+          : []),
+      ]}
+    />
   );
 }
 
@@ -161,7 +206,7 @@ type SkinItem = { skin: Skin; name: string; description: string; preview?: strin
 
 type Run = (action: () => Promise<{ log: string }>, success: string) => Promise<boolean>;
 
-// Wallpapers 是壁纸区：“不用壁纸”、必应每日壁纸和管理员上传的壁纸，每张一张卡片，和上面的皮肤卡片一样。
+// Wallpapers 是壁纸区：“不用壁纸”、必应每日壁纸和管理员上传的壁纸。
 function Wallpapers({ canManage, busy, run }: { canManage: boolean; busy: boolean; run: Run }) {
   const { wallpaper, ownWallpaper, setWallpaper, defaultWallpaper } = useThemeMode();
   const [list, setList] = useState<Wallpaper[]>([]);
@@ -172,7 +217,6 @@ function Wallpapers({ canManage, busy, run }: { canManage: boolean; busy: boolea
     api.wallpapers().then(setList, () => setList([]));
   }, [version]);
 
-  // 列表回来之前只认识“不用壁纸”和必应，免得把上传的壁纸当成被删了。
   const known = (id: string) => id === "" || id === "bing" || list.some((w) => w.id === id);
   const current = known(wallpaper) ? wallpaper : "";
   const platformDefault = known(defaultWallpaper) ? defaultWallpaper : "";
@@ -186,7 +230,6 @@ function Wallpapers({ canManage, busy, run }: { canManage: boolean; busy: boolea
     ),
   ];
 
-  // 和皮肤一样：选平台默认的那张就是改回跟随默认。
   const use = (id: string) => setWallpaper(id === platformDefault ? null : id);
 
   async function change(action: () => Promise<unknown>, success: string) {
@@ -210,10 +253,17 @@ function Wallpapers({ canManage, busy, run }: { canManage: boolean; busy: boolea
   }
 
   return (
-    <Card
-      title="壁纸"
-      extra={
-        canManage && (
+    <Flex vertical gap={16}>
+      <Flex align="center" justify="space-between" gap={12} wrap>
+        <Flex align="center" gap={12} wrap>
+          <Typography.Text type="secondary">
+            {following
+              ? "你没有自己选壁纸，用的是平台默认壁纸。"
+              : "你自己选了壁纸，不跟随平台默认。"}
+          </Typography.Text>
+          {!following && <Button onClick={() => setWallpaper(null)}>跟随平台默认</Button>}
+        </Flex>
+        {canManage && (
           <Upload
             accept="image/jpeg,image/png,image/webp"
             showUploadList={false}
@@ -223,85 +273,73 @@ function Wallpapers({ canManage, busy, run }: { canManage: boolean; busy: boolea
               return false;
             }}
           >
-            <Button icon={<UploadOutlined />} disabled={busy}>
+            <Button type="primary" icon={<UploadOutlined />} disabled={busy}>
               上传壁纸
             </Button>
           </Upload>
-        )
-      }
-    >
-      <Flex vertical gap={16}>
-        <Flex align="center" gap={12} wrap>
-          <Typography.Text type="secondary">
-            {following
-              ? "你没有自己选壁纸，用的是平台默认壁纸。"
-              : "你自己选了壁纸，不跟随平台默认。"}
-          </Typography.Text>
-          {!following && <Button onClick={() => setWallpaper(null)}>跟随平台默认</Button>}
-        </Flex>
-        <Row gutter={[16, 16]}>
-          {items.map((item) => (
-            <Col key={item.id || "none"} xs={12} lg={8}>
-              <Card className="theme-card" cover={<WallpaperShot id={item.id} name={item.name} />}>
-                <Flex vertical gap={12}>
-                  <Flex vertical gap={4}>
-                    <Space size={8} wrap>
-                      <Typography.Text strong>{item.name}</Typography.Text>
-                      {platformDefault === item.id && <Tag color="processing">默认</Tag>}
-                    </Space>
-                    <Typography.Text type="secondary" ellipsis={{ tooltip: item.description }}>
-                      {item.description || " "}
-                    </Typography.Text>
-                  </Flex>
-                  <Space wrap>
-                    {current === item.id ? (
-                      <Button icon={<CheckOutlined />} disabled>
-                        使用中
-                      </Button>
-                    ) : (
-                      <Button type="primary" onClick={() => use(item.id)}>
-                        使用
-                      </Button>
-                    )}
-                    {canManage && platformDefault !== item.id && (
-                      <Button
-                        disabled={busy}
-                        onClick={() =>
-                          change(() => api.setDefaultWallpaper(item.id), `平台默认壁纸已设为${item.name}，没有自己选壁纸的人都会用它。`)
-                        }
-                      >
-                        设为默认
-                      </Button>
-                    )}
-                    {canManage &&
-                      item.id !== "" &&
-                      item.id !== "bing" &&
-                      (removing === item.id ? (
-                        <>
-                          <Button danger type="primary" onClick={() => remove(item.id)} disabled={busy}>
-                            确认删除
-                          </Button>
-                          <Button onClick={() => setRemoving(null)}>取消</Button>
-                        </>
-                      ) : (
-                        <Button disabled={busy} onClick={() => setRemoving(item.id)}>
-                          删除
-                        </Button>
-                      ))}
-                  </Space>
-                </Flex>
-              </Card>
-            </Col>
-          ))}
-        </Row>
+        )}
       </Flex>
-    </Card>
+      <Row gutter={[16, 16]}>
+        {items.map((item) => (
+          <Col key={item.id || "none"} xs={12} lg={8}>
+            <Card className="theme-card" cover={<WallpaperShot id={item.id} name={item.name} />}>
+              <Flex vertical gap={12}>
+                <Flex vertical gap={4}>
+                  <Space size={8} wrap>
+                    <Typography.Text strong>{item.name}</Typography.Text>
+                    {platformDefault === item.id && <Tag color="processing">默认</Tag>}
+                  </Space>
+                  <Typography.Text type="secondary" ellipsis={{ tooltip: item.description }}>
+                    {item.description || " "}
+                  </Typography.Text>
+                </Flex>
+                <Space wrap>
+                  {current === item.id ? (
+                    <Button icon={<CheckOutlined />} disabled>
+                      使用中
+                    </Button>
+                  ) : (
+                    <Button type="primary" onClick={() => use(item.id)}>
+                      使用
+                    </Button>
+                  )}
+                  {canManage && platformDefault !== item.id && (
+                    <Button
+                      disabled={busy}
+                      onClick={() =>
+                        change(() => api.setDefaultWallpaper(item.id), `平台默认壁纸已设为${item.name}，没有自己选壁纸的人都会用它。`)
+                      }
+                    >
+                      设为默认
+                    </Button>
+                  )}
+                  {canManage &&
+                    item.id !== "" &&
+                    item.id !== "bing" &&
+                    (removing === item.id ? (
+                      <>
+                        <Button danger type="primary" onClick={() => remove(item.id)} disabled={busy}>
+                          确认删除
+                        </Button>
+                        <Button onClick={() => setRemoving(null)}>取消</Button>
+                      </>
+                    ) : (
+                      <Button disabled={busy} onClick={() => setRemoving(item.id)}>
+                        删除
+                      </Button>
+                    ))}
+                </Space>
+              </Flex>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+    </Flex>
   );
 }
 
 type WallpaperItem = { id: string; name: string; description: string };
 
-// WallpaperShot 是壁纸卡片上的缩略图。“不用壁纸”和取不到的图（比如服务器连不上必应）显示一个图标。
 function WallpaperShot({ id, name }: { id: string; name: string }) {
   const [failed, setFailed] = useState(false);
   const placeholder = (icon: ReactNode) => (
@@ -317,7 +355,6 @@ function WallpaperShot({ id, name }: { id: string; name: string }) {
 // InstallTheme 是上传主题包的卡片，只给有“应用管理”权限的人看。
 function InstallTheme({ busy, run }: { busy: boolean; run: Run }) {
   const [file, setFile] = useState<File | null>(null);
-  // 主题带脚本时，安装器先拒绝，管理员确认后再带上 allowScript 装一次。
   const [confirming, setConfirming] = useState(false);
 
   function install(allowScript = false) {
@@ -332,10 +369,6 @@ function InstallTheme({ busy, run }: { busy: boolean; run: Run }) {
   return (
     <Card title="安装或升级主题">
       <Flex vertical gap={16}>
-        <Typography.Text type="secondary">
-          上传主题包（zip）：在主题仓库里用 <code>npm run pack</code> 生成的。主题可以换颜色、背景、组件样式和首页，
-          已安装的主题会升级到包里的版本。
-        </Typography.Text>
         <PackageDragger
           file={file}
           onChange={(f) => {
@@ -343,7 +376,7 @@ function InstallTheme({ busy, run }: { busy: boolean; run: Run }) {
             setConfirming(false);
           }}
           disabled={busy}
-          text="点击或把主题包拖到这里"
+          text="点击或把主题包（.zip）拖到这里"
         />
         <div>
           <Button type="primary" onClick={() => install()} disabled={!file} loading={busy}>
@@ -372,5 +405,161 @@ function InstallTheme({ busy, run }: { busy: boolean; run: Run }) {
         )}
       </Flex>
     </Card>
+  );
+}
+
+type ToolKey = "claude" | "cursor" | "codex" | "antigravity" | "other";
+
+const themeToolGuides: Record<ToolKey, { label: string; path: string; step: string }> = {
+  claude: {
+    label: "Claude Code",
+    path: "~/.claude/skills/vibebooth-theme-dev/",
+    step: "解压后把 vibebooth-theme-dev 文件夹放进上述目录（或项目内 .claude/skills/），对话时告诉 AI 使用 vibebooth-theme-dev skill。",
+  },
+  cursor: {
+    label: "Cursor",
+    path: "~/.cursor/skills/vibebooth-theme-dev/",
+    step: "解压后放进上述目录（或项目内 .cursor/skills/），在对话框里让 AI 按 vibebooth-theme-dev skill 设计主题。",
+  },
+  codex: {
+    label: "Codex",
+    path: "~/.codex/skills/vibebooth-theme-dev/",
+    step: "解压后放进上述目录（或项目内 .agents/skills/），在指令里让它使用 vibebooth-theme-dev skill。",
+  },
+  antigravity: {
+    label: "Antigravity",
+    path: ".agent/skills/vibebooth-theme-dev/",
+    step: "在界面导入解压后的 vibebooth-theme-dev 文件夹，或放进项目 .agent/skills/ 目录即可。",
+  },
+  other: {
+    label: "其他 AI 工具",
+    path: "vibebooth-theme-dev/SKILL.md",
+    step: "把解压后的目录放进空文件夹，对话时先让 AI 阅读 vibebooth-theme-dev/SKILL.md，再按规范设计并打包。",
+  },
+};
+
+const themePromptTemplates = [
+  {
+    title: "清新通透毛玻璃风",
+    prompt:
+      "使用 vibebooth-theme-dev skill，帮我设计一款「柔雾清晨」主题：浅蓝到淡紫的柔和渐变背景，半透明毛玻璃卡片，圆润柔和的图标配色，同时兼容浅色与深色模式，配一张预览图。完成后按 skill 规范自检并打包好上传用的主题包。",
+  },
+  {
+    title: "治愈暖色手账风",
+    prompt:
+      "使用 vibebooth-theme-dev skill，帮我设计一款「奶油手账」主题：温暖的米白纸感底色、低饱和焦糖与鼠尾草绿点缀、卡片线条柔和、适合家庭日常使用，同时照顾好深色模式与壁纸叠加效果。完成后按 skill 规范自检并打包好上传用的主题包。",
+  },
+  {
+    title: "深邃极光星空风",
+    prompt:
+      "使用 vibebooth-theme-dev skill，帮我设计一款「极光夜空」主题：深色模式下呈现蓝紫青极光渐变与玻璃质感，浅色模式下干净清爽，图标和顶栏字标呼应极光配色，配一张预览图。完成后按 skill 规范自检并打包好上传用的主题包。",
+  },
+  {
+    title: "微调已有主题",
+    prompt:
+      "使用 vibebooth-theme-dev skill，帮我调整当前主题：【填写想调整的地方，如换主色、调大圆角、改首页卡片排布】，保持主题标识不变并调高版本号，完成后重新自检并打包。",
+  },
+];
+
+function ThemeDevGuide({ onGoUpload }: { onGoUpload: () => void }) {
+  const { message } = AntApp.useApp();
+  const [tool, setTool] = useState<ToolKey>("claude");
+  const activeTool = themeToolGuides[tool];
+
+  async function copy(text: string, tip = "已复制") {
+    try {
+      await navigator.clipboard.writeText(text);
+      message.success(tip);
+    } catch {
+      message.error("复制失败");
+    }
+  }
+
+  return (
+    <Flex vertical gap={16} style={{ maxWidth: 960 }}>
+      <Card title="三步定制并安装专属主题">
+        <Steps
+          responsive
+          items={[
+            {
+              title: "下载主题开发 Skill",
+              status: "process",
+              description: "获取主题规范与自动打包工具",
+            },
+            {
+              title: "交给 AI 生成并打包",
+              status: "wait",
+              description: "描述想要的风格，自动输出主题包",
+            },
+            {
+              title: "上传并立即启用",
+              status: "wait",
+              description: "回到「主题」页签上传即可换肤",
+            },
+          ]}
+          style={{ marginBottom: 20 }}
+        />
+        <Space wrap>
+          <Button type="primary" href={themeSkillUrl} icon={<DownloadOutlined />}>
+            下载主题开发 Skill（.zip）
+          </Button>
+          <Button onClick={onGoUpload} icon={<UploadOutlined />}>
+            前往主题页签上传
+          </Button>
+        </Space>
+      </Card>
+
+      <Card title="把 Skill 放入 AI 工具">
+        <Flex vertical gap={12}>
+          <Segmented
+            value={tool}
+            onChange={(v) => setTool(v as ToolKey)}
+            options={Object.entries(themeToolGuides).map(([value, item]) => ({ value, label: item.label }))}
+            style={{ alignSelf: "flex-start" }}
+          />
+          <Flex align="center" gap={8} wrap>
+            <Typography.Text code>{activeTool.path}</Typography.Text>
+            <Button size="small" type="text" icon={<CopyOutlined />} onClick={() => copy(activeTool.path, "已复制路径")}>
+              复制路径
+            </Button>
+          </Flex>
+          <Typography.Text type="secondary">{activeTool.step}</Typography.Text>
+        </Flex>
+      </Card>
+
+      <Card title="常用提示词示例">
+        <Row gutter={[12, 12]}>
+          {themePromptTemplates.map((item) => (
+            <Col xs={24} md={12} key={item.title}>
+              <Card
+                size="small"
+                title={item.title}
+                extra={
+                  <Button size="small" type="link" icon={<CopyOutlined />} onClick={() => copy(item.prompt, "已复制提示词")}>
+                    复制
+                  </Button>
+                }
+                style={{ height: "100%" }}
+              >
+                <Typography.Paragraph style={{ marginBottom: 0, fontSize: 13 }}>
+                  {item.prompt}
+                </Typography.Paragraph>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </Card>
+
+      <Card size="small" title="小贴士">
+        <Flex vertical gap={6}>
+          <Typography.Text type="secondary">
+            1. 主题无需构建，打包后的 .zip 在「主题」页签直接上传几秒就能启用。
+          </Typography.Text>
+          <Typography.Text type="secondary">
+            2. 主题可以和「壁纸」搭配使用；若不满意或主题出错，随时可一键切回经典或设为默认。
+          </Typography.Text>
+        </Flex>
+      </Card>
+    </Flex>
   );
 }

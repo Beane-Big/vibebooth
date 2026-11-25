@@ -121,8 +121,94 @@ export type UserInput = {
   disabled?: boolean;
 };
 
-// 站点的公开信息：ICP 备案号和公安备案号，没配置时为空；policeCode 是公安备案号里的数字。
-export type SiteInfo = { icp: string; police: string; policeCode: string };
+// 站点的公开信息：产品名称、自定义 Logo、备案号与注册开关。
+export type SiteInfo = {
+  name: string;
+  hasLogo: boolean;
+  logoUrl: string;
+  icp: string;
+  police: string;
+  policeCode: string;
+  allowRegistration: boolean;
+  terms: string;
+  privacy: string;
+};
+
+export type SiteUpdateInput = {
+  name?: string;
+  icp?: string;
+  police?: string;
+  allowRegistration?: boolean;
+  terms?: string;
+  privacy?: string;
+};
+
+export type NotificationItem = {
+  id: number;
+  appId: string;
+  title: string;
+  body: string;
+  link: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
+export type NotificationList = {
+  items: NotificationItem[];
+  unreadCount: number;
+};
+
+export type ChannelKind = "bark" | "wecom" | "feishu" | "dingtalk" | "webhook";
+export type ChannelScope = "user" | "system";
+
+export type NotificationChannel = {
+  id: number;
+  scope: ChannelScope;
+  kind: ChannelKind;
+  name: string;
+  targetUrl: string;
+  enabled: boolean;
+  createdAt: string;
+};
+
+export type BackupSettings = {
+  enabled: boolean;
+  frequency: "daily" | "weekly";
+  hour: number;
+  weekday: number;
+  includeModules: boolean;
+  keepCount: number;
+  webdavEnabled: boolean;
+  webdavUrl: string;
+  webdavUsername: string;
+  webdavPassword?: string;
+  webdavPasswordSet?: boolean;
+};
+
+export type BackupRecord = {
+  id: string;
+  fileName: string;
+  trigger: "manual" | "scheduled" | "pre-restore" | string;
+  includeModules: boolean;
+  volumes: string[];
+  size: number;
+  createdAt: string;
+  webdavSynced: boolean;
+  webdavError?: string;
+};
+
+export type BackupStatus = {
+  running: boolean;
+  operation: "" | "backup" | "restore";
+  phase: string;
+  lastError: string;
+  updatedAt: string;
+};
+
+export type BackupList = {
+  status: BackupStatus;
+  items: BackupRecord[];
+};
 
 // 活跃度统计（只有管理员能看），见 core/stats.go。app 是 portal（首页）、portal:<自带应用 id> 或模块 id；
 // name 只有已安装的模块才有，自带应用的名称由门户自己填，已卸载的模块显示 id。日期都按服务器设置的时区算。
@@ -193,9 +279,42 @@ export const maxPackageMB = 2048;
 
 const put = (path: string, body: unknown) => request<void>(path, { method: "PUT", body: JSON.stringify(body) });
 
+export const APPS_CHANGED_EVENT = "vibebooth:apps-changed";
+
+export async function notifyAppsChanged(moduleId?: string) {
+  await api.reloadRegistry().catch(() => {});
+  window.dispatchEvent(new CustomEvent(APPS_CHANGED_EVENT, { detail: { moduleId } }));
+}
+
 export const api = {
   // 不用登录，登录页也能取到。
   site: () => request<SiteInfo>("/api/platform/site"),
+  reloadRegistry: () => request<void>("/api/platform/registry/reload", { method: "POST" }),
+  updateSite: (input: SiteUpdateInput) =>
+    request<SiteInfo>("/api/platform/site", { method: "PUT", body: JSON.stringify(input) }),
+  uploadSiteLogo: (file: File) => {
+    const form = new FormData();
+    form.append("logo", file);
+    return request<SiteInfo>("/api/platform/site/logo", { method: "POST", body: form });
+  },
+  deleteSiteLogo: () => request<SiteInfo>("/api/platform/site/logo", { method: "DELETE" }),
+  notifications: (unreadOnly = false) =>
+    request<NotificationList>(`/api/platform/notifications${unreadOnly ? "?unread=1" : ""}`),
+  markNotificationRead: (id: number) =>
+    request<void>(`/api/platform/notifications/${id}/read`, { method: "POST" }),
+  markAllNotificationsRead: () =>
+    request<void>("/api/platform/notifications/read-all", { method: "POST" }),
+  deleteNotification: (id: number) =>
+    request<void>(`/api/platform/notifications/${id}`, { method: "DELETE" }),
+  notificationChannels: () => request<NotificationChannel[]>("/api/platform/notification-channels"),
+  createNotificationChannel: (input: { scope: ChannelScope; kind: ChannelKind; name: string; targetUrl: string; enabled?: boolean }) =>
+    request<NotificationChannel>("/api/platform/notification-channels", { method: "POST", body: JSON.stringify(input) }),
+  updateNotificationChannel: (id: number, input: Partial<{ kind: ChannelKind; name: string; targetUrl: string; enabled: boolean }>) =>
+    request<NotificationChannel>(`/api/platform/notification-channels/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  deleteNotificationChannel: (id: number) =>
+    request<void>(`/api/platform/notification-channels/${id}`, { method: "DELETE" }),
+  testNotificationChannel: (id: number) =>
+    request<{ ok: boolean }>(`/api/platform/notification-channels/${id}/test`, { method: "POST" }),
   me: () => request<Me>("/api/platform/me"),
   // 换自己的头像（改账号关联的成员的照片），photo 为空表示去掉照片。
   setMyPhoto: (photo: string) =>
@@ -216,7 +335,7 @@ export const api = {
   setContactRemark: (id: number, remark: string) => put(`/api/platform/contacts/${id}/remark`, { remark }),
   removeContact: (id: number) => request<void>("/api/platform/contacts/" + id, { method: "DELETE" }),
   apps: () => request<App[]>("/api/platform/apps"),
-  authOptions: () => request<{ terms: string; privacy: string }>("/api/platform/auth/options"),
+  authOptions: () => request<{ terms: string; privacy: string; allowRegistration?: boolean }>("/api/platform/auth/options"),
   register: (input: { username: string; email?: string; password: string }) =>
     request<void>("/api/platform/auth/register", { method: "POST", body: JSON.stringify(input) }),
   login: (username: string, password: string, remember: boolean) =>
@@ -237,6 +356,33 @@ export const api = {
   },
   uninstallModule: (id: string, purge: boolean) =>
     request<{ log: string }>(`/api/platform/installer/modules/${id}?purge=${purge}`, { method: "DELETE" }),
+
+  // 数据备份与恢复（仅管理员）
+  backups: () => request<BackupList>("/api/platform/installer/backups"),
+  createBackup: (includeModules?: boolean) =>
+    request<{ started: boolean }>("/api/platform/installer/backups", {
+      method: "POST",
+      body: JSON.stringify(includeModules === undefined ? {} : { includeModules }),
+    }),
+  backupSettings: () => request<BackupSettings>("/api/platform/installer/backups/settings"),
+  saveBackupSettings: (s: BackupSettings) =>
+    request<BackupSettings>("/api/platform/installer/backups/settings", { method: "PUT", body: JSON.stringify(s) }),
+  testBackupWebDAV: (input: { webdavUrl: string; webdavUsername: string; webdavPassword: string; useSavedPassword: boolean }) =>
+    request<{ ok: boolean }>("/api/platform/installer/backups/test-webdav", { method: "POST", body: JSON.stringify(input) }),
+  backupDownloadUrl: (id: string) => `/api/platform/installer/backups/${encodeURIComponent(id)}/download`,
+  deleteBackup: (id: string) =>
+    request<void>(`/api/platform/installer/backups/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  restoreBackupById: (id: string, password: string) =>
+    request<{ started: boolean }>("/api/platform/installer/backups/restore", {
+      method: "POST",
+      body: JSON.stringify({ id, password }),
+    }),
+  restoreBackupByFile: (file: File, password: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("password", password);
+    return request<{ started: boolean }>("/api/platform/installer/backups/restore", { method: "POST", body: form });
+  },
 
   // 主题：登录用户能列出全部主题；游客只会收到平台默认主题。安装和卸载要有“应用管理”权限。
   themes: () => request<ThemeInfo[]>("/api/platform/themes"),

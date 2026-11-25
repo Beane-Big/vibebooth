@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Checkbox, Flex, List, Progress, Select, Space, Tag, Typography } from "antd";
-import { api, ApiError, maxPackageMB, privilegeInfo, type AppAccess, type InstalledModule } from "../api";
+import { api, ApiError, maxPackageMB, notifyAppsChanged, privilegeInfo, type AppAccess, type InstalledModule } from "../api";
 import { LogCollapse, PackagesDragger, ResultAlert, type OperationResult } from "../components/PackageUpload";
 
 // 排队安装的一个模块包。confirm 表示模块声明了特权，等管理员确认；确认后带上 allowPrivileges 重新排队。
@@ -110,10 +110,11 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
   async function install(item: QueueItem) {
     patch(item.key, { status: "uploading", progress: 0, message: "", log: "" });
     try {
-      const { log } = await api.installModule(item.file, item.allowPrivileges, (f) =>
+      const { module, log } = await api.installModule(item.file, item.allowPrivileges, (f) =>
         patch(item.key, f < 1 ? { progress: f } : { progress: 1, status: "installing" }),
       );
-      patch(item.key, { status: "done", message: "已安装，几秒后出现在应用列表里。", log });
+      void notifyAppsChanged(module.id);
+      patch(item.key, { status: "done", message: "已安装，应用列表已自动刷新。", log });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         patch(item.key, { status: "confirm", privileges: err.privileges });
@@ -138,6 +139,7 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
     setResult(null);
     try {
       const { log } = await api.uninstallModule(m.id, purge);
+      void notifyAppsChanged(m.id);
       setResult({ ok: true, message: purge ? `${m.name} 已卸载，数据已删除。` : `${m.name} 已卸载，数据保留。`, log });
     } catch (err) {
       const log = err instanceof ApiError ? err.log : "";

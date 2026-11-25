@@ -24,7 +24,19 @@ export type Build = {
 // 保留规则：每个模块成功和失败的构建各留最近 maxPackages 个，超过 maxDays 天的删除。
 export type Rules = { maxPackages: number; maxDays: number };
 
-export type BuildDetail = { build: Build; log: string; logTruncated: boolean };
+export type BuildDiagnosis = {
+  category?: string;
+  summary: string;
+  suggestedArgs?: BuildArg[];
+  canPruneCache?: boolean;
+};
+
+export type BuildDetail = {
+  build: Build;
+  log: string;
+  logTruncated: boolean;
+  diagnosis?: BuildDiagnosis | null;
+};
 
 export type Settings = {
   maxPackages: number;
@@ -101,6 +113,8 @@ async function send<T>(path: string, init?: RequestInit): Promise<{ data: T; ser
 }
 
 export const packageUrl = (id: number) => `/api/platform/builder/builds/${id}/package`;
+export const skillUrl = "/api/platform/builder/skill";
+export const themeSkillUrl = "/api/platform/builder/theme-skill";
 
 export const api = {
   me: () => request<Me>("/api/platform/builder/me"),
@@ -118,6 +132,7 @@ export const api = {
   rules: () => request<Rules>("/api/platform/builder/rules"),
   settings: () => request<Settings>("/api/platform/builder/settings"),
   saveSettings: (s: Settings) => request<Settings>("/api/platform/builder/settings", { method: "PUT", body: JSON.stringify(s) }),
+  pruneCache: () => request<{ reclaimedBytes: number }>("/api/platform/builder/cache/prune", { method: "POST" }),
 
   installed: () => request<Installed[]>("/api/platform/installer/modules"),
   // 一键安装在服务器上完成：先向后端要一个一次性的下载地址，再用管理员的登录把地址交给平台安装器，
