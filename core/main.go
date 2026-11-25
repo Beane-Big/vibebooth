@@ -165,8 +165,37 @@ func (s *Server) routes() http.Handler {
 	// 不再对外暴露全平台人员列表，模块只能按当前用户读取其联系人，或按已知用户 ID 批量解析资料。契约见 contracts/openapi.yaml。
 	mux.HandleFunc("GET /api/platform/ext/v1/users/{id}/contacts", s.handleExtUserContacts)
 	mux.HandleFunc("GET /api/platform/ext/v1/users", s.handleExtUsers)
+	mux.HandleFunc("POST /api/platform/ext/v1/auth/verify-admin-password", s.handleExtVerifyAdminPassword)
+	mux.HandleFunc("POST /api/platform/ext/v1/registry/reload", func(w http.ResponseWriter, _ *http.Request) {
+		s.registry.Load()
+		w.WriteHeader(http.StatusNoContent)
+	})
 	s.mountRegistration(mux)
 	return mux
+}
+
+func (s *Server) handleExtVerifyAdminPassword(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		UserID   int64  `json:"userId"`
+		Password string `json:"password"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.UserID <= 0 || in.Password == "" {
+		writeError(w, http.StatusUnauthorized, "密码不正确")
+		return
+	}
+	ok, err := s.store.CheckAdminPasswordByID(r.Context(), in.UserID, in.Password)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "密码不正确")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func fatal(msg string, err error) {

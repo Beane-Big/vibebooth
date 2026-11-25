@@ -171,6 +171,45 @@ export type NotificationChannel = {
   createdAt: string;
 };
 
+export type BackupSettings = {
+  enabled: boolean;
+  frequency: "daily" | "weekly";
+  hour: number;
+  weekday: number;
+  includeModules: boolean;
+  keepCount: number;
+  webdavEnabled: boolean;
+  webdavUrl: string;
+  webdavUsername: string;
+  webdavPassword?: string;
+  webdavPasswordSet?: boolean;
+};
+
+export type BackupRecord = {
+  id: string;
+  fileName: string;
+  trigger: "manual" | "scheduled" | "pre-restore" | string;
+  includeModules: boolean;
+  volumes: string[];
+  size: number;
+  createdAt: string;
+  webdavSynced: boolean;
+  webdavError?: string;
+};
+
+export type BackupStatus = {
+  running: boolean;
+  operation: "" | "backup" | "restore";
+  phase: string;
+  lastError: string;
+  updatedAt: string;
+};
+
+export type BackupList = {
+  status: BackupStatus;
+  items: BackupRecord[];
+};
+
 // 活跃度统计（只有管理员能看），见 core/stats.go。app 是 portal（首页）、portal:<自带应用 id> 或模块 id；
 // name 只有已安装的模块才有，自带应用的名称由门户自己填，已卸载的模块显示 id。日期都按服务器设置的时区算。
 export type StatsDays = 7 | 30 | 90;
@@ -317,6 +356,33 @@ export const api = {
   },
   uninstallModule: (id: string, purge: boolean) =>
     request<{ log: string }>(`/api/platform/installer/modules/${id}?purge=${purge}`, { method: "DELETE" }),
+
+  // 数据备份与恢复（仅管理员）
+  backups: () => request<BackupList>("/api/platform/installer/backups"),
+  createBackup: (includeModules?: boolean) =>
+    request<{ started: boolean }>("/api/platform/installer/backups", {
+      method: "POST",
+      body: JSON.stringify(includeModules === undefined ? {} : { includeModules }),
+    }),
+  backupSettings: () => request<BackupSettings>("/api/platform/installer/backups/settings"),
+  saveBackupSettings: (s: BackupSettings) =>
+    request<BackupSettings>("/api/platform/installer/backups/settings", { method: "PUT", body: JSON.stringify(s) }),
+  testBackupWebDAV: (input: { webdavUrl: string; webdavUsername: string; webdavPassword: string; useSavedPassword: boolean }) =>
+    request<{ ok: boolean }>("/api/platform/installer/backups/test-webdav", { method: "POST", body: JSON.stringify(input) }),
+  backupDownloadUrl: (id: string) => `/api/platform/installer/backups/${encodeURIComponent(id)}/download`,
+  deleteBackup: (id: string) =>
+    request<void>(`/api/platform/installer/backups/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  restoreBackupById: (id: string, password: string) =>
+    request<{ started: boolean }>("/api/platform/installer/backups/restore", {
+      method: "POST",
+      body: JSON.stringify({ id, password }),
+    }),
+  restoreBackupByFile: (file: File, password: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("password", password);
+    return request<{ started: boolean }>("/api/platform/installer/backups/restore", { method: "POST", body: form });
+  },
 
   // 主题：登录用户能列出全部主题；游客只会收到平台默认主题。安装和卸载要有“应用管理”权限。
   themes: () => request<ThemeInfo[]>("/api/platform/themes"),

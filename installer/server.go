@@ -25,10 +25,11 @@ const maxPackageSize = 2 << 30
 
 type server struct {
 	installer *Installer
+	backups   *BackupManager
 }
 
 // routes 的接口都在 /api/platform/installer/ 下。网关先请平台核心确认有“应用管理”权限（platform-admin 中间件），
-// 这里再用公钥验签并检查令牌里的权限，不只信任网关。
+// 这里再用公钥验签并检查令牌里的权限，不只信任网关。数据备份相关接口额外要求管理员角色。
 func (s *server) routes(verifier *auth.Verifier) http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/platform/installer/modules", s.list)
@@ -36,6 +37,16 @@ func (s *server) routes(verifier *auth.Verifier) http.Handler {
 	api.HandleFunc("DELETE /api/platform/installer/modules/{id}", s.uninstall)
 	api.HandleFunc("POST /api/platform/installer/themes", s.installTheme)
 	api.HandleFunc("DELETE /api/platform/installer/themes/{id}", s.uninstallTheme)
+	if s.backups != nil {
+		api.HandleFunc("GET /api/platform/installer/backups", requireAdminRole(s.listBackups))
+		api.HandleFunc("POST /api/platform/installer/backups", requireAdminRole(s.createBackup))
+		api.HandleFunc("GET /api/platform/installer/backups/settings", requireAdminRole(s.getBackupSettings))
+		api.HandleFunc("PUT /api/platform/installer/backups/settings", requireAdminRole(s.saveBackupSettings))
+		api.HandleFunc("POST /api/platform/installer/backups/test-webdav", requireAdminRole(s.testBackupWebDAV))
+		api.HandleFunc("GET /api/platform/installer/backups/{id}/download", requireAdminRole(s.downloadBackup))
+		api.HandleFunc("DELETE /api/platform/installer/backups/{id}", requireAdminRole(s.deleteBackup))
+		api.HandleFunc("POST /api/platform/installer/backups/restore", requireAdminRole(s.restoreBackup))
+	}
 	return verifier.Middleware(requireModulesPerm(api))
 }
 

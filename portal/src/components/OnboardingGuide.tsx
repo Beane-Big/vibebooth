@@ -101,6 +101,7 @@ type StepDef = {
 export default function OnboardingGuide({
   user,
   hasModules,
+  hasCustomTheme,
   doneIds,
   onNavigate,
   onMarkDone,
@@ -109,6 +110,7 @@ export default function OnboardingGuide({
 }: {
   user: Me;
   hasModules: boolean;
+  hasCustomTheme: boolean;
   doneIds: string[];
   onNavigate: (link: string) => void;
   onMarkDone: (id: string) => void;
@@ -144,11 +146,12 @@ export default function OnboardingGuide({
           autoDone: hasModules,
         },
         {
-          id: "members",
-          title: "添加成员与分配权限",
-          desc: "新建账号或好友并按需开通应用",
-          action: "去管理",
-          link: "/contacts/accounts",
+          id: "theme",
+          title: "为自己定制主题外观",
+          desc: "挑选主题壁纸，或用 AI 定制专属门户风格",
+          action: "去定制",
+          link: "/themes/dev",
+          autoDone: hasCustomTheme,
         },
       ]
     : [

@@ -275,7 +275,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   }
 
   function openHomeTab(tab: AppTab) {
-    if (tab.url === "/applications" || tab.url === "/contacts" || tab.url === "/themes") {
+    if (tab.url === "/applications" || tab.url === "/contacts" || tab.url === "/themes" || tab.url === "/settings") {
       setEntryPath(tab.url);
     }
     tabs.open(tab);
@@ -351,6 +351,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
           <OnboardingGuide
             user={user}
             hasModules={apps.length > 0}
+            hasCustomTheme={theme.themes.length > 0 || skin !== "classic" || Boolean(wallpaper)}
             doneIds={onboarding.state.done}
             onNavigate={openLink}
             onMarkDone={onboarding.markDone}
@@ -374,7 +375,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
             {t.url === "/applications" && (
               <AppManagement me={user} entryPath={entryPath} hasModules={(apps?.length ?? 0) > 0} />
             )}
-            {t.url === "/settings" && <Settings me={user} />}
+            {t.url === "/settings" && <Settings me={user} entryPath={entryPath} />}
             {t.url === "/themes" && <Themes me={user} themes={theme.themes} entryPath={entryPath} />}
             {t.url === "/stats" && <Stats onChanged={onMeChanged} />}
           </div>

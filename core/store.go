@@ -796,6 +796,27 @@ func (s *Store) checkPassword(ctx context.Context, username, password string) (*
 	return &u, hash, nil
 }
 
+// CheckAdminPasswordByID 供内部服务（如安装器恢复数据前）二次校验管理员密码。
+func (s *Store) CheckAdminPasswordByID(ctx context.Context, userID int64, password string) (bool, error) {
+	var hash string
+	var roles []string
+	err := s.pool.QueryRow(ctx,
+		`SELECT password_hash, roles FROM users WHERE id = $1 AND NOT disabled`, userID).
+		Scan(&hash, &roles)
+	if errors.Is(err, pgx.ErrNoRows) {
+		bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if hash == "" || !hasAnyRole(roles, []string{"admin"}) {
+		bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+		return false, nil
+	}
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil, nil
+}
+
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy-password"), bcrypt.DefaultCost)
 
 func (s *Store) CreateSession(ctx context.Context, tokenHash []byte, userID int64, passwordHash string, expires time.Time) (bool, error) {

@@ -80,6 +80,7 @@ export const builtinAliases: Record<string, string> = {
   "/contacts/accounts": "/contacts",
   "/themes/wallpapers": "/themes",
   "/themes/dev": "/themes",
+  "/settings/backup": "/settings",
 };
 
 // 这个人能看到的自带应用。其他人输入网址也只会看到首页，接口本身也会拒绝。

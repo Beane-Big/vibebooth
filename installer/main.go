@@ -31,10 +31,20 @@ func main() {
 		os.Exit(runCLI(in, os.Args[1:]))
 	}
 
+	bm := newBackupManager(
+		env("BACKUPS_DIR", "/backups"),
+		in.dir,
+		env("CORE_DATA_DIR", "/core-data"),
+		os.Getenv("DATABASE_URL"),
+		env("CORE_URL", "http://core:8080"),
+		env("STATS_TIMEZONE", "Asia/Shanghai"),
+	)
+	go bm.StartScheduler(context.Background())
+
 	verifier := auth.NewVerifier(env("JWKS_URL", "http://core:8080/api/platform/.well-known/jwks.json"), "installer")
 	srv := &http.Server{
 		Addr:              ":8000",
-		Handler:           (&server{installer: in}).routes(verifier),
+		Handler:           (&server{installer: in, backups: bm}).routes(verifier),
 		ReadHeaderTimeout: 10 * time.Second,
 		// 带宽小的时候上传一个上 GB 的模块包要一个多小时，导入镜像、启动容器还要几分钟。
 		ReadTimeout:  2 * time.Hour,

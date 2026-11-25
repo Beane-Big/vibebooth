@@ -90,10 +90,16 @@ services:
     restart: unless-stopped
     environment:
       DOCKER_HOST: tcp://installer-proxy:2375
+      DATABASE_URL: postgres://platform:${POSTGRES_PASSWORD}@postgres:5432/platform
+      CORE_DATA_DIR: /core-data
+      BACKUPS_DIR: /backups
+      STATS_TIMEZONE: ${STATS_TIMEZONE:-Asia/Shanghai}
     volumes:
       - modules-data:/modules
+      - core-data:/core-data
+      - backups-data:/backups
     networks: [default, installer-socket]
-    depends_on: [installer-proxy]
+    depends_on: [installer-proxy, postgres]
     labels:
       - traefik.enable=true
       - traefik.http.routers.installer.rule=PathPrefix(`/api/platform/installer/`)
@@ -157,3 +163,4 @@ volumes:
   pgdata:
   core-data:
   modules-data:
+  backups-data:

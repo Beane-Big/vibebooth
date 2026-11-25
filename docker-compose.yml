@@ -104,10 +104,16 @@ services:
     restart: unless-stopped
     environment:
       DOCKER_HOST: tcp://installer-proxy:2375
+      DATABASE_URL: postgres://platform:${POSTGRES_PASSWORD}@postgres:5432/platform
+      CORE_DATA_DIR: /core-data
+      BACKUPS_DIR: /backups
+      STATS_TIMEZONE: ${STATS_TIMEZONE:-Asia/Shanghai}
     volumes:
       - modules-data:/modules
+      - core-data:/core-data
+      - backups-data:/backups
     networks: [default, installer-socket]
-    depends_on: [installer-proxy]
+    depends_on: [installer-proxy, postgres]
     labels:
       - traefik.enable=true
       # Traefik 默认按规则字符串的长度排优先级，core 的规则带了排除 ext 的条件后比这条长，
@@ -185,3 +191,4 @@ volumes:
   pgdata:
   core-data:
   modules-data:
+  backups-data:
