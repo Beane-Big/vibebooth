@@ -304,7 +304,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if user == nil {
-		if isAPI {
+		if isAPI || isAssetRequest(r, path) {
 			writeError(w, http.StatusUnauthorized, "未登录")
 			return
 		}
@@ -361,6 +361,16 @@ func isBuilderRequest(r *http.Request) bool {
 	return strings.HasPrefix(path, "/api/platform/builder/") || strings.HasPrefix(path, "/apps/builder/")
 }
 
+// isAssetRequest 判断请求是否为脚本、样式、接口 fetch 等子资源，而不是浏览器的页面导航。
+// 未登录时这类请求不能 302 跳转到 /login（否则脚本拿到登录页 HTML 会导致白屏），而应返回 401。
+func isAssetRequest(r *http.Request, path string) bool {
+	switch r.Header.Get("Sec-Fetch-Dest") {
+	case "script", "style", "image", "font", "worker", "sharedworker", "serviceworker", "manifest", "audio", "video", "empty":
+		return true
+	}
+	return strings.Contains(path, "/assets/")
+}
+
 func (s *Server) handleVerifyAdmin(w http.ResponseWriter, r *http.Request) {
 	user, err := s.currentUser(r)
 	if err != nil {
@@ -368,8 +378,10 @@ func (s *Server) handleVerifyAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user == nil {
-		if strings.HasPrefix(r.Header.Get("X-Forwarded-Uri"), "/apps/builder/") {
-			http.Redirect(w, r, forwardedOrigin(r)+"/login?next="+url.QueryEscape(r.Header.Get("X-Forwarded-Uri")), http.StatusFound)
+		uri := r.Header.Get("X-Forwarded-Uri")
+		path, _, _ := strings.Cut(uri, "?")
+		if strings.HasPrefix(path, "/apps/builder/") && !isAssetRequest(r, path) {
+			http.Redirect(w, r, forwardedOrigin(r)+"/login?next="+url.QueryEscape(uri), http.StatusFound)
 		} else {
 			writeError(w, http.StatusUnauthorized, "未登录")
 		}

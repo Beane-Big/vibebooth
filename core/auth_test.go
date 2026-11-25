@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -64,3 +66,29 @@ func TestRenewedExpiry(t *testing.T) {
 		}
 	}
 }
+
+func TestIsAssetRequest(t *testing.T) {
+	cases := []struct {
+		name string
+		dest string
+		path string
+		want bool
+	}{
+		{"页面导航", "document", "/apps/vocab/", false},
+		{"无 Sec-Fetch-Dest 的页面路径", "", "/apps/vocab/settings", false},
+		{"脚本请求", "script", "/apps/vocab/assets/index-abc.js", true},
+		{"样式请求", "style", "/apps/vocab/assets/index-abc.css", true},
+		{"fetch 检查请求", "empty", "/apps/vocab/", true},
+		{"老浏览器按路径识别资源", "", "/apps/vocab/assets/index-abc.js", true},
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/api/platform/auth/verify", nil)
+		if c.dest != "" {
+			req.Header.Set("Sec-Fetch-Dest", c.dest)
+		}
+		if got := isAssetRequest(req, c.path); got != c.want {
+			t.Errorf("%s: isAssetRequest(dest=%q, path=%q) = %v, want %v", c.name, c.dest, c.path, got, c.want)
+		}
+	}
+}
+
