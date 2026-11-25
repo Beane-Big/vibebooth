@@ -272,11 +272,13 @@ Windows 上的 `C:\Users\<你的用户名>\...\home-platform` 和 Ubuntu 里的 
 
 ## 一键安装与备份恢复
 
-下载仓库后，可以直接运行一键脚本自动生成 `.env` 并启动平台（默认使用 `docker-compose.prebuilt.yml` 预构建镜像，免本地编译）：
+下载仓库后，直接运行一键脚本即可：会自动生成 `.env` 与随机密码、自动探测网络并在国内环境配置 Go / npm 加速源；优先使用预构建镜像（`docker-compose.prebuilt.yml`），若预构建镜像暂不可用会自动切换为本机源码构建：
 
 ```bash
-bash scripts/install.sh            # 国内网络可加 --cn；需要源码构建加 --from-source
+bash scripts/install.sh
 ```
+
+如需强制从源码构建并指定国内源，可运行 `bash scripts/install.sh --from-source --cn`。
 
 日常备份与迁移可使用内置备份脚本（包含平台数据库、核心数据、已安装模块清单以及所有 `mod-*` 模块数据卷）：
 

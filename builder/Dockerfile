@@ -1,5 +1,6 @@
 FROM golang:1.26-alpine AS build
 ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 WORKDIR /src
 COPY packages/manifest ./packages/manifest
 COPY packages/modpkg ./packages/modpkg

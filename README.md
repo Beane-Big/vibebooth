@@ -32,13 +32,15 @@
 
 ## 第一次启动
 
-推荐直接运行一键安装脚本（使用预构建镜像免编译，自动生成 `.env` 和随机密码）：
+推荐直接运行一键安装脚本（自动生成 `.env` 和随机密码；国内网络自动探测并配置 Go / npm 加速源；优先使用预构建镜像，若暂不可用则自动降级为本机源码构建）：
 
 ```bash
 git clone https://github.com/Beane-Big/vibebooth.git ~/home-platform
 cd ~/home-platform
-bash scripts/install.sh        # 国内网络可追加 --cn；需要本地源码编译加 --from-source
+bash scripts/install.sh
 ```
+
+> 如需强制从当前源码构建或强制指定国内加速源，可运行 `bash scripts/install.sh --from-source --cn`。
 
 也可以手动配置后从源码启动（在 WSL Ubuntu 或 Linux 中，代码放在 Linux 文件系统里）：
 

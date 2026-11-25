@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
 # Vibebooth 一键安装与升级脚本（适用于 Linux / 云服务器 / NAS / WSL Ubuntu）
-# 用法：
-#   bash scripts/install.sh                 # 使用预构建镜像快速启动（默认）
-#   bash scripts/install.sh --from-source   # 从当前源码构建并启动
-#   bash scripts/install.sh --cn            # 自动写入国内 Go/npm 镜像源
+# 直接运行即可，脚本会自动：
+#   1. 生成 .env 与随机强密码（首次运行时）
+#   2. 探测网络环境：若无法直连官方源，自动配置国内 Go / npm 镜像源（无需手工加 --cn）
+#   3. 优先拉取预构建镜像免编译启动；若预构建镜像暂不可用或拉取失败，自动降级为本机源码构建
+#
+# 可选参数：
+#   --from-source   强制从当前源码构建
+#   --cn            强制写入国内 Go / npm 镜像源
+#   --port=8080     指定对外访问端口
 
 set -euo pipefail
 
 FROM_SOURCE=0
-USE_CN=0
+FORCE_CN=0
 PORT=""
 
 for arg in "$@"; do
   case "$arg" in
     --from-source) FROM_SOURCE=1 ;;
-    --cn) USE_CN=1 ;;
+    --cn) FORCE_CN=1 ;;
     --port=*) PORT="${arg#*=}" ;;
     -h|--help)
       echo "用法: bash scripts/install.sh [--from-source] [--cn] [--port=8080]"
@@ -47,6 +52,26 @@ rand_str() {
   fi
 }
 
+get_env_val() {
+  local key="$1"
+  grep -E "^${key}=" .env 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r' || true
+}
+
+set_env_val() {
+  local key="$1"
+  local val="$2"
+  if grep -qE "^${key}=" .env 2>/dev/null; then
+    sed -i.bak "s#^${key}=.*#${key}=${val}#" .env
+    rm -f .env.bak
+  else
+    printf '\n%s=%s\n' "$key" "$val" >> .env
+  fi
+}
+
+can_reach() {
+  command -v curl >/dev/null 2>&1 && curl -fsSL -m 4 -o /dev/null "$1" 2>/dev/null
+}
+
 NEW_ENV=0
 INIT_ADMIN_PASS=""
 
@@ -55,30 +80,70 @@ if [ ! -f .env ]; then
   cp .env.example .env
   PG_PASS="$(rand_str 24)"
   INIT_ADMIN_PASS="$(rand_str 14)"
-  sed -i.bak "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${PG_PASS}/" .env
-  sed -i.bak "s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=${INIT_ADMIN_PASS}/" .env
-  if [ -n "$PORT" ]; then
-    sed -i.bak "s/^PUBLIC_PORT=.*/PUBLIC_PORT=${PORT}/" .env
-  fi
-  if [ "$USE_CN" -eq 1 ]; then
-    sed -i.bak "s#^GOPROXY=.*#GOPROXY=https://goproxy.cn,direct#" .env
-    sed -i.bak "s#^NPM_REGISTRY=.*#NPM_REGISTRY=https://registry.npmmirror.com#" .env
-  fi
-  rm -f .env.bak
+  set_env_val "POSTGRES_PASSWORD" "$PG_PASS"
+  set_env_val "ADMIN_PASSWORD" "$INIT_ADMIN_PASS"
   chmod 600 .env
   echo "已自动生成 .env 配置文件。"
 fi
 
-PUBLIC_PORT_VAL="$(grep -E '^PUBLIC_PORT=' .env | head -n1 | cut -d= -f2 || true)"
+if [ -n "$PORT" ]; then
+  set_env_val "PUBLIC_PORT" "$PORT"
+fi
+
+# 无论 .env 是新建还是已存在，都确保国内网络环境下自动配置可用的镜像源。
+CUR_GOPROXY="$(get_env_val GOPROXY)"
+CUR_NPM="$(get_env_val NPM_REGISTRY)"
+
+if [ "$FORCE_CN" -eq 1 ]; then
+  set_env_val "GOPROXY" "https://goproxy.cn,direct"
+  set_env_val "NPM_REGISTRY" "https://registry.npmmirror.com"
+  echo "已配置国内加速源（GOPROXY=https://goproxy.cn,direct，NPM_REGISTRY=https://registry.npmmirror.com）。"
+elif [ -z "$CUR_GOPROXY" ] || [ -z "$CUR_NPM" ]; then
+  echo "正在检测网络环境..."
+  CN_DETECTED=0
+  if [ -z "$CUR_GOPROXY" ]; then
+    if ! can_reach "https://proxy.golang.org" && can_reach "https://goproxy.cn"; then
+      set_env_val "GOPROXY" "https://goproxy.cn,direct"
+      CN_DETECTED=1
+    fi
+  fi
+  if [ -z "$CUR_NPM" ]; then
+    if [ "$CN_DETECTED" -eq 1 ] || (! can_reach "https://registry.npmjs.org/" && can_reach "https://registry.npmmirror.com"); then
+      if can_reach "https://registry.npmmirror.com"; then
+        set_env_val "NPM_REGISTRY" "https://registry.npmmirror.com"
+        CN_DETECTED=1
+      fi
+    fi
+  fi
+  if [ "$CN_DETECTED" -eq 1 ]; then
+    echo "检测到国内网络环境，已自动配置加速源：GOPROXY=$(get_env_val GOPROXY)，NPM_REGISTRY=$(get_env_val NPM_REGISTRY)"
+  fi
+fi
+
+# 同步导出给 docker compose，避免宿主机存在空的同名环境变量覆盖 .env。
+FINAL_GOPROXY="$(get_env_val GOPROXY)"
+FINAL_NPM="$(get_env_val NPM_REGISTRY)"
+[ -n "$FINAL_GOPROXY" ] && export GOPROXY="$FINAL_GOPROXY"
+[ -n "$FINAL_NPM" ] && export NPM_REGISTRY="$FINAL_NPM"
+
+PUBLIC_PORT_VAL="$(get_env_val PUBLIC_PORT)"
 PUBLIC_PORT_VAL="${PUBLIC_PORT_VAL:-8080}"
 
-if [ "$FROM_SOURCE" -eq 1 ]; then
-  echo "正在从源码构建并启动 Vibebooth..."
+start_from_source() {
+  echo "正在从源码构建并启动 Vibebooth（首次构建约需几分钟）..."
   docker compose up -d --build
+}
+
+if [ "$FROM_SOURCE" -eq 1 ]; then
+  start_from_source
 else
-  echo "正在拉取预构建镜像并启动 Vibebooth..."
-  docker compose -f docker-compose.prebuilt.yml pull
-  docker compose -f docker-compose.prebuilt.yml up -d
+  echo "正在拉取预构建镜像..."
+  if docker compose -f docker-compose.prebuilt.yml pull; then
+    docker compose -f docker-compose.prebuilt.yml up -d
+  else
+    echo "预构建镜像暂不可用，自动切换为本机源码构建..."
+    start_from_source
+  fi
 fi
 
 echo ""
