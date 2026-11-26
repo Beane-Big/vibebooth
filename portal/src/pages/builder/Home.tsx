@@ -1,7 +1,14 @@
-import { Alert, App as AntApp, Button, Card, List, Space, Tag, Typography, Upload } from "antd";
+import { Alert, App as AntApp, Button, Card, Checkbox, List, Select, Space, Tag, Typography, Upload } from "antd";
 import { ClearOutlined, CopyOutlined, DownloadOutlined, InboxOutlined, LoadingOutlined, SettingOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { notifyAppsChanged } from "../../api";
+import {
+  appScopeLabel,
+  appScopeOptions,
+  defaultAppScope,
+  finalizeModuleInstall,
+  isAppScope,
+  type AppScope,
+} from "../../api";
 import {
   api,
   ApiError,
@@ -29,12 +36,26 @@ const SELF_ID = "builder";
 // 刚在本页装完的结果；安装日志保存在后端，保存失败时日志也留在这里，免得看不到。
 type InstallNotice = { id: number; ok: boolean; message: string; log?: string };
 
-// 点“构建并安装”上传的记录，构建成功后在本页自动安装。存在 sessionStorage 里，刷新本页不丢，关掉页签就不再自动装。
+// 列表中等待上传的源码包：可单独勾选“构建并安装”及安装后的权限范围（默认按权限访问）。
+type SourceItem = { file: File; installAfter: boolean; scope: AppScope };
+
+// 勾选“构建并安装”上传的记录，构建成功后在本页自动安装并写入对应权限范围。存在 sessionStorage 里，刷新本页不丢，关掉页签就不再自动装。
+type AutoInstall = { id: number; scope: AppScope };
+
 const AUTO_KEY = "builder:auto-install";
 
-function loadAuto(): number[] {
+function loadAuto(): AutoInstall[] {
   try {
-    return JSON.parse(sessionStorage.getItem(AUTO_KEY) ?? "[]");
+    const raw: unknown = JSON.parse(sessionStorage.getItem(AUTO_KEY) ?? "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((entry): AutoInstall[] => {
+      if (typeof entry === "number") return [{ id: entry, scope: defaultAppScope }];
+      if (entry && typeof entry === "object" && typeof (entry as { id?: unknown }).id === "number") {
+        const scope = (entry as { scope?: unknown }).scope;
+        return [{ id: (entry as { id: number }).id, scope: isAppScope(scope) ? scope : defaultAppScope }];
+      }
+      return [];
+    });
   } catch {
     return [];
   }
@@ -49,14 +70,12 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
   const [expanded, setExpanded] = useState<Expanded | null>(null);
   const [error, setError] = useState("");
   // 选好的源码包，可以一次选多个；上传时一个一个传，每个成功后各自排进构建队列。
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<SourceItem[]>([]);
   // 上传没通过的源码包和原因，留在列表里给管理员看，改好后可以重新上传。
   const [fileErrors, setFileErrors] = useState(new Map<File, string>());
   // 正在上传第几个（从 0 开始），没在上传是 null。
   const [uploading, setUploading] = useState<number | null>(null);
   const busy = uploading !== null;
-  // 点了“构建并安装”、等确认；换了文件就要重新确认。
-  const [confirmAuto, setConfirmAuto] = useState(false);
   // 点了“删除”或“取消”、等确认的记录。
   const [removing, setRemoving] = useState<number | null>(null);
   const [installing, setInstalling] = useState<number | null>(null);
@@ -64,15 +83,17 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
   const [pending, setPending] = useState<{
     id: number;
     current: Installed | null;
+    scope: AppScope;
   } | null>(null);
   // 模块声明了特权时，安装器先拒绝并列出特权，管理员确认后再带上 allowPrivileges 装一次。
   const [confirming, setConfirming] = useState<{
     id: number;
     privileges: string[];
     current: Installed | null;
+    scope: AppScope;
   } | null>(null);
   const [notice, setNotice] = useState<InstallNotice | null>(null);
-  const [auto, setAuto] = useState<number[]>(loadAuto);
+  const [auto, setAuto] = useState<AutoInstall[]>(loadAuto);
   // 正在查已装版本或安装的自动安装；查的时候 installing 还没设上，靠它避免同时开始装第二个。
   const autoBusy = useRef(false);
 
@@ -160,7 +181,8 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
   useEffect(() => {
     if (autoBusy.current || installing !== null || pending || confirming)
       return;
-    const waiting = builds.filter((b) => auto.includes(b.id));
+    const autoMap = new Map(auto.map((item) => [item.id, item]));
+    const waiting = builds.filter((b) => autoMap.has(b.id));
     const done = waiting
       .filter((b) => !isRunning(b))
       .sort((x, y) => x.id - y.id);
@@ -168,16 +190,17 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
       done.find((b) => b.moduleId !== SELF_ID) ??
       (done.length === waiting.length ? done[0] : undefined);
     if (!b) return;
-    setAuto((ids) => ids.filter((id) => id !== b.id));
+    const target = autoMap.get(b.id)!;
+    setAuto((items) => items.filter((item) => item.id !== b.id));
     if (b.status !== "success") {
       setExpanded({ id: b.id, panel: "build" });
       return;
     }
     autoBusy.current = true;
-    askInstall(b, true).finally(() => (autoBusy.current = false));
+    askInstall(b, true, target.scope).finally(() => (autoBusy.current = false));
   }, [builds, auto, installing, pending, confirming]);
 
-  // 选了或拖进来几个文件，加在已选的后面，同一个文件不重复加；文件变了就要重新确认“构建并安装”。
+  // 选了或拖进来几个文件，加在已选的后面，同一个文件不重复加；默认不勾选“构建并安装”，权限范围默认“按权限访问”。
   function add(picked: File[]) {
     const same = (a: File, b: File) =>
       a.name === b.name &&
@@ -188,46 +211,64 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
     );
     setFiles((fs) => [
       ...fs,
-      ...fresh.filter((f) => !fs.some((o) => same(o, f))),
+      ...fresh
+        .filter((f) => !fs.some((o) => same(o.file, f)))
+        .map((file): SourceItem => ({
+          file,
+          installAfter: false,
+          scope: defaultAppScope,
+        })),
     ]);
-    setConfirmAuto(false);
     setError("");
   }
 
   function removeFile(f: File) {
-    setFiles((fs) => fs.filter((o) => o !== f));
+    setFiles((fs) => fs.filter((o) => o.file !== f));
     setFileErrors((m) => {
       const next = new Map(m);
       next.delete(f);
       return next;
     });
-    setConfirmAuto(false);
     setError("");
   }
 
+  function toggleInstall(f: File, installAfter: boolean) {
+    setFiles((fs) =>
+      fs.map((o) => (o.file === f ? { ...o, installAfter } : o)),
+    );
+  }
+
+  function changeScope(f: File, scope: AppScope) {
+    setFiles((fs) => fs.map((o) => (o.file === f ? { ...o, scope } : o)));
+  }
+
   // 一个一个上传，每个通过检查的马上排进构建队列；没通过的留在列表里、写上原因，其他的照常上传。
-  // installAfter 为 true 是“构建并安装”：构建成功后自动安装，不用再点“安装”。
-  async function upload(e: FormEvent, installAfter = false) {
+  // 勾选了“构建并安装”的源码包在构建成功后按其选择的权限范围自动安装。
+  async function upload(e: FormEvent) {
     e.preventDefault();
     if (!files.length) return;
-    setConfirmAuto(false);
     setError("");
     setFileErrors(new Map());
     const failed = new Map<File, string>();
     let first: number | null = null;
-    for (const [i, f] of files.entries()) {
+    for (const [i, item] of files.entries()) {
       setUploading(i);
       try {
-        const b = await api.upload(f);
-        if (installAfter) setAuto((ids) => [...ids, b.id]);
+        const b = await api.upload(item.file);
+        if (item.installAfter && me?.admin) {
+          setAuto((items) => [
+            ...items.filter((x) => x.id !== b.id),
+            { id: b.id, scope: item.scope },
+          ]);
+        }
         first ??= b.id;
         load();
       } catch (err) {
-        failed.set(f, err instanceof Error ? err.message : "上传失败");
+        failed.set(item.file, err instanceof Error ? err.message : "上传失败");
       }
     }
     setUploading(null);
-    setFiles((fs) => fs.filter((f) => failed.has(f)));
+    setFiles((fs) => fs.filter((item) => failed.has(item.file)));
     setFileErrors(failed);
     if (failed.size)
       setError(
@@ -242,7 +283,7 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
     setError("");
     try {
       await api.removeBuild(b.id);
-      setAuto((ids) => ids.filter((id) => id !== b.id));
+      setAuto((items) => items.filter((item) => item.id !== b.id));
       if (expanded?.id === b.id) setExpanded(null);
       load();
     } catch (err) {
@@ -257,8 +298,12 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
   }
 
   // 点“安装”先查平台上装的是哪个版本，在记录下方请管理员确认。
-  // 构建并安装（auto）时已经表明要装，直接安装；只有降级、或者装构建器自己时还有别的构建没结束，才照常请管理员确认。
-  async function askInstall(b: Build, auto = false) {
+  // 构建并安装（isAuto）时已经表明要装，直接安装；只有降级、或者装构建器自己时还有别的构建没结束，才照常请管理员确认。
+  async function askInstall(
+    b: Build,
+    isAuto = false,
+    scope: AppScope = defaultAppScope,
+  ) {
     setConfirming(null);
     setNotice(null);
     setError("");
@@ -267,9 +312,9 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
       const current = installed.find((m) => m.id === b.moduleId) ?? null;
       const downgrade =
         current !== null && compareVersions(b.version, current.version) < 0;
-      if (auto && !downgrade && !(b.moduleId === SELF_ID && running))
-        return install(b, false, current);
-      setPending({ id: b.id, current });
+      if (isAuto && !downgrade && !(b.moduleId === SELF_ID && running))
+        return install(b, false, current, scope);
+      setPending({ id: b.id, current, scope });
       setExpanded({ id: b.id, panel: "install" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "读取已安装的应用失败");
@@ -282,6 +327,7 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
     b: Build,
     allowPrivileges = false,
     current?: Installed | null,
+    scope?: AppScope,
   ) {
     if (current === undefined)
       current =
@@ -290,6 +336,13 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
           : confirming?.id === b.id
             ? confirming.current
             : null;
+    const targetScope =
+      scope ??
+      (pending?.id === b.id
+        ? pending.scope
+        : confirming?.id === b.id
+          ? confirming.scope
+          : defaultAppScope);
     setPending(null);
     setConfirming(null);
     setNotice(null);
@@ -299,18 +352,29 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
     let message: string;
     let log = "";
     try {
-      ({ log } = await api.install(b, allowPrivileges));
+      const installedRes = await api.install(b, allowPrivileges);
+      log = installedRes.log;
       ok = true;
-      void notifyAppsChanged(b.moduleId);
+      const { accessError } = await finalizeModuleInstall(
+        installedRes.module?.id ?? b.moduleId,
+        installedRes.module?.version ?? b.version,
+        me?.admin ? targetScope : undefined,
+      );
       if (b.moduleId === SELF_ID)
         message = `构建器已更新为 ${b.version}，刷新本页后生效。`;
       else if (current)
         message = `${b.moduleName} 已更新为 ${b.version}，应用列表和已打开页签已自动刷新。`;
       else
         message = `${b.moduleName} ${b.version} 已安装，应用列表已自动刷新。`;
+      if (accessError) message += `（权限范围设置失败：${accessError}）`;
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setConfirming({ id: b.id, privileges: err.privileges, current });
+        setConfirming({
+          id: b.id,
+          privileges: err.privileges,
+          current,
+          scope: targetScope,
+        });
         setInstalling(null);
         return;
       }
@@ -363,8 +427,11 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
             files={files}
             errors={fileErrors}
             uploading={uploading}
+            canInstall={Boolean(me?.admin)}
             onAdd={add}
             onRemove={removeFile}
+            onToggleInstall={toggleInstall}
+            onChangeScope={changeScope}
             onError={setError}
           />
           <div className="actions">
@@ -372,58 +439,11 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
               type="primary"
               loading={busy}
               htmlType="submit"
-              disabled={!files.length || busy || confirmAuto}
+              disabled={!files.length || busy}
             >
               {busy ? uploadingText(uploading, files.length) : "开始构建"}
             </Button>
-            {me?.admin && (
-              <Button
-                aria-expanded={confirmAuto}
-                onClick={() => setConfirmAuto(!confirmAuto)}
-                disabled={!files.length || busy}
-              >
-                构建并安装
-              </Button>
-            )}
           </div>
-          {confirmAuto && files.length > 0 && (
-            <Alert
-              type="info"
-              showIcon
-              message="确认构建并安装"
-              description={
-                <div className="stack" role="group" aria-label="确认构建并安装">
-                  <p className="confirm-title">
-                    {files.length === 1
-                      ? `确认构建并安装 ${files[0].name}？`
-                      : `确认构建并安装这 ${files.length} 个源码包？`}
-                  </p>
-                  <Typography.Text type="secondary">
-                    {files.length > 1 &&
-                      "按上传顺序排队构建，成功一个装一个；其中有构建器自己的话放到最后装。"}
-                    构建成功后直接装到本平台，不再询问。等待期间不要关闭本页；降级或模块需要特权时，仍会在记录下方请你确认。
-                  </Typography.Text>
-                  <div className="actions">
-                    <Button
-                      type="primary"
-                      onClick={(e) => upload(e, true)}
-                      disabled={busy}
-                    >
-                      {busy
-                        ? uploadingText(uploading, files.length)
-                        : "确认构建并安装"}
-                    </Button>
-                    <Button
-                      onClick={() => setConfirmAuto(false)}
-                      disabled={busy}
-                    >
-                      取消
-                    </Button>
-                  </div>
-                </div>
-              }
-            />
-          )}
           {error && <Alert type="error" showIcon message={<>{error}</>} />}
         </form>
       </Card>
@@ -446,6 +466,7 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
               const open = expanded?.id === b.id ? expanded.panel : null;
               const retention = rules && retentionText(b, builds, rules);
               const seconds = elapsed(b);
+              const autoItem = auto.find((item) => item.id === b.id);
               return (
                 <List.Item key={b.id} className="build-row">
                   <div className="build-head">
@@ -468,7 +489,9 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
                       >
                         {statusText[b.status]}
                       </Tag>
-                      {auto.includes(b.id) && <Tag>构建后安装</Tag>}
+                      {autoItem && (
+                        <Tag>构建后安装 · {appScopeLabel[autoItem.scope]}</Tag>
+                      )}
                       {installing === b.id ? (
                         <Tag className="tag-progress" color="processing">
                           安装中
@@ -568,7 +591,13 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
                         <InstallConfirm
                           build={b}
                           current={pending.current}
+                          scope={pending.scope}
                           busy={b.moduleId === SELF_ID && running}
+                          onScopeChange={(scope) =>
+                            setPending((p) =>
+                              p && p.id === b.id ? { ...p, scope } : p,
+                            )
+                          }
                           onConfirm={() => install(b)}
                           onCancel={() => setPending(null)}
                         />
@@ -633,20 +662,26 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
 }
 
 // FileDrop 是选源码包的区域：点一下打开选文件，也可以把 zip 拖进来，一次可以选多个。
-// 选好的列在上面，每个显示文件名和大小，可以单独去掉；下面的框还能继续添加。
+// 选好的列在下方，每个显示文件名、大小，以及单独的“构建并安装”复选框与权限范围选择。
 function FileDrop({
   files,
   errors,
   uploading,
+  canInstall,
   onAdd,
   onRemove,
+  onToggleInstall,
+  onChangeScope,
   onError,
 }: {
-  files: File[];
+  files: SourceItem[];
   errors: Map<File, string>;
   uploading: number | null;
+  canInstall: boolean;
   onAdd: (files: File[]) => void;
   onRemove: (f: File) => void;
+  onToggleInstall: (f: File, installAfter: boolean) => void;
+  onChangeScope: (f: File, scope: AppScope) => void;
   onError: (message: string) => void;
 }) {
   const disabled = uploading !== null;
@@ -688,33 +723,59 @@ function FileDrop({
           size="small"
           bordered
           dataSource={files}
-          renderItem={(f, i) => (
+          renderItem={(item, i) => (
             <List.Item>
               <div className="file-row">
                 <div className="file-info">
-                  <Typography.Text strong>{f.name}</Typography.Text>
+                  <Typography.Text strong>{item.file.name}</Typography.Text>
                   <Typography.Text type="secondary">
-                    {formatSize(f.size)}
+                    {formatSize(item.file.size)}
                     {uploading === i
                       ? " · 上传中…"
                       : uploading !== null && i > uploading
                         ? " · 等待上传"
                         : ""}
                   </Typography.Text>
-                  {errors.has(f) && (
+                  {errors.has(item.file) && (
                     <Typography.Text type="danger">
-                      {errors.get(f)}
+                      {errors.get(item.file)}
                     </Typography.Text>
                   )}
                 </div>
-                <Button
-                  size="small"
-                  disabled={disabled}
-                  aria-label={`去掉 ${f.name}`}
-                  onClick={() => onRemove(f)}
-                >
-                  移除
-                </Button>
+                <div className="file-actions">
+                  {canInstall && (
+                    <>
+                      <Checkbox
+                        checked={item.installAfter}
+                        disabled={disabled}
+                        onChange={(e) =>
+                          onToggleInstall(item.file, e.target.checked)
+                        }
+                      >
+                        构建并安装
+                      </Checkbox>
+                      {item.installAfter && (
+                        <Select
+                          size="small"
+                          aria-label={`${item.file.name}权限范围`}
+                          value={item.scope}
+                          style={{ minWidth: 120 }}
+                          disabled={disabled}
+                          onChange={(scope) => onChangeScope(item.file, scope)}
+                          options={appScopeOptions}
+                        />
+                      )}
+                    </>
+                  )}
+                  <Button
+                    size="small"
+                    disabled={disabled}
+                    aria-label={`去掉 ${item.file.name}`}
+                    onClick={() => onRemove(item.file)}
+                  >
+                    移除
+                  </Button>
+                </div>
               </div>
             </List.Item>
           )}
@@ -735,13 +796,17 @@ function uploadingText(index: number | null, total: number) {
 function InstallConfirm({
   build,
   current,
+  scope,
   busy,
+  onScopeChange,
   onConfirm,
   onCancel,
 }: {
   build: Build;
   current: Installed | null;
+  scope: AppScope;
   busy: boolean;
+  onScopeChange: (scope: AppScope) => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -776,6 +841,16 @@ function InstallConfirm({
           message={<>还有排队或构建中的记录，等它们结束后再安装构建器。</>}
         />
       )}
+      <Space wrap align="center">
+        <Typography.Text type="secondary">权限范围</Typography.Text>
+        <Select
+          aria-label={`${build.moduleName}权限范围`}
+          value={scope}
+          style={{ minWidth: 124 }}
+          onChange={onScopeChange}
+          options={appScopeOptions}
+        />
+      </Space>
       <div className="actions">
         <Button
           danger={diff < 0}

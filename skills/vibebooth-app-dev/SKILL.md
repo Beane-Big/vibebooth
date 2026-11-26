@@ -112,4 +112,4 @@ node <skill目录>/scripts/check-and-pack.mjs .
 
 脚本会逐项检查 `module.yaml`、`compose.yaml`、`icon.svg` 和 `Dockerfile`，通过后自动排除 `node_modules`、`.git`、`dist` 等无用目录，在当前目录生成 `<id>-<version>-source.zip`。
 
-最后引导用户在 Vibebooth 门户打开「应用管理 → 应用构建」，拖入生成的 `.zip` 文件并点击「构建并安装」。
+最后引导用户在 Vibebooth 门户打开「应用管理 → 应用构建」，拖入生成的 `.zip` 文件，按需勾选「构建并安装」与权限范围后点击「开始构建」。

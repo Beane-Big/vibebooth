@@ -143,6 +143,6 @@ export const api = {
     const form = new FormData();
     form.append("url", url);
     if (allowPrivileges) form.append("allowPrivileges", "true");
-    return request<{ log: string }>("/api/platform/installer/modules", { method: "POST", body: form });
+    return request<{ module?: Installed; log: string }>("/api/platform/installer/modules", { method: "POST", body: form });
   },
 };

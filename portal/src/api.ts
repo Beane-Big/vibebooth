@@ -39,6 +39,24 @@ export const hasPerm = (me: Me, perm: PlatformPerm) => me.perms.includes(perm);
 
 export type AppScope = "restricted" | "signed-in" | "public";
 export type AppAccess = { scope: AppScope; version: string };
+
+export const defaultAppScope: AppScope = "restricted";
+
+export const appScopeOptions: { value: AppScope; label: string }[] = [
+  { value: "restricted", label: "按权限访问" },
+  { value: "signed-in", label: "登录可访问" },
+  { value: "public", label: "公开访问" },
+];
+
+export const appScopeLabel: Record<AppScope, string> = {
+  restricted: "按权限访问",
+  "signed-in": "登录可访问",
+  public: "公开访问",
+};
+
+export function isAppScope(v: unknown): v is AppScope {
+  return v === "restricted" || v === "signed-in" || v === "public";
+}
 export type ContactStatus = "pending" | "accepted";
 export type Contact = { id: number; userId: number; name: string; username: string; photo: string; remark: string; status: ContactStatus };
 export type ContactRequest = { id: number; userId: number; name: string; username: string; photo: string };
@@ -284,6 +302,28 @@ export const APPS_CHANGED_EVENT = "vibebooth:apps-changed";
 export async function notifyAppsChanged(moduleId?: string) {
   await api.reloadRegistry().catch(() => {});
   window.dispatchEvent(new CustomEvent(APPS_CHANGED_EVENT, { detail: { moduleId } }));
+}
+
+// 安装或升级模块后先刷新核心注册表，再按管理员预先选好的权限范围写入 app-access，最后通知门户刷新应用列表。
+// 没有网页入口的模块不支持设置权限范围：保持默认“按权限访问”时忽略 400，明确选择其他范围时返回错误原因供提示。
+export async function finalizeModuleInstall(
+  moduleId: string,
+  version: string,
+  scope?: AppScope,
+): Promise<{ accessError?: string }> {
+  await api.reloadRegistry().catch(() => {});
+  let accessError: string | undefined;
+  if (scope) {
+    try {
+      await api.setAppAccess(moduleId, { version, scope });
+    } catch (err) {
+      if (!(scope === defaultAppScope && err instanceof ApiError && err.status === 400)) {
+        accessError = err instanceof Error ? err.message : "设置权限范围失败";
+      }
+    }
+  }
+  window.dispatchEvent(new CustomEvent(APPS_CHANGED_EVENT, { detail: { moduleId } }));
+  return { accessError };
 }
 
 export const api = {

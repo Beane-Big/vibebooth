@@ -1,6 +1,19 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Checkbox, Flex, List, Progress, Select, Space, Tag, Typography } from "antd";
-import { api, ApiError, maxPackageMB, notifyAppsChanged, privilegeInfo, type AppAccess, type InstalledModule } from "../api";
+import {
+  api,
+  ApiError,
+  APPS_CHANGED_EVENT,
+  appScopeOptions,
+  defaultAppScope,
+  finalizeModuleInstall,
+  maxPackageMB,
+  notifyAppsChanged,
+  privilegeInfo,
+  type AppAccess,
+  type AppScope,
+  type InstalledModule,
+} from "../api";
 import { LogCollapse, PackagesDragger, ResultAlert, type OperationResult } from "../components/PackageUpload";
 
 // 排队安装的一个模块包。confirm 表示模块声明了特权，等管理员确认；确认后带上 allowPrivileges 重新排队。
@@ -8,6 +21,7 @@ type QueueStatus = "waiting" | "uploading" | "installing" | "done" | "failed" | 
 type QueueItem = {
   key: number;
   file: File;
+  scope: AppScope;
   status: QueueStatus;
   // 上传进度（0～1）。
   progress: number;
@@ -65,7 +79,12 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
       .then(setModules)
       .catch((err) => setError(err.message));
   }
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+    const onAppsChanged = () => load();
+    window.addEventListener(APPS_CHANGED_EVENT, onAppsChanged);
+    return () => window.removeEventListener(APPS_CHANGED_EVENT, onAppsChanged);
+  }, [canManageAccess]);
 
   function patch(key: number, change: Partial<QueueItem>) {
     setQueue((q) => q.map((it) => (it.key === key ? { ...it, ...change } : it)));
@@ -84,6 +103,7 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
           return {
             key: nextKey++,
             file,
+            scope: defaultAppScope,
             status: tooLarge ? "failed" : "waiting",
             progress: 0,
             message: tooLarge ? `模块包不能超过 ${maxPackageMB} MB` : "",
@@ -113,8 +133,18 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
       const { module, log } = await api.installModule(item.file, item.allowPrivileges, (f) =>
         patch(item.key, f < 1 ? { progress: f } : { progress: 1, status: "installing" }),
       );
-      void notifyAppsChanged(module.id);
-      patch(item.key, { status: "done", message: "已安装，应用列表已自动刷新。", log });
+      const { accessError } = await finalizeModuleInstall(
+        module.id,
+        module.version,
+        canManageAccess ? item.scope : undefined,
+      );
+      patch(item.key, {
+        status: "done",
+        message: accessError
+          ? `已安装，应用列表已自动刷新（权限范围设置失败：${accessError}）。`
+          : "已安装，应用列表已自动刷新。",
+        log,
+      });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         patch(item.key, { status: "confirm", privileges: err.privileges });
@@ -171,7 +201,9 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
                 <List.Item>
                   <QueueRow
                     item={it}
+                    canManageAccess={canManageAccess}
                     uninstalling={uninstalling}
+                    onScopeChange={(scope) => patch(it.key, { scope })}
                     onRetry={() => requeue(it)}
                     onConfirm={() => requeue(it, true)}
                     onRemove={() => setQueue((q) => q.filter((x) => x.key !== it.key))}
@@ -236,11 +268,7 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
                     disabled={busy || savingAccess !== null}
                     loading={savingAccess === m.id}
                     onChange={(scope) => changeAccess(m.id, { version: access[m.id].version, scope })}
-                    options={[
-                      { value: "restricted", label: "按权限访问" },
-                      { value: "signed-in", label: "登录可访问" },
-                      { value: "public", label: "公开访问" },
-                    ]}
+                    options={appScopeOptions}
                   />
                 )}
                 {removing === m.id ? (
@@ -277,20 +305,25 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
 // QueueRow 是队列里的一个模块包：文件名、状态、上传进度、结果和日志，以及按状态能做的操作。
 function QueueRow({
   item,
+  canManageAccess,
   uninstalling,
+  onScopeChange,
   onRetry,
   onConfirm,
   onRemove,
 }: {
   item: QueueItem;
+  canManageAccess: boolean;
   // 正在卸载时不能重试或确认安装，和卸载时不能点“安装”一样。
   uninstalling: boolean;
+  onScopeChange: (scope: AppScope) => void;
   onRetry: () => void;
   onConfirm: () => void;
   onRemove: () => void;
 }) {
   const tag = statusTag[item.status];
   const active = item.status === "uploading" || item.status === "installing";
+  const tooLarge = item.file.size > maxPackageMB * 1024 * 1024;
   return (
     <Flex vertical gap={8} style={{ width: "100%" }}>
       <Flex justify="space-between" align="center" gap={12} wrap>
@@ -311,7 +344,18 @@ function QueueRow({
           </Typography.Text>
         </Flex>
         <Space wrap>
-          {item.status === "failed" && item.file.size <= maxPackageMB * 1024 * 1024 && (
+          {canManageAccess && (
+            <Select
+              size="small"
+              aria-label={`${item.file.name}权限范围`}
+              value={item.scope}
+              style={{ minWidth: 120 }}
+              disabled={active || item.status === "done" || tooLarge}
+              onChange={onScopeChange}
+              options={appScopeOptions}
+            />
+          )}
+          {item.status === "failed" && !tooLarge && (
             <Button size="small" onClick={onRetry} disabled={uninstalling}>
               重试
             </Button>

@@ -13,8 +13,9 @@
 .builder-page .meta > span:not(:last-child)::after { content: "·"; margin: 0 0.35em; }
 .builder-page .detail { flex-basis: 100%; min-width: 0; padding-top: 12px; }
 .builder-page .detail > ul { margin: 0; }
-.builder-page .file-row { display: flex; align-items: center; gap: 12px; width: 100%; }
-.builder-page .file-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.builder-page .file-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; width: 100%; }
+.builder-page .file-info { display: flex; flex-direction: column; gap: 4px; min-width: min(100%, 180px); flex: 1; overflow-wrap: anywhere; }
+.builder-page .file-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .builder-page .field { display: flex; flex-direction: column; gap: 6px; }
 .builder-page .arg-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto; gap: 8px; align-items: center; }
 /* 窄屏参数单独一行；操作换行后仍留在对应记录下方。 */
