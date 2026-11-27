@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Card, Flex, Result, Spin } from "antd";
 import { useActivityBeat } from "./activity";
-import { api, ApiError, APPS_CHANGED_EVENT, isAdmin, type App as AppInfo, type Me } from "./api";
+import { api, ApiError, APPS_CHANGED_EVENT, hasPerm, isAdmin, type App as AppInfo, type Me } from "./api";
 import { builtinAliases, builtinAppsFor, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
 import Beian from "./components/Beian";
@@ -22,6 +22,7 @@ import { useActiveTheme } from "./themeHost";
 import { loginActionText, preloadSiteInfo, useSiteInfo } from "./site";
 
 export default function App() {
+  const { message } = AntApp.useApp();
   const [user, setUser] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [loginConfirmed, setLoginConfirmed] = useState(() => new URLSearchParams(location.search).get("confirmed") === "1");
@@ -37,6 +38,36 @@ export default function App() {
       preloadSiteInfo(),
     ]).finally(() => setLoading(false));
   }, []);
+
+  // 未登录或没有“应用管理”权限时拦下浏览器默认的文件拖放跳转，避免页面闪烁，并在拖入 zip 时给出友好提示。
+  const canDragInstall = Boolean(user && user.platform && hasPerm(user, "modules"));
+  useEffect(() => {
+    if (canDragInstall) return;
+    const isFile = (e: DragEvent) => Boolean(e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files"));
+    const inLocalUpload = (t: EventTarget | null) => t instanceof Element && Boolean(t.closest(".ant-upload-drag"));
+    const onDragOver = (e: DragEvent) => {
+      if (!isFile(e) || inLocalUpload(e.target)) return;
+      e.preventDefault();
+    };
+    const onDrop = (e: DragEvent) => {
+      if (!isFile(e) || inLocalUpload(e.target)) return;
+      e.preventDefault();
+      if (loading) return;
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (!files.some((f) => f.name.toLowerCase().endsWith(".zip"))) return;
+      message.info(
+        user
+          ? "当前账号没有应用管理权限，暂不支持拖拽安装应用"
+          : "请先登录有应用管理权限的账号后再拖拽安装应用",
+      );
+    };
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [canDragInstall, loading, message, user]);
 
   if (loading)
     return (

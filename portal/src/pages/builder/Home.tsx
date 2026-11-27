@@ -2,11 +2,14 @@ import { Alert, App as AntApp, Button, Card, Checkbox, List, Select, Space, Tag,
 import { ClearOutlined, CopyOutlined, DownloadOutlined, InboxOutlined, LoadingOutlined, SettingOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
+  api as portalApi,
+  APPS_CHANGED_EVENT,
   appScopeLabel,
   appScopeOptions,
   defaultAppScope,
   finalizeModuleInstall,
   isAppScope,
+  type AppAccess,
   type AppScope,
 } from "../../api";
 import {
@@ -27,6 +30,7 @@ import {
   type Rules,
 } from "./api";
 import { useInstallContext } from "../../installContext";
+import { inspectDroppedZip } from "../../zipInspect";
 
 
 // 展开在某条记录下方的内容：构建日志或安装日志，同一时间只展开一个。
@@ -38,8 +42,8 @@ const SELF_ID = "builder";
 // 刚在本页装完的结果；安装日志保存在后端，保存失败时日志也留在这里，免得看不到。
 type InstallNotice = { id: number; ok: boolean; message: string; log?: string };
 
-// 列表中等待上传的源码包：可单独勾选“构建并安装”及安装后的权限范围（默认按权限访问）。
-type SourceItem = { file: File; installAfter: boolean; scope: AppScope };
+// 列表中等待上传的源码包：可单独勾选“构建并安装”及安装后的权限范围（新装默认按权限访问，更新已有应用沿用平台现有配置）。
+type SourceItem = { file: File; moduleId?: string; installAfter: boolean; scope: AppScope; scopeTouched?: boolean };
 
 // 勾选“构建并安装”上传的记录，构建成功后在本页自动安装并写入对应权限范围。存在 sessionStorage 里，刷新本页不丢，关掉页签就不再自动装。
 type AutoInstall = { id: number; scope: AppScope };
@@ -68,6 +72,9 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
   const installCtx = useInstallContext();
   const [me, setMe] = useState<Me | null>(null);
   const [rules, setRules] = useState<Rules | null>(null);
+  const [accessMap, setAccessMap] = useState<Record<string, AppAccess>>({});
+  const accessMapRef = useRef(accessMap);
+  accessMapRef.current = accessMap;
   const [loaded, setLoaded] = useState(false);
   const [builds, setBuilds] = useState<Build[]>([]);
   const [expanded, setExpanded] = useState<Expanded | null>(null);
@@ -151,11 +158,32 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
       .rules()
       .then(setRules)
       .catch((err) => setError(err.message));
+    const syncAccess = () => {
+      portalApi
+        .appAccess()
+        .then(setAccessMap)
+        .catch(() => {});
+    };
+    syncAccess();
     load();
     const onBuildsChanged = () => load();
     window.addEventListener(BUILDS_CHANGED_EVENT, onBuildsChanged);
-    return () => window.removeEventListener(BUILDS_CHANGED_EVENT, onBuildsChanged);
+    window.addEventListener(APPS_CHANGED_EVENT, syncAccess);
+    return () => {
+      window.removeEventListener(BUILDS_CHANGED_EVENT, onBuildsChanged);
+      window.removeEventListener(APPS_CHANGED_EVENT, syncAccess);
+    };
   }, []);
+
+  useEffect(() => {
+    setFiles((fs) =>
+      fs.map((item) => {
+        if (item.scopeTouched || !item.moduleId) return item;
+        const existingScope = accessMap[item.moduleId]?.scope;
+        return existingScope && existingScope !== item.scope ? { ...item, scope: existingScope } : item;
+      }),
+    );
+  }, [accessMap]);
 
   // 有排队或构建中的记录时每隔几秒刷新一次列表，看状态有没有变。
   const running = builds.some(isRunning);
@@ -206,7 +234,8 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
     askInstall(b, true, target.scope).finally(() => (autoBusy.current = false));
   }, [builds, auto, installing, pending, confirming]);
 
-  // 选了或拖进来几个文件，加在已选的后面，同一个文件不重复加；默认不勾选“构建并安装”，权限范围默认“按权限访问”。
+  // 选了或拖进来几个文件，加在已选的后面，同一个文件不重复加；默认不勾选“构建并安装”。
+  // 识别到平台已有模块时，默认权限范围沿用现有配置；新装应用保持“按权限访问”。
   function add(picked: File[]) {
     const same = (a: File, b: File) =>
       a.name === b.name &&
@@ -215,17 +244,40 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
     const fresh = picked.filter(
       (f, i) => picked.findIndex((o) => same(o, f)) === i,
     );
-    setFiles((fs) => [
-      ...fs,
-      ...fresh
-        .filter((f) => !fs.some((o) => same(o.file, f)))
-        .map((file): SourceItem => ({
+    const added: File[] = [];
+    setFiles((fs) => {
+      const next = fresh.filter((f) => !fs.some((o) => same(o.file, f)));
+      added.push(...next);
+      return [
+        ...fs,
+        ...next.map((file): SourceItem => ({
           file,
           installAfter: false,
           scope: defaultAppScope,
         })),
-    ]);
+      ];
+    });
     setError("");
+    for (const file of new Set(added)) {
+      void inspectDroppedZip(file)
+        .then((inspected) => {
+          if (inspected.iconUrl?.startsWith("blob:")) URL.revokeObjectURL(inspected.iconUrl);
+          const moduleId = inspected.manifest?.id;
+          if (!moduleId) return;
+          setFiles((fs) =>
+            fs.map((o) => {
+              if (o.file !== file) return o;
+              const existingScope = accessMapRef.current[moduleId]?.scope;
+              return {
+                ...o,
+                moduleId,
+                scope: !o.scopeTouched && existingScope ? existingScope : o.scope,
+              };
+            }),
+          );
+        })
+        .catch(() => {});
+    }
   }
 
   function removeFile(f: File) {
@@ -245,7 +297,7 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
   }
 
   function changeScope(f: File, scope: AppScope) {
-    setFiles((fs) => fs.map((o) => (o.file === f ? { ...o, scope } : o)));
+    setFiles((fs) => fs.map((o) => (o.file === f ? { ...o, scope, scopeTouched: true } : o)));
   }
 
   // 一个一个上传，每个通过检查的马上排进构建队列；没通过的留在列表里、写上原因，其他的照常上传。
@@ -303,24 +355,29 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
     );
   }
 
-  // 点“安装”先查平台上装的是哪个版本，在记录下方请管理员确认。
+  // 点“安装”先查平台上装的是哪个版本及现有权限范围，在记录下方请管理员确认：新装默认按权限访问，更新已有应用默认沿用现有权限范围。
   // 构建并安装（isAuto）时已经表明要装，直接安装；只有降级、或者装构建器自己时还有别的构建没结束，才照常请管理员确认。
   async function askInstall(
     b: Build,
     isAuto = false,
-    scope: AppScope = defaultAppScope,
+    scope?: AppScope,
   ) {
     setConfirming(null);
     setNotice(null);
     setError("");
     try {
-      const installed = await api.installed();
+      const [installed, latestAccess] = await Promise.all([
+        api.installed(),
+        scope === undefined ? portalApi.appAccess().catch(() => accessMapRef.current) : Promise.resolve(accessMapRef.current),
+      ]);
+      if (scope === undefined) setAccessMap(latestAccess);
       const current = installed.find((m) => m.id === b.moduleId) ?? null;
+      const resolvedScope = scope ?? latestAccess[b.moduleId]?.scope ?? defaultAppScope;
       const downgrade =
         current !== null && compareVersions(b.version, current.version) < 0;
       if (isAuto && !downgrade && !(b.moduleId === SELF_ID && running))
-        return install(b, false, current, scope);
-      setPending({ id: b.id, current, scope });
+        return install(b, false, current, resolvedScope);
+      setPending({ id: b.id, current, scope: resolvedScope });
       setExpanded({ id: b.id, panel: "install" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "读取已安装的应用失败");

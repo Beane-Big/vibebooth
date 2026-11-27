@@ -3,12 +3,14 @@ import { Alert, App as AntApp, Button, Checkbox, Flex, Modal, Select, Space, Tag
 import { InboxOutlined } from "@ant-design/icons";
 import {
   api,
+  APPS_CHANGED_EVENT,
   appScopeOptions,
   defaultAppScope,
   hasPerm,
   isAdmin,
   maxPackageMB,
   type App as AppInfo,
+  type AppAccess,
   type AppScope,
   type InstalledModule,
   type Me,
@@ -62,12 +64,16 @@ export default function GlobalDropInstall({
   const [inspecting, setInspecting] = useState(false);
   const [pending, setPending] = useState<InspectedZip[]>([]);
   const [installedModules, setInstalledModules] = useState<InstalledModule[] | null>(null);
+  const [accessMap, setAccessMap] = useState<Record<string, AppAccess>>({});
   const [installAfter, setInstallAfter] = useState(false);
   const [scope, setScope] = useState<AppScope>(defaultAppScope);
+  const scopeTouchedRef = useRef(false);
 
   const current = pending[0] ?? null;
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
+  const accessMapRef = useRef(accessMap);
+  accessMapRef.current = accessMap;
 
   // 组件卸载时释放未提交的图标 blob URL。
   useEffect(() => {
@@ -76,16 +82,48 @@ export default function GlobalDropInstall({
     };
   }, []);
 
-  // 每次切换待确认的压缩包时重置勾选和权限范围，并查询已安装模块以识别更新/重装。
+  // 管理员预先缓存平台当前权限范围，并在应用变更后同步，避免弹窗打开时闪烁。
+  useEffect(() => {
+    if (!admin) return;
+    const syncAccess = () => {
+      api
+        .appAccess()
+        .then(setAccessMap)
+        .catch(() => {});
+    };
+    syncAccess();
+    window.addEventListener(APPS_CHANGED_EVENT, syncAccess);
+    return () => window.removeEventListener(APPS_CHANGED_EVENT, syncAccess);
+  }, [admin]);
+
+  // 每次切换待确认的压缩包时重置勾选和权限范围：新装默认按权限访问，更新已有应用默认沿用平台当前权限范围。
   useEffect(() => {
     if (!current) return;
+    let active = true;
+    const modId = current.manifest?.id ?? "";
+    scopeTouchedRef.current = false;
     setInstallAfter(false);
-    setScope(defaultAppScope);
+    setScope((modId && accessMapRef.current[modId]?.scope) || defaultAppScope);
     api
       .modules()
-      .then(setInstalledModules)
+      .then((list) => active && setInstalledModules(list))
       .catch(() => {});
-  }, [current]);
+    if (admin) {
+      api
+        .appAccess()
+        .then((next) => {
+          if (!active) return;
+          setAccessMap(next);
+          if (!scopeTouchedRef.current) {
+            setScope((modId && next[modId]?.scope) || defaultAppScope);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+    };
+  }, [admin, current]);
 
   useEffect(() => {
     if (!canInstall) return;
@@ -145,7 +183,10 @@ export default function GlobalDropInstall({
       try {
         for (const file of zips) {
           const result = await inspectDroppedZip(file);
-          if (result.kind === "package" || result.kind === "source") {
+          if (result.kind === "source" && !admin) {
+            revokeIfBlob(result.iconUrl);
+            message.info("当前账号不支持构建源码包，请使用管理员账号构建");
+          } else if (result.kind === "package" || result.kind === "source") {
             valid.push(result);
           } else if (result.kind === "theme") {
             message.info(result.error ?? "检测到门户主题包，请前往「外观」页面上传安装");
@@ -176,7 +217,7 @@ export default function GlobalDropInstall({
       window.removeEventListener("dragend", handleReset);
       window.removeEventListener("blur", handleReset);
     };
-  }, [canInstall, message]);
+  }, [admin, canInstall, message]);
 
   if (!canInstall || !ctx) return null;
 
@@ -319,7 +360,10 @@ export default function GlobalDropInstall({
                     <Select
                       aria-label="权限范围"
                       value={scope}
-                      onChange={setScope}
+                      onChange={(next) => {
+                        scopeTouchedRef.current = true;
+                        setScope(next);
+                      }}
                       options={appScopeOptions}
                       style={{ minWidth: 160 }}
                     />
@@ -341,7 +385,10 @@ export default function GlobalDropInstall({
                       <Select
                         aria-label="权限范围"
                         value={scope}
-                        onChange={setScope}
+                        onChange={(next) => {
+                          scopeTouchedRef.current = true;
+                          setScope(next);
+                        }}
                         options={appScopeOptions}
                         style={{ minWidth: 160 }}
                       />

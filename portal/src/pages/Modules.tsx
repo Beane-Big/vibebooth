@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Checkbox, Flex, List, Progress, Select, Space, Tag, Typography } from "antd";
 import {
   api,
@@ -23,7 +23,9 @@ type QueueStatus = "waiting" | "uploading" | "installing" | "done" | "failed" | 
 type QueueItem = {
   key: number;
   file: File;
+  moduleId?: string;
   scope: AppScope;
+  scopeTouched?: boolean;
   status: QueueStatus;
   // 上传进度（0～1）。
   progress: number;
@@ -49,6 +51,8 @@ let nextKey = 1;
 export default function Modules({ canManageAccess }: { canManageAccess: boolean }) {
   const installCtx = useInstallContext();
   const [access, setAccess] = useState<Record<string, AppAccess>>({});
+  const accessRef = useRef(access);
+  accessRef.current = access;
   const [savingAccess, setSavingAccess] = useState<string | null>(null);
 
   async function changeAccess(id: string, policy: AppAccess) {
@@ -66,6 +70,8 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
   const [modules, setModules] = useState<InstalledModule[] | null>(null);
   const [error, setError] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const queueRef = useRef(queue);
+  queueRef.current = queue;
   // 正在按顺序安装队列；装完最后一个排队的包后自动停下。
   const [running, setRunning] = useState(false);
   const [uninstalling, setUninstalling] = useState(false);
@@ -89,34 +95,67 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
     return () => window.removeEventListener(APPS_CHANGED_EVENT, onAppsChanged);
   }, [canManageAccess]);
 
+  // 平台现有权限范围加载或变更后，同步更新尚未手动改过权限的待安装包默认值。
+  useEffect(() => {
+    if (!canManageAccess) return;
+    setQueue((q) =>
+      q.map((it) => {
+        if (it.scopeTouched || !it.moduleId || it.status !== "waiting") return it;
+        const existingScope = access[it.moduleId]?.scope;
+        return existingScope && existingScope !== it.scope ? { ...it, scope: existingScope } : it;
+      }),
+    );
+  }, [access, canManageAccess]);
+
   function patch(key: number, change: Partial<QueueItem>) {
     setQueue((q) => q.map((it) => (it.key === key ? { ...it, ...change } : it)));
   }
 
   // 同一个文件已经在队列里、还没装好时不重复加。超过大小上限的在浏览器里就标成失败，不用传完才被拒。
+  // 识别到已有模块包时，默认权限范围沿用平台上已有的配置；新装应用保持默认“按权限访问”。
   function add(files: File[]) {
     setResult(null);
-    setQueue((q) => {
-      const same = (a: File, b: File) => a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
-      const fresh = files.filter((f) => !q.some((it) => it.status !== "done" && same(it.file, f)));
-      return [
-        ...q,
-        ...fresh.map((file): QueueItem => {
-          const tooLarge = file.size > maxPackageMB * 1024 * 1024;
-          return {
-            key: nextKey++,
-            file,
-            scope: defaultAppScope,
-            status: tooLarge ? "failed" : "waiting",
-            progress: 0,
-            message: tooLarge ? `模块包不能超过 ${maxPackageMB} MB` : "",
-            log: "",
-            privileges: [],
-            allowPrivileges: false,
-          };
-        }),
-      ];
+    const same = (a: File, b: File) => a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
+    const dedup = files.filter((f, i) => files.findIndex((o) => same(o, f)) === i);
+    const fresh = dedup.filter((f) => !queueRef.current.some((it) => it.status !== "done" && same(it.file, f)));
+    if (fresh.length === 0) return;
+    const items: QueueItem[] = fresh.map((file) => {
+      const tooLarge = file.size > maxPackageMB * 1024 * 1024;
+      return {
+        key: nextKey++,
+        file,
+        scope: defaultAppScope,
+        status: tooLarge ? "failed" : "waiting",
+        progress: 0,
+        message: tooLarge ? `模块包不能超过 ${maxPackageMB} MB` : "",
+        log: "",
+        privileges: [],
+        allowPrivileges: false,
+      };
     });
+    setQueue((q) => [...q, ...items]);
+    if (!canManageAccess) return;
+    for (const item of items) {
+      if (item.status !== "waiting") continue;
+      void inspectDroppedZip(item.file)
+        .then((inspected) => {
+          if (inspected.iconUrl?.startsWith("blob:")) URL.revokeObjectURL(inspected.iconUrl);
+          const moduleId = inspected.manifest?.id;
+          if (!moduleId) return;
+          setQueue((q) =>
+            q.map((it) => {
+              if (it.key !== item.key) return it;
+              const existingScope = accessRef.current[moduleId]?.scope;
+              return {
+                ...it,
+                moduleId,
+                scope: !it.scopeTouched && existingScope ? existingScope : it.scope,
+              };
+            }),
+          );
+        })
+        .catch(() => {});
+    }
   }
 
   // 队列在跑、手上没有正在装的包时，取下一个排队的包；没有了就停下。
@@ -256,7 +295,7 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
                     item={it}
                     canManageAccess={canManageAccess}
                     uninstalling={uninstalling}
-                    onScopeChange={(scope) => patch(it.key, { scope })}
+                    onScopeChange={(scope) => patch(it.key, { scope, scopeTouched: true })}
                     onRetry={() => requeue(it)}
                     onConfirm={() => requeue(it, true)}
                     onRemove={() => setQueue((q) => q.filter((x) => x.key !== it.key))}
