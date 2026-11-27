@@ -57,15 +57,20 @@ description: 开发、自检并打包符合 Vibebooth 平台规范（platform: 1
 - 构建 base 路径固定为 `/apps/<id>/`（Vite 设 `base: "/apps/<id>/"`），调用后端接口使用相对路径 `/api/<id>/...`。
 - Nginx 对 `index.html` 必须返回 `Cache-Control: no-cache`（带哈希的静态资源可长期缓存），防止升级后浏览器停留在旧版本。
 - 应用运行在门户的 iframe 标签页中（也支持新标签页直接打开）：**禁止设置** `X-Frame-Options` 或阻止同源嵌入的 CSP `frame-ancestors`。
-- 页面自适应手机、平板与桌面；保持界面简洁克制，不堆砌多余说明文案。
+- **401 未登录引导与公开浏览（必看）**：管理员可将应用设为「公开可见」，让未登录用户浏览平台有哪些能力；此时网关会放行 `/apps/<id>/` 前端页面（返回 `200`），但所有 `/api/<id>/*` 接口仍返回 `401`。
+  - **严禁**在收到 `401` 时调用 `location.reload()` 或 `window.top.location.reload()`，否则在公开模式下会陷入 `200 页面 → 401 接口 → reload` 无限刷新死循环，且会破坏门户 iframe 的登录拦截。
+  - **标准跳转方式**：统一请求层收到 `401` 时使用当前窗口跳转 `location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search)`（加防重标志，避免并发多次触发）。独立页签会直接进入登录页并在登录后带原路径/参数自动返回；门户 iframe 内会被门户自动拦截并弹出「此功能需要登录」确认框。
+  - **推荐的公开预览体验**：对于有后端的应用，首次探测 `/me` 收到 `401` 时可静默进入**访客预览态**（展示应用界面与能力、停止后台轮询），仅在用户点击需要登录的操作或「登录」按钮时再触发 `location.href = "/login?next=..."`，让未登录访客先看懂应用能力再平滑登录。
+- **实时与有状态应用**：使用 SSE 实时同步时须设置 `X-Accel-Buffering: no` 与定时心跳，前端做好页面刷新状态恢复（URL / 本地存储）、切后台唤醒同步、断线自动重连（SSE 异常且在线时探测普通接口以感知 `401` 会话失效）。
+- 页面自适应手机、平板与桌面；按应用题材打造有辨识度的视觉与交互（避免千篇一律的通用暗黑毛玻璃模板），保持界面文案简洁克制，不堆砌多余说明。
 
 ### 4. 后端约定
 - **健康检查**：必须提供 `GET /api/<id>/health`，正常返回 2xx，**不要求登录令牌**。
 - **统一鉴权**：不写登录代码。网关会将已签发的 RS256 JWT 放入 `Authorization: Bearer <token>`（`iss: home-platform`，`aud: <id>`），公钥地址通过环境变量 `JWKS_URL`（默认 `http://core:8080/api/platform/.well-known/jwks.json`）获取。
-  - Go 后端优先使用官方 SDK：`github.com/Beane-Big/vibebooth/packages/sdk-go/auth`。
+  - Go 后端优先使用官方 SDK：`github.com/Beane-Big/vibebooth/packages/sdk-go/auth`（`v0.2.0+` 需 Go `1.26+`，Dockerfile 使用 `golang:1.26-alpine`）。
   - Node.js / Python 后端使用标准 JWKS 库校验 RS256、`iss` 和 `aud`，读取 `sub`（账号 ID）、`name`、`menus`、`perms`。
 - **独立运行模式**：支持环境变量 `STANDALONE=1` 脱离平台本地调试，但**严禁**在 `compose.yaml` 中配置 `STANDALONE=1`。
-- **数据存储**：持久化数据只放在 `compose.yaml` 声明的命名卷中（默认 SQLite），升级表结构需兼容旧数据。
+- **数据存储**：持久化数据只放在 `compose.yaml` 声明的命名卷中（默认 SQLite），升级表结构需兼容旧数据；有进行中状态的互动/游戏应用应将活跃状态持久化，避免容器重启丢进度。
 - **Dockerfile 镜像源支持**：为保证国内服务器顺利构建，按语言声明对应 `ARG`（构建器会自动按名称注入平台镜像源）：
   - Go：`ARG GOPROXY=https://proxy.golang.org,direct` + `ENV GOPROXY=${GOPROXY}`
   - Node/前端：`ARG NPM_REGISTRY=https://registry.npmjs.org/` + `npm config set registry ${NPM_REGISTRY}`

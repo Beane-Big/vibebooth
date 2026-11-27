@@ -262,6 +262,26 @@ for (const { svcName, dfPath } of buildTargets) {
   }
 }
 
+// 3.5 检查前端源码中是否存在 401 触发 location.reload() 的死循环反模式
+const feSrcDir = path.join(root, "frontend", "src");
+if (fs.existsSync(feSrcDir) && fs.statSync(feSrcDir).isDirectory()) {
+  const scanFrontend = (dir) => {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        if (!IGNORE_DIRS.has(ent.name)) scanFrontend(full);
+      } else if (ent.isFile() && /\.(ts|tsx|js|jsx|mjs|vue)$/.test(ent.name)) {
+        const text = fs.readFileSync(full, "utf8");
+        if (/status\s*===?\s*401[\s\S]{0,220}location\.reload\s*\(/.test(text)) {
+          const rel = path.relative(root, full);
+          fail(`${rel} 在处理 401 时调用了 location.reload()，公开浏览模式下会导致无限刷新死循环；请改为 location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search)`);
+        }
+      }
+    }
+  };
+  scanFrontend(feSrcDir);
+}
+
 // 输出检查结果
 for (const w of warnings) console.warn(`[提示] ${w}`);
 for (const e of errors) console.error(`[错误] ${e}`);

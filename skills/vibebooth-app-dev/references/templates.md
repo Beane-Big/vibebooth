@@ -121,14 +121,13 @@ volumes:
 
 ### `backend/Dockerfile`（Go）
 ```dockerfile
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 ARG GOPROXY=https://proxy.golang.org,direct
 ENV GOPROXY=${GOPROXY}
 WORKDIR /src
-COPY go.mod go.sum* ./
-RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server .
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go mod tidy && CGO_ENABLED=0 go build -mod=mod -trimpath -ldflags="-s -w" -o /out/server .
 
 FROM alpine:3.22
 RUN adduser -D -u 10001 app && mkdir /data && chown app /data
@@ -136,6 +135,35 @@ USER app
 COPY --from=build /out/server /usr/local/bin/server
 EXPOSE 8000
 ENTRYPOINT ["server"]
+```
+
+### `frontend/src/platform.ts`（统一接口请求与 401 登录引导）
+```ts
+const API_BASE = "/api/feedback";
+let redirecting = false;
+
+export function redirectToLogin() {
+  if (redirecting) return;
+  redirecting = true;
+  // 必须使用当前窗口跳 /login?next=...，禁止 location.reload()：
+  // 独立页签登录后自动跳回原路径；门户 iframe 内会被自动拦截并弹出登录确认框。
+  location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search);
+}
+
+export async function apiFetch<T>(path: string, init?: RequestInit & { silent401?: boolean }): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    ...init,
+  });
+  if (res.status === 401) {
+    if (!init?.silent401) redirectToLogin();
+    throw new Error("请先登录");
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((body as { error?: string }).error || `请求失败 (${res.status})`);
+  return body as T;
+}
 ```
 
 ### `backend/Dockerfile`（Node.js 备选）
