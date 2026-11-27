@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Card, Flex, Result, Spin } from "antd";
 import { useActivityBeat } from "./activity";
-import { api, ApiError, APPS_CHANGED_EVENT, type App as AppInfo, type Me } from "./api";
+import { api, ApiError, APPS_CHANGED_EVENT, hasPerm, isAdmin, type App as AppInfo, type Me } from "./api";
 import { builtinAliases, builtinAppsFor, isBuiltinURL } from "./builtin";
 import { AppFrames, AppTabBar, clearAppTabs, PORTAL_TAB, reloadFrame, useAppTabs, type AppTab } from "./components/AppTabs";
 import Beian from "./components/Beian";
+import GlobalDropInstall from "./components/GlobalDropInstall";
 import Layout from "./components/Layout";
 import NotificationBell from "./components/NotificationBell";
 import OnboardingGuide, { useOnboarding } from "./components/OnboardingGuide";
+import { InstallProvider } from "./installContext";
 import Login from "./pages/AuthForm";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
@@ -20,6 +22,7 @@ import { useActiveTheme } from "./themeHost";
 import { loginActionText, preloadSiteInfo, useSiteInfo } from "./site";
 
 export default function App() {
+  const { message } = AntApp.useApp();
   const [user, setUser] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [loginConfirmed, setLoginConfirmed] = useState(() => new URLSearchParams(location.search).get("confirmed") === "1");
@@ -35,6 +38,36 @@ export default function App() {
       preloadSiteInfo(),
     ]).finally(() => setLoading(false));
   }, []);
+
+  // 未登录或没有“应用管理”权限时拦下浏览器默认的文件拖放跳转，避免页面闪烁，并在拖入 zip 时给出友好提示。
+  const canDragInstall = Boolean(user && user.platform && hasPerm(user, "modules"));
+  useEffect(() => {
+    if (canDragInstall) return;
+    const isFile = (e: DragEvent) => Boolean(e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files"));
+    const inLocalUpload = (t: EventTarget | null) => t instanceof Element && Boolean(t.closest(".ant-upload-drag"));
+    const onDragOver = (e: DragEvent) => {
+      if (!isFile(e) || inLocalUpload(e.target)) return;
+      e.preventDefault();
+    };
+    const onDrop = (e: DragEvent) => {
+      if (!isFile(e) || inLocalUpload(e.target)) return;
+      e.preventDefault();
+      if (loading) return;
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (!files.some((f) => f.name.toLowerCase().endsWith(".zip"))) return;
+      message.info(
+        user
+          ? "当前账号没有应用管理权限，暂不支持拖拽安装应用"
+          : "请先登录有应用管理权限的账号后再拖拽安装应用",
+      );
+    };
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [canDragInstall, loading, message, user]);
 
   if (loading)
     return (
@@ -337,60 +370,78 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   // 备案号放在首页和自带应用的底部；模块应用的内嵌页占满顶栏下面的区域，不放。
   const frameActive = tabs.active !== PORTAL_TAB && !isBuiltinURL(tabs.active);
 
+  const openBuildTab = () => openLink("/applications/build");
+
   return (
-    <Layout
-      user={user}
-      tabs={<AppTabBar state={tabs} onRefresh={refresh} />}
-      notifications={<NotificationBell onNavigate={openLink} />}
-      onHome={() => tabs.activate(PORTAL_TAB)}
-      onUserInfo={usersApp && (() => openLink("/contacts/self"))}
-      onShowGuide={() => {
-        onboarding.reopen();
-        tabs.activate(PORTAL_TAB);
-      }}
-      onLogout={onLogout}
-      activeTheme={theme.active?.id}
-      TopbarBackground={theme.def?.TopbarBackground}
-      // 彩色方块皮肤的首页用卡片的底色（浅色时是纯白），彩色图标更干净；其他页面的卡片还是放在灰底上。选了壁纸时露出壁纸。
-      plain={skin === "tiles" && tabs.active === PORTAL_TAB && !wallpaper}
-    >
-      <div className="content" style={tabs.active !== PORTAL_TAB ? { display: "none" } : undefined}>
-        {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
-        {apps && !onboarding.state.dismissed && (
-          <OnboardingGuide
-            user={user}
-            hasModules={apps.length > 0}
-            hasCustomTheme={theme.themes.length > 0 || skin !== "classic" || Boolean(wallpaper)}
-            doneIds={onboarding.state.done}
-            onNavigate={openLink}
-            onMarkDone={onboarding.markDone}
-            onToggleDone={onboarding.toggleDone}
-            onDismiss={onboarding.dismiss}
-          />
-        )}
-        {apps && (
-          <Home apps={apps} builtins={builtins} user={user} theme={theme.active && theme} onOpen={openHomeTab} />
-        )}
-      </div>
-      {tabs.tabs
-        .filter((t) => builtins.some((app) => !app.embedded && app.url === t.url))
-        .map((t) => (
-          <div
-            key={`${t.url}#${reloads[t.url] ?? 0}`}
-            className="content"
-            style={t.url !== tabs.active ? { display: "none" } : undefined}
-          >
-            {t.url === "/contacts" && <Contacts me={user} onMeChanged={onMeChanged} entryPath={entryPath} />}
-            {t.url === "/applications" && (
-              <AppManagement me={user} entryPath={entryPath} hasModules={(apps?.length ?? 0) > 0} />
-            )}
-            {t.url === "/settings" && <Settings me={user} entryPath={entryPath} />}
-            {t.url === "/themes" && <Themes me={user} themes={theme.themes} entryPath={entryPath} />}
-            {t.url === "/stats" && <Stats onChanged={onMeChanged} />}
-          </div>
-        ))}
-      <AppFrames state={tabs} onEmbeddedPortal={onEmbeddedPortal} />
-      {!frameActive && <Beian />}
-    </Layout>
+    <InstallProvider canManageAccess={isAdmin(user)} onOpenBuild={openBuildTab}>
+      <Layout
+        user={user}
+        tabs={<AppTabBar state={tabs} onRefresh={refresh} />}
+        notifications={<NotificationBell onNavigate={openLink} />}
+        onHome={() => tabs.activate(PORTAL_TAB)}
+        onUserInfo={usersApp && (() => openLink("/contacts/self"))}
+        onShowGuide={() => {
+          onboarding.reopen();
+          tabs.activate(PORTAL_TAB);
+        }}
+        onLogout={onLogout}
+        activeTheme={theme.active?.id}
+        TopbarBackground={theme.def?.TopbarBackground}
+        // 彩色方块皮肤的首页用卡片的底色（浅色时是纯白），彩色图标更干净；其他页面的卡片还是放在灰底上。选了壁纸时露出壁纸。
+        plain={skin === "tiles" && tabs.active === PORTAL_TAB && !wallpaper}
+      >
+        <div className="content" style={tabs.active !== PORTAL_TAB ? { display: "none" } : undefined}>
+          {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
+          {apps && !onboarding.state.dismissed && (
+            <OnboardingGuide
+              user={user}
+              hasModules={apps.length > 0}
+              hasCustomTheme={theme.themes.length > 0 || skin !== "classic" || Boolean(wallpaper)}
+              doneIds={onboarding.state.done}
+              onNavigate={openLink}
+              onMarkDone={onboarding.markDone}
+              onToggleDone={onboarding.toggleDone}
+              onDismiss={onboarding.dismiss}
+            />
+          )}
+          {apps && (
+            <Home
+              apps={apps}
+              builtins={builtins}
+              user={user}
+              theme={theme.active && theme}
+              onOpen={openHomeTab}
+              onOpenBuild={openBuildTab}
+            />
+          )}
+        </div>
+        {tabs.tabs
+          .filter((t) => builtins.some((app) => !app.embedded && app.url === t.url))
+          .map((t) => (
+            <div
+              key={`${t.url}#${reloads[t.url] ?? 0}`}
+              className="content"
+              style={t.url !== tabs.active ? { display: "none" } : undefined}
+            >
+              {t.url === "/contacts" && <Contacts me={user} onMeChanged={onMeChanged} entryPath={entryPath} />}
+              {t.url === "/applications" && (
+                <AppManagement me={user} entryPath={entryPath} hasModules={(apps?.length ?? 0) > 0} />
+              )}
+              {t.url === "/settings" && <Settings me={user} entryPath={entryPath} />}
+              {t.url === "/themes" && <Themes me={user} themes={theme.themes} entryPath={entryPath} />}
+              {t.url === "/stats" && <Stats onChanged={onMeChanged} />}
+            </div>
+          ))}
+        <AppFrames state={tabs} onEmbeddedPortal={onEmbeddedPortal} />
+        {!frameActive && <Beian />}
+      </Layout>
+      <GlobalDropInstall
+        user={user}
+        apps={apps}
+        onHomeTab={tabs.active === PORTAL_TAB}
+        onGoHome={() => tabs.activate(PORTAL_TAB)}
+        onOpenBuild={openBuildTab}
+      />
+    </InstallProvider>
   );
 }

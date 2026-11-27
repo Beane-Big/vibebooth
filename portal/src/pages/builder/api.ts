@@ -116,17 +116,44 @@ async function send<T>(path: string, init?: RequestInit): Promise<{ data: T; ser
 export const packageUrl = (id: number) => `/api/platform/builder/builds/${id}/package`;
 export const skillUrl = "/api/platform/builder/skill";
 export const themeSkillUrl = "/api/platform/builder/theme-skill";
+export const maxSourceMB = 100;
+export const BUILDS_CHANGED_EVENT = "vibebooth:builds-changed";
+
+export function notifyBuildsChanged() {
+  window.dispatchEvent(new CustomEvent(BUILDS_CHANGED_EVENT));
+}
+
+function uploadSource(file: File, installAfter = false, onProgress?: (fraction: number) => void): Promise<Build> {
+  const form = new FormData();
+  if (installAfter) form.append("installAfter", "true");
+  form.append("source", file);
+  if (!onProgress) {
+    return request<Build>("/api/platform/builder/builds", { method: "POST", body: form });
+  }
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/platform/builder/builds");
+    xhr.responseType = "json";
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        location.href = "/login?next=" + encodeURIComponent(location.pathname);
+      }
+      const body = xhr.response ?? {};
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body as Build);
+      else reject(new ApiError(xhr.status, body.error ?? "请求失败", body.log, body.privileges));
+    };
+    xhr.onerror = () => reject(new ApiError(0, "上传中断，请检查网络后重试"));
+    xhr.send(form);
+  });
+}
 
 export const api = {
   me: () => request<Me>("/api/platform/builder/me"),
   builds: () => send<Build[]>("/api/platform/builder/builds"),
   build: (id: number) => request<BuildDetail>(`/api/platform/builder/builds/${id}`),
-  upload: (file: File, installAfter = false) => {
-    const form = new FormData();
-    if (installAfter) form.append("installAfter", "true");
-    form.append("source", file);
-    return request<Build>("/api/platform/builder/builds", { method: "POST", body: form });
-  },
+  upload: (file: File, installAfter = false, onProgress?: (fraction: number) => void) =>
+    uploadSource(file, installAfter, onProgress),
   removeBuild: (id: number) => request<void>(`/api/platform/builder/builds/${id}`, { method: "DELETE" }),
   installLog: (id: number) => request<{ log: string }>(`/api/platform/builder/builds/${id}/install`),
   saveInstall: (id: number, ok: boolean, log: string) =>

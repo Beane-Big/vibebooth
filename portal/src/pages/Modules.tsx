@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Checkbox, Flex, List, Progress, Select, Space, Tag, Typography } from "antd";
 import {
   api,
@@ -15,13 +15,17 @@ import {
   type InstalledModule,
 } from "../api";
 import { LogCollapse, PackagesDragger, ResultAlert, type OperationResult } from "../components/PackageUpload";
+import { useInstallContext } from "../installContext";
+import { inspectDroppedZip } from "../zipInspect";
 
 // 排队安装的一个模块包。confirm 表示模块声明了特权，等管理员确认；确认后带上 allowPrivileges 重新排队。
 type QueueStatus = "waiting" | "uploading" | "installing" | "done" | "failed" | "confirm";
 type QueueItem = {
   key: number;
   file: File;
+  moduleId?: string;
   scope: AppScope;
+  scopeTouched?: boolean;
   status: QueueStatus;
   // 上传进度（0～1）。
   progress: number;
@@ -45,7 +49,10 @@ let nextKey = 1;
 // 应用管理：上传模块包安装或升级，卸载模块。安装和卸载都不会重启平台和其他应用。
 // 一次可以选多个模块包，按加入的顺序一个一个上传、安装：安装器同一时间只装一个，一起传也只是排队，还会抢带宽。
 export default function Modules({ canManageAccess }: { canManageAccess: boolean }) {
+  const installCtx = useInstallContext();
   const [access, setAccess] = useState<Record<string, AppAccess>>({});
+  const accessRef = useRef(access);
+  accessRef.current = access;
   const [savingAccess, setSavingAccess] = useState<string | null>(null);
 
   async function changeAccess(id: string, policy: AppAccess) {
@@ -63,6 +70,8 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
   const [modules, setModules] = useState<InstalledModule[] | null>(null);
   const [error, setError] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const queueRef = useRef(queue);
+  queueRef.current = queue;
   // 正在按顺序安装队列；装完最后一个排队的包后自动停下。
   const [running, setRunning] = useState(false);
   const [uninstalling, setUninstalling] = useState(false);
@@ -86,34 +95,67 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
     return () => window.removeEventListener(APPS_CHANGED_EVENT, onAppsChanged);
   }, [canManageAccess]);
 
+  // 平台现有权限范围加载或变更后，同步更新尚未手动改过权限的待安装包默认值。
+  useEffect(() => {
+    if (!canManageAccess) return;
+    setQueue((q) =>
+      q.map((it) => {
+        if (it.scopeTouched || !it.moduleId || it.status !== "waiting") return it;
+        const existingScope = access[it.moduleId]?.scope;
+        return existingScope && existingScope !== it.scope ? { ...it, scope: existingScope } : it;
+      }),
+    );
+  }, [access, canManageAccess]);
+
   function patch(key: number, change: Partial<QueueItem>) {
     setQueue((q) => q.map((it) => (it.key === key ? { ...it, ...change } : it)));
   }
 
   // 同一个文件已经在队列里、还没装好时不重复加。超过大小上限的在浏览器里就标成失败，不用传完才被拒。
+  // 识别到已有模块包时，默认权限范围沿用平台上已有的配置；新装应用保持默认“按权限访问”。
   function add(files: File[]) {
     setResult(null);
-    setQueue((q) => {
-      const same = (a: File, b: File) => a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
-      const fresh = files.filter((f) => !q.some((it) => it.status !== "done" && same(it.file, f)));
-      return [
-        ...q,
-        ...fresh.map((file): QueueItem => {
-          const tooLarge = file.size > maxPackageMB * 1024 * 1024;
-          return {
-            key: nextKey++,
-            file,
-            scope: defaultAppScope,
-            status: tooLarge ? "failed" : "waiting",
-            progress: 0,
-            message: tooLarge ? `模块包不能超过 ${maxPackageMB} MB` : "",
-            log: "",
-            privileges: [],
-            allowPrivileges: false,
-          };
-        }),
-      ];
+    const same = (a: File, b: File) => a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
+    const dedup = files.filter((f, i) => files.findIndex((o) => same(o, f)) === i);
+    const fresh = dedup.filter((f) => !queueRef.current.some((it) => it.status !== "done" && same(it.file, f)));
+    if (fresh.length === 0) return;
+    const items: QueueItem[] = fresh.map((file) => {
+      const tooLarge = file.size > maxPackageMB * 1024 * 1024;
+      return {
+        key: nextKey++,
+        file,
+        scope: defaultAppScope,
+        status: tooLarge ? "failed" : "waiting",
+        progress: 0,
+        message: tooLarge ? `模块包不能超过 ${maxPackageMB} MB` : "",
+        log: "",
+        privileges: [],
+        allowPrivileges: false,
+      };
     });
+    setQueue((q) => [...q, ...items]);
+    if (!canManageAccess) return;
+    for (const item of items) {
+      if (item.status !== "waiting") continue;
+      void inspectDroppedZip(item.file)
+        .then((inspected) => {
+          if (inspected.iconUrl?.startsWith("blob:")) URL.revokeObjectURL(inspected.iconUrl);
+          const moduleId = inspected.manifest?.id;
+          if (!moduleId) return;
+          setQueue((q) =>
+            q.map((it) => {
+              if (it.key !== item.key) return it;
+              const existingScope = accessRef.current[moduleId]?.scope;
+              return {
+                ...it,
+                moduleId,
+                scope: !it.scopeTouched && existingScope ? existingScope : it.scope,
+              };
+            }),
+          );
+        })
+        .catch(() => {});
+    }
   }
 
   // 队列在跑、手上没有正在装的包时，取下一个排队的包；没有了就停下。
@@ -129,15 +171,63 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
 
   async function install(item: QueueItem) {
     patch(item.key, { status: "uploading", progress: 0, message: "", log: "" });
+    const inspected = await inspectDroppedZip(item.file).catch(() => null);
+    const m = inspected?.manifest;
+    const moduleId = m?.id || item.file.name.replace(/\.zip$/i, "");
+    const taskKey = installCtx?.beginExternalTask({
+      moduleId,
+      name: m?.name || moduleId,
+      version: m?.version,
+      description: m?.description,
+      iconUrl: inspected?.iconUrl,
+      phase: "uploading",
+      progress: 0.04,
+      isUpgrade: Boolean(modules?.some((x) => x.id === moduleId)),
+      source: "modules",
+    });
+    let installTimer: number | undefined;
+    let currentProgress = 0.04;
+
     try {
-      const { module, log } = await api.installModule(item.file, item.allowPrivileges, (f) =>
-        patch(item.key, f < 1 ? { progress: f } : { progress: 1, status: "installing" }),
-      );
+      const { module, log } = await api.installModule(item.file, item.allowPrivileges, (f) => {
+        patch(item.key, f < 1 ? { progress: f } : { progress: 1, status: "installing" });
+        if (!taskKey || !installCtx) return;
+        if (f < 1) {
+          currentProgress = 0.04 + f * 0.51;
+          installCtx.updateExternalTask(taskKey, {
+            phase: "uploading",
+            progress: currentProgress,
+            uploadFraction: f,
+          });
+        } else if (installTimer === undefined) {
+          currentProgress = Math.max(currentProgress, 0.56);
+          installCtx.updateExternalTask(taskKey, {
+            phase: "installing",
+            progress: currentProgress,
+            uploadFraction: undefined,
+          });
+          installTimer = window.setInterval(() => {
+            currentProgress = Math.min(0.94, currentProgress + (0.94 - currentProgress) * 0.065);
+            installCtx.updateExternalTask(taskKey, { progress: currentProgress });
+          }, 450);
+        }
+      });
+      if (installTimer !== undefined) window.clearInterval(installTimer);
+      if (taskKey && installCtx) {
+        installCtx.updateExternalTask(taskKey, {
+          moduleId: module.id,
+          name: module.name,
+          version: module.version,
+          description: module.description,
+          progress: 0.96,
+        });
+      }
       const { accessError } = await finalizeModuleInstall(
         module.id,
         module.version,
         canManageAccess ? item.scope : undefined,
       );
+      if (taskKey && installCtx) installCtx.completeExternalTask(taskKey);
       patch(item.key, {
         status: "done",
         message: accessError
@@ -146,6 +236,8 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
         log,
       });
     } catch (err) {
+      if (installTimer !== undefined) window.clearInterval(installTimer);
+      if (taskKey && installCtx) installCtx.abortExternalTask(taskKey);
       if (err instanceof ApiError && err.status === 409) {
         patch(item.key, { status: "confirm", privileges: err.privileges });
       } else {
@@ -203,7 +295,7 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
                     item={it}
                     canManageAccess={canManageAccess}
                     uninstalling={uninstalling}
-                    onScopeChange={(scope) => patch(it.key, { scope })}
+                    onScopeChange={(scope) => patch(it.key, { scope, scopeTouched: true })}
                     onRetry={() => requeue(it)}
                     onConfirm={() => requeue(it, true)}
                     onRemove={() => setQueue((q) => q.filter((x) => x.key !== it.key))}
