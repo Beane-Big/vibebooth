@@ -4,7 +4,9 @@ import { userDisplayName, type App, type Me, type ThemeInfo } from "../api";
 import type { BuiltinApp } from "../builtin";
 import AppIcon from "../components/AppIcon";
 import type { AppTab } from "../components/AppTabs";
+import IosInstallOverlay, { installPhaseLabel } from "../components/IosInstallOverlay";
 import { inPlace } from "../components/Layout";
+import { useInstallTasks, type InstallTask } from "../installContext";
 import { useThemeMode, wallpaperURL } from "../theme";
 import { ThemeBoundary, ThemeFallback, type ThemeApp, type ThemeDefinition } from "../themeHost";
 
@@ -12,6 +14,11 @@ type Props = {
   apps: App[];
   builtins: BuiltinApp[];
   onOpen: (tab: AppTab) => void;
+  onOpenBuild?: () => void;
+};
+
+type HomeRenderProps = Props & {
+  installTasks: InstallTask[];
 };
 
 // 首页列出能打开的应用，平台自带的应用（用户、设置）排在前面。
@@ -26,17 +33,22 @@ export default function Home({
   theme: { active: ThemeInfo | null; def: ThemeDefinition | null; error: string } | null;
 }) {
   const { skin, dark, wallpaper } = useThemeMode();
-  if (props.apps.length === 0 && props.builtins.length === 0) return <Empty description="还没有可用的应用。" />;
+  const installTasks = useInstallTasks();
+  const renderProps: HomeRenderProps = { ...props, installTasks };
+
+  if (props.apps.length === 0 && props.builtins.length === 0 && installTasks.length === 0) {
+    return <Empty description="还没有可用的应用。" />;
+  }
   if (user && theme?.active) {
     const { name } = theme.active;
-    if (theme.error) return <ThemeFallback name={name} error={theme.error} fallback={<ClassicHome {...props} />} />;
+    if (theme.error) return <ThemeFallback name={name} error={theme.error} fallback={<ClassicHome {...renderProps} />} />;
     if (!theme.def) return <Spin style={{ display: "block", margin: "48px auto" }} />;
     const ThemeHome = theme.def.Home;
     if (ThemeHome) {
       return (
-        <ThemeBoundary key={name} name={name} fallback={<ClassicHome {...props} />}>
+        <ThemeBoundary key={name} name={name} fallback={<ClassicHome {...renderProps} />}>
           <ThemeHome
-            apps={themeApps(props)}
+            apps={themeApps(renderProps)}
             dark={dark}
             user={{ displayName: userDisplayName(user) }}
             wallpaper={wallpaperURL(wallpaper)}
@@ -45,11 +57,26 @@ export default function Home({
       );
     }
   }
-  return skin === "tiles" ? <TilesHome {...props} /> : <ClassicHome {...props} />;
+  return skin === "tiles" ? <TilesHome {...renderProps} /> : <ClassicHome {...renderProps} />;
 }
 
-// themeApps 把平台自带的应用和模块统一成交给主题的格式。
-function themeApps({ apps, builtins, onOpen }: Props): ThemeApp[] {
+function installingLink(task: InstallTask, onOpenBuild?: () => void) {
+  return {
+    href: task.buildId ? "/applications/build" : "#installing",
+    onClick: (e: MouseEvent) => {
+      e.preventDefault();
+      if (task.buildId && (task.phase === "queued" || task.phase === "building")) {
+        onOpenBuild?.();
+      }
+    },
+  };
+}
+
+// themeApps 把平台自带的应用、模块和正在安装的应用统一成交给主题的格式。
+function themeApps({ apps, builtins, onOpen, onOpenBuild, installTasks }: HomeRenderProps): ThemeApp[] {
+  const taskMap = new Map(installTasks.map((t) => [t.moduleId, t]));
+  const newTasks = installTasks.filter((t) => !apps.some((a) => a.id === t.moduleId));
+
   const link = (tab: AppTab) => ({
     href: tab.url,
     onClick: (e: MouseEvent) => {
@@ -58,6 +85,7 @@ function themeApps({ apps, builtins, onOpen }: Props): ThemeApp[] {
       onOpen(tab);
     },
   });
+
   return [
     ...builtins.map((app) => ({
       id: app.id,
@@ -70,23 +98,40 @@ function themeApps({ apps, builtins, onOpen }: Props): ThemeApp[] {
       builtin: true,
       link: link({ url: app.url, title: app.name }),
     })),
-    ...apps.map((app) => ({
-      id: app.id,
-      name: app.name,
-      description: app.description,
-      url: app.url,
-      icon: app.icon,
-      mask: app.glyph,
-      color: app.color,
-      healthy: app.healthy,
+    ...apps.map((app) => {
+      const task = taskMap.get(app.id);
+      const active = task && task.phase !== "completing";
+      return {
+        id: app.id,
+        name: active ? installPhaseLabel(task) : app.name,
+        description: app.description,
+        url: app.url,
+        icon: app.icon ?? task?.iconUrl,
+        mask: app.glyph,
+        color: app.color,
+        healthy: active ? true : app.healthy,
+        builtin: false,
+        link: active ? installingLink(task, onOpenBuild) : link({ url: app.url, title: app.name }),
+      };
+    }),
+    ...newTasks.map((task) => ({
+      id: task.moduleId,
+      name: task.phase === "completing" ? task.name : installPhaseLabel(task),
+      description: task.description,
+      url: `/apps/${task.moduleId}/`,
+      icon: task.iconUrl,
+      healthy: true,
       builtin: false,
-      link: link({ url: app.url, title: app.name }),
+      link: installingLink(task, onOpenBuild),
     })),
   ];
 }
 
 // 彩色方块皮肤。
-function TilesHome({ apps, builtins, onOpen }: Props) {
+function TilesHome({ apps, builtins, onOpen, onOpenBuild, installTasks }: HomeRenderProps) {
+  const taskMap = new Map(installTasks.map((t) => [t.moduleId, t]));
+  const newTasks = installTasks.filter((t) => !apps.some((a) => a.id === t.moduleId));
+
   return (
     <div className="app-tiles">
       {builtins.map((app) => (
@@ -99,15 +144,33 @@ function TilesHome({ apps, builtins, onOpen }: Props) {
           onOpen={onOpen}
         />
       ))}
-      {apps.map((app) => (
+      {apps.map((app) => {
+        const task = taskMap.get(app.id);
+        return (
+          <AppTile
+            key={app.id}
+            tab={{ url: app.url, title: app.name }}
+            icon={<span className="app-tile-glyph">{app.name.slice(0, 1)}</span>}
+            image={app.icon ?? task?.iconUrl}
+            description={app.description}
+            unhealthy={!app.healthy && !task}
+            installing={task}
+            onOpen={onOpen}
+            onOpenBuild={onOpenBuild}
+          />
+        );
+      })}
+      {newTasks.map((task) => (
         <AppTile
-          key={app.id}
-          tab={{ url: app.url, title: app.name }}
-          icon={<span className="app-tile-glyph">{app.name.slice(0, 1)}</span>}
-          image={app.icon}
-          description={app.description}
-          unhealthy={!app.healthy}
+          key={`installing:${task.moduleId}`}
+          tab={{ url: `/apps/${task.moduleId}/`, title: task.name }}
+          icon={<span className="app-tile-glyph">{task.name.slice(0, 1)}</span>}
+          image={task.iconUrl}
+          description={task.description}
+          installing={task}
+          isNew
           onOpen={onOpen}
+          onOpenBuild={onOpenBuild}
         />
       ))}
     </div>
@@ -115,26 +178,46 @@ function TilesHome({ apps, builtins, onOpen }: Props) {
 }
 
 // 经典皮肤：带名称和说明的卡片。
-function ClassicHome({ apps, builtins, onOpen }: Props) {
+function ClassicHome({ apps, builtins, onOpen, onOpenBuild, installTasks }: HomeRenderProps) {
+  const taskMap = new Map(installTasks.map((t) => [t.moduleId, t]));
+  const newTasks = installTasks.filter((t) => !apps.some((a) => a.id === t.moduleId));
+
   return (
     <Row gutter={[16, 16]}>
       {builtins.map((app) => (
         <AppCard
           key={app.id}
           tab={{ url: app.url, title: app.name }}
-          icon={<AppIcon app={{ name: app.name, glyph: app.icon, tint: app.tint }} />}
+          icon={<AppIcon app={{ id: app.id, name: app.name, glyph: app.icon, tint: app.tint }} />}
           description={app.description}
           onOpen={onOpen}
         />
       ))}
-      {apps.map((app) => (
+      {apps.map((app) => {
+        const task = taskMap.get(app.id);
+        return (
+          <AppCard
+            key={app.id}
+            tab={{ url: app.url, title: app.name }}
+            icon={<AppIcon app={{ id: app.id, name: app.name, icon: app.icon, mask: app.glyph, color: app.color }} />}
+            description={app.description || " "}
+            unhealthy={!app.healthy && !task}
+            installing={task}
+            onOpen={onOpen}
+            onOpenBuild={onOpenBuild}
+          />
+        );
+      })}
+      {newTasks.map((task) => (
         <AppCard
-          key={app.id}
-          tab={{ url: app.url, title: app.name }}
-          icon={<AppIcon app={{ name: app.name, icon: app.icon, mask: app.glyph, color: app.color }} />}
-          description={app.description || " "}
-          unhealthy={!app.healthy}
+          key={`installing:${task.moduleId}`}
+          tab={{ url: `/apps/${task.moduleId}/`, title: task.name }}
+          icon={<AppIcon app={{ id: task.moduleId, name: task.name, icon: task.iconUrl }} />}
+          description={task.description || " "}
+          installing={task}
+          isNew
           onOpen={onOpen}
+          onOpenBuild={onOpenBuild}
         />
       ))}
     </Row>
@@ -147,31 +230,51 @@ function AppCard({
   icon,
   description,
   unhealthy = false,
+  installing,
+  isNew = false,
   onOpen,
+  onOpenBuild,
 }: {
   tab: AppTab;
   icon: ReactNode;
   description: string;
   unhealthy?: boolean;
+  installing?: InstallTask;
+  isNew?: boolean;
   onOpen: (tab: AppTab) => void;
+  onOpenBuild?: () => void;
 }) {
+  const active = installing && installing.phase !== "completing";
   return (
-    <Col xs={24} sm={12} lg={8} xxl={6}>
+    <Col xs={24} sm={12} lg={8} xxl={6} className={isNew ? "vb-ios-appear" : undefined}>
       <a
-        href={tab.url}
+        href={active ? (installing.buildId ? "/applications/build" : "#installing") : tab.url}
+        aria-busy={active || undefined}
         onClick={(e) => {
+          if (active) {
+            e.preventDefault();
+            if (installing.buildId && (installing.phase === "queued" || installing.phase === "building")) {
+              onOpenBuild?.();
+            }
+            return;
+          }
           if (!inPlace(e)) return;
           e.preventDefault();
           onOpen(tab);
         }}
       >
-        <Card hoverable size="small" styles={{ body: { padding: 16 } }}>
+        <Card hoverable={!active} size="small" styles={{ body: { padding: 16 } }}>
           <div className="app-card">
             {icon}
             <div className="app-text">
               <Typography.Text strong ellipsis>
                 {tab.title}
-                {unhealthy && (
+                {active && (
+                  <Tag color="processing" style={{ marginInlineStart: 8 }}>
+                    {installPhaseLabel(installing)}
+                  </Tag>
+                )}
+                {!active && unhealthy && (
                   <Tag color="error" style={{ marginInlineStart: 8 }}>
                     不可用
                   </Tag>
@@ -201,7 +304,10 @@ function AppTile({
   tint,
   description,
   unhealthy = false,
+  installing,
+  isNew = false,
   onOpen,
+  onOpenBuild,
 }: {
   tab: AppTab;
   // 没有图片时显示的白色图形。
@@ -210,8 +316,13 @@ function AppTile({
   tint?: [string, string];
   description: string;
   unhealthy?: boolean;
+  installing?: InstallTask;
+  isNew?: boolean;
   onOpen: (tab: AppTab) => void;
+  onOpenBuild?: () => void;
 }) {
+  const active = installing && installing.phase !== "completing";
+  const completing = installing?.phase === "completing";
   const art = image && (
     <>
       <img className="app-tile-fill" src={image} alt="" />
@@ -219,18 +330,28 @@ function AppTile({
     </>
   );
   const [from, to] = tint ?? ["oklch(from var(--accent) calc(l + 0.15) c calc(h - 40))", "var(--accent)"];
+  const label = active ? installPhaseLabel(installing) : unhealthy ? `${tab.title} · 不可用` : tab.title;
+
   return (
     <a
-      href={tab.url}
-      className={unhealthy ? "app-tile unhealthy" : "app-tile"}
+      href={active ? (installing.buildId ? "/applications/build" : "#installing") : tab.url}
+      className={`app-tile${unhealthy ? " unhealthy" : ""}${active ? " is-installing" : ""}${isNew ? " vb-ios-appear" : ""}`}
       title={description || undefined}
+      aria-busy={active || undefined}
       onClick={(e) => {
+        if (active) {
+          e.preventDefault();
+          if (installing.buildId && (installing.phase === "queued" || installing.phase === "building")) {
+            onOpenBuild?.();
+          }
+          return;
+        }
         if (!inPlace(e)) return;
         e.preventDefault();
         onOpen(tab);
       }}
     >
-      <span className="app-tile-square">
+      <span className={`app-tile-square${completing ? " vb-ios-pop" : ""}`}>
         {image ? (
           <img className="app-tile-shadow" src={image} alt="" />
         ) : (
@@ -245,7 +366,8 @@ function AppTile({
           ) : (
             icon
           )}
-          <span className="app-tile-label">{unhealthy ? `${tab.title} · 不可用` : tab.title}</span>
+          {installing && <IosInstallOverlay task={installing} />}
+          <span className="app-tile-label">{label}</span>
         </span>
       </span>
     </a>

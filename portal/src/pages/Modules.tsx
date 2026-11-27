@@ -15,6 +15,8 @@ import {
   type InstalledModule,
 } from "../api";
 import { LogCollapse, PackagesDragger, ResultAlert, type OperationResult } from "../components/PackageUpload";
+import { useInstallContext } from "../installContext";
+import { inspectDroppedZip } from "../zipInspect";
 
 // 排队安装的一个模块包。confirm 表示模块声明了特权，等管理员确认；确认后带上 allowPrivileges 重新排队。
 type QueueStatus = "waiting" | "uploading" | "installing" | "done" | "failed" | "confirm";
@@ -45,6 +47,7 @@ let nextKey = 1;
 // 应用管理：上传模块包安装或升级，卸载模块。安装和卸载都不会重启平台和其他应用。
 // 一次可以选多个模块包，按加入的顺序一个一个上传、安装：安装器同一时间只装一个，一起传也只是排队，还会抢带宽。
 export default function Modules({ canManageAccess }: { canManageAccess: boolean }) {
+  const installCtx = useInstallContext();
   const [access, setAccess] = useState<Record<string, AppAccess>>({});
   const [savingAccess, setSavingAccess] = useState<string | null>(null);
 
@@ -129,15 +132,63 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
 
   async function install(item: QueueItem) {
     patch(item.key, { status: "uploading", progress: 0, message: "", log: "" });
+    const inspected = await inspectDroppedZip(item.file).catch(() => null);
+    const m = inspected?.manifest;
+    const moduleId = m?.id || item.file.name.replace(/\.zip$/i, "");
+    const taskKey = installCtx?.beginExternalTask({
+      moduleId,
+      name: m?.name || moduleId,
+      version: m?.version,
+      description: m?.description,
+      iconUrl: inspected?.iconUrl,
+      phase: "uploading",
+      progress: 0.04,
+      isUpgrade: Boolean(modules?.some((x) => x.id === moduleId)),
+      source: "modules",
+    });
+    let installTimer: number | undefined;
+    let currentProgress = 0.04;
+
     try {
-      const { module, log } = await api.installModule(item.file, item.allowPrivileges, (f) =>
-        patch(item.key, f < 1 ? { progress: f } : { progress: 1, status: "installing" }),
-      );
+      const { module, log } = await api.installModule(item.file, item.allowPrivileges, (f) => {
+        patch(item.key, f < 1 ? { progress: f } : { progress: 1, status: "installing" });
+        if (!taskKey || !installCtx) return;
+        if (f < 1) {
+          currentProgress = 0.04 + f * 0.51;
+          installCtx.updateExternalTask(taskKey, {
+            phase: "uploading",
+            progress: currentProgress,
+            uploadFraction: f,
+          });
+        } else if (installTimer === undefined) {
+          currentProgress = Math.max(currentProgress, 0.56);
+          installCtx.updateExternalTask(taskKey, {
+            phase: "installing",
+            progress: currentProgress,
+            uploadFraction: undefined,
+          });
+          installTimer = window.setInterval(() => {
+            currentProgress = Math.min(0.94, currentProgress + (0.94 - currentProgress) * 0.065);
+            installCtx.updateExternalTask(taskKey, { progress: currentProgress });
+          }, 450);
+        }
+      });
+      if (installTimer !== undefined) window.clearInterval(installTimer);
+      if (taskKey && installCtx) {
+        installCtx.updateExternalTask(taskKey, {
+          moduleId: module.id,
+          name: module.name,
+          version: module.version,
+          description: module.description,
+          progress: 0.96,
+        });
+      }
       const { accessError } = await finalizeModuleInstall(
         module.id,
         module.version,
         canManageAccess ? item.scope : undefined,
       );
+      if (taskKey && installCtx) installCtx.completeExternalTask(taskKey);
       patch(item.key, {
         status: "done",
         message: accessError
@@ -146,6 +197,8 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
         log,
       });
     } catch (err) {
+      if (installTimer !== undefined) window.clearInterval(installTimer);
+      if (taskKey && installCtx) installCtx.abortExternalTask(taskKey);
       if (err instanceof ApiError && err.status === 409) {
         patch(item.key, { status: "confirm", privileges: err.privileges });
       } else {

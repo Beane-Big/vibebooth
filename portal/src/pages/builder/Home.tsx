@@ -12,6 +12,7 @@ import {
 import {
   api,
   ApiError,
+  BUILDS_CHANGED_EVENT,
   compareVersions,
   isRunning,
   packageUrl,
@@ -25,6 +26,7 @@ import {
   type Me,
   type Rules,
 } from "./api";
+import { useInstallContext } from "../../installContext";
 
 
 // 展开在某条记录下方的内容：构建日志或安装日志，同一时间只展开一个。
@@ -63,6 +65,7 @@ function loadAuto(): AutoInstall[] {
 
 // 构建器首页：上传源码包、查看构建记录，日志在记录下方展开；成功的可以下载软件包或一键装到本平台。
 export default function Home({ onSettings }: { onSettings: () => void }) {
+  const installCtx = useInstallContext();
   const [me, setMe] = useState<Me | null>(null);
   const [rules, setRules] = useState<Rules | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -149,6 +152,9 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
       .then(setRules)
       .catch((err) => setError(err.message));
     load();
+    const onBuildsChanged = () => load();
+    window.addEventListener(BUILDS_CHANGED_EVENT, onBuildsChanged);
+    return () => window.removeEventListener(BUILDS_CHANGED_EVENT, onBuildsChanged);
   }, []);
 
   // 有排队或构建中的记录时每隔几秒刷新一次列表，看状态有没有变。
@@ -348,11 +354,31 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
     setNotice(null);
     setInstalling(b.id);
     setExpanded({ id: b.id, panel: "install" });
+    const taskKey = installCtx?.beginExternalTask({
+      moduleId: b.moduleId,
+      name: b.moduleName || b.moduleId,
+      version: b.version,
+      phase: "installing",
+      progress: 0.12,
+      isUpgrade: Boolean(current),
+      buildId: b.id,
+      source: "builder",
+    });
+    let currentProgress = 0.12;
+    const progressTimer =
+      taskKey && installCtx
+        ? window.setInterval(() => {
+            currentProgress = Math.min(0.94, currentProgress + (0.94 - currentProgress) * 0.065);
+            installCtx.updateExternalTask(taskKey, { progress: currentProgress });
+          }, 450)
+        : undefined;
     let ok = false;
     let message: string;
     let log = "";
     try {
       const installedRes = await api.install(b, allowPrivileges);
+      if (progressTimer !== undefined) window.clearInterval(progressTimer);
+      if (taskKey && installCtx) installCtx.updateExternalTask(taskKey, { progress: 0.96 });
       log = installedRes.log;
       ok = true;
       const { accessError } = await finalizeModuleInstall(
@@ -360,6 +386,7 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
         installedRes.module?.version ?? b.version,
         me?.admin ? targetScope : undefined,
       );
+      if (taskKey && installCtx) installCtx.completeExternalTask(taskKey);
       if (b.moduleId === SELF_ID)
         message = `构建器已更新为 ${b.version}，刷新本页后生效。`;
       else if (current)
@@ -368,6 +395,8 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
         message = `${b.moduleName} ${b.version} 已安装，应用列表已自动刷新。`;
       if (accessError) message += `（权限范围设置失败：${accessError}）`;
     } catch (err) {
+      if (progressTimer !== undefined) window.clearInterval(progressTimer);
+      if (taskKey && installCtx) installCtx.abortExternalTask(taskKey);
       if (err instanceof ApiError && err.status === 409) {
         setConfirming({
           id: b.id,
