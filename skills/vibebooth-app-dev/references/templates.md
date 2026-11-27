@@ -137,28 +137,28 @@ EXPOSE 8000
 ENTRYPOINT ["server"]
 ```
 
-### `frontend/src/platform.ts`（统一接口请求与 401 登录引导）
+### `frontend/src/platform.ts`（统一接口请求与未登录自动跳转）
 ```ts
 const API_BASE = "/api/feedback";
 let redirecting = false;
 
-export function redirectToLogin() {
+function redirectToLogin() {
   if (redirecting) return;
   redirecting = true;
-  // 必须使用当前窗口跳 /login?next=...，禁止 location.reload()：
-  // 独立页签登录后自动跳回原路径；门户 iframe 内会被自动拦截并弹出登录确认框。
+  // 必须使用当前窗口跳 /login?next=...，由平台统一询问用户是否登录或注册；
+  // 严禁调用 location.reload()，否则公开可见模式下会死循环刷新。
   location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search);
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit & { silent401?: boolean }): Promise<T> {
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: "same-origin",
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
   });
   if (res.status === 401) {
-    if (!init?.silent401) redirectToLogin();
-    throw new Error("请先登录");
+    redirectToLogin();
+    throw new Error("需要登录");
   }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((body as { error?: string }).error || `请求失败 (${res.status})`);
