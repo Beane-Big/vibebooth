@@ -318,8 +318,6 @@ export function InstallProvider({
           finishWithReveal(key);
           if (accessError) {
             message.warning(`${module.name} 已${isUpgrade ? "更新" : "安装"}（权限范围设置失败：${accessError}）`);
-          } else {
-            message.success(`${module.name} 已${isUpgrade ? "更新" : "安装"}`);
           }
           void log;
         } catch (err) {
@@ -498,8 +496,6 @@ export function InstallProvider({
             message.success(`构建器已更新为 ${finalBuild.version}，刷新页面后生效`);
           } else if (accessError) {
             message.warning(`${realName} 已${isUpgrade ? "更新" : "安装"}（权限范围设置失败：${accessError}）`);
-          } else {
-            message.success(`${realName} 已${isUpgrade ? "更新" : "安装"}`);
           }
         } catch (err) {
           stopTimer(key);

@@ -225,9 +225,8 @@ export default function Home({
           : [...cur, item.key]
         : cur.filter((k) => k !== item.key);
       savePrefs({ hidden: next });
-      if (hide) message.success(`已隐藏「${item.name}」`);
     },
-    [message, savePrefs],
+    [savePrefs],
   );
 
   const handleUninstalled = useCallback(
