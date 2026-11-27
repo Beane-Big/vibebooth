@@ -130,6 +130,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/platform/apps", s.optionalUser(s.handleApps))
 	mux.HandleFunc("GET /api/platform/app-access", s.requireRole("admin", s.handleAppAccess))
 	mux.HandleFunc("PUT /api/platform/app-access/{id}", s.requireRole("admin", s.handleSetAppAccess))
+	mux.HandleFunc("GET /api/platform/app-open-modes", s.requirePerm(permModules, s.handleAppOpenModes))
+	mux.HandleFunc("PUT /api/platform/app-open-modes/{id}", s.requirePerm(permModules, s.handleSetAppOpenMode))
 	s.mountContacts(mux)
 	s.mountNotifications(mux)
 	mux.HandleFunc("GET /api/platform/apps/{id}/icon", s.optionalUser(s.handleAppIcon))

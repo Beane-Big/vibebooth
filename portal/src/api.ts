@@ -57,6 +57,16 @@ export const appScopeLabel: Record<AppScope, string> = {
 export function isAppScope(v: unknown): v is AppScope {
   return v === "restricted" || v === "signed-in" || v === "public";
 }
+
+export type AppOpenMode = "portal" | "new-tab";
+
+export const defaultAppOpenMode: AppOpenMode = "portal";
+
+export const appOpenModeOptions: { value: AppOpenMode; label: string }[] = [
+  { value: "portal", label: "应用内部打开" },
+  { value: "new-tab", label: "新页签打开" },
+];
+
 export type ContactStatus = "pending" | "accepted";
 export type Contact = { id: number; userId: number; name: string; username: string; photo: string; remark: string; status: ContactStatus };
 export type ContactRequest = { id: number; userId: number; name: string; username: string; photo: string };
@@ -73,6 +83,7 @@ export type App = {
   color?: string;
   healthy: boolean;
   loginRequired?: boolean;
+  openMode?: AppOpenMode;
 };
 
 // 每位登录用户自己的首页应用排序与隐藏列表（builtin:<id> 为内置应用，<id> 为模块）。
@@ -375,6 +386,9 @@ export const api = {
     request<HomePrefs>("/api/platform/me/home-prefs", { method: "PUT", body: JSON.stringify(input) }),
   appAccess: () => request<Record<string, AppAccess>>("/api/platform/app-access"),
   setAppAccess: (id: string, access: AppAccess) => put("/api/platform/app-access/" + encodeURIComponent(id), access),
+  appOpenModes: () => request<Record<string, AppOpenMode>>("/api/platform/app-open-modes"),
+  setAppOpenMode: (id: string, openMode: AppOpenMode) =>
+    put("/api/platform/app-open-modes/" + encodeURIComponent(id), { openMode }),
   contacts: () => request<Contact[]>("/api/platform/contacts"),
   addContact: (identifier: string) =>
     request<void>("/api/platform/contacts", { method: "POST", body: JSON.stringify({ identifier }) }),

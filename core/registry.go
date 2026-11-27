@@ -118,6 +118,7 @@ type appView struct {
 	Color         string `json:"color,omitempty"`
 	Healthy       bool   `json:"healthy"`
 	LoginRequired bool   `json:"loginRequired"`
+	OpenMode      string `json:"openMode"`
 }
 
 // handleApps 返回当前用户能用的应用（应用开关开着就有入口，里面能看哪些页面另按菜单算），并并发检查各模块健康状态。
@@ -145,6 +146,11 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) 
 			return
 		}
 	}
+	openModes, err := s.store.appOpenModes(r.Context())
+	if err != nil {
+		internalError(w, err)
+		return
+	}
 	var apps []*Module
 	for _, m := range s.registry.List() {
 		if canBrowseApp(m, scopes[m.ID].forModule(m), user != nil) || user != nil && appAllowed(user, m, g) {
@@ -155,7 +161,15 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request, user *User) 
 	var wg sync.WaitGroup
 	for i, m := range apps {
 		// Anonymous access currently covers frontend files only; backend APIs require identity.
-		views[i] = appView{LoginRequired: user == nil && m.BackendURL() != "", ID: m.ID, Name: m.Name, Description: m.Description, Version: m.Version, URL: m.FrontendPath()}
+		views[i] = appView{
+			LoginRequired: user == nil && m.BackendURL() != "",
+			ID:            m.ID,
+			Name:          m.Name,
+			Description:   m.Description,
+			Version:       m.Version,
+			URL:           m.FrontendPath(),
+			OpenMode:      normalizeOpenMode(openModes[m.ID]),
+		}
 		if m.Icon != "" {
 			views[i].Icon = "/api/platform/apps/" + m.ID + "/icon"
 		}

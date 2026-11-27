@@ -146,6 +146,10 @@ CREATE TABLE IF NOT EXISTS app_access (
 	version TEXT NOT NULL,
 	scope TEXT NOT NULL CHECK (scope IN ('public', 'signed-in'))
 );
+CREATE TABLE IF NOT EXISTS app_open_modes (
+	module_id TEXT PRIMARY KEY,
+	open_mode TEXT NOT NULL CHECK (open_mode IN ('portal', 'new-tab'))
+);
 CREATE TABLE IF NOT EXISTS contacts (
 	id BIGSERIAL PRIMARY KEY,
 	owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

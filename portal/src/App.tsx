@@ -173,7 +173,8 @@ function GuestPortal({ theme }: { theme: ReturnType<typeof useActiveTheme> }) {
   }, []);
 
   function openApp(tab: AppTab) {
-    if (apps?.find((app) => app.url === tab.url)?.loginRequired) {
+    const app = apps?.find((a) => a.url === tab.url);
+    if (app?.loginRequired) {
       modal.confirm({
         icon: null,
         centered: true,
@@ -184,6 +185,10 @@ function GuestPortal({ theme }: { theme: ReturnType<typeof useActiveTheme> }) {
         cancelText: "暂不登录",
         onOk: () => { location.href = "/login?next=%2F&confirmed=1"; },
       });
+      return;
+    }
+    if (app?.openMode === "new-tab") {
+      window.open(tab.url, "_blank", "noopener,noreferrer");
       return;
     }
     tabs.open(tab);
@@ -319,6 +324,10 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
     if (tab.url === "/applications" || tab.url === "/contacts" || tab.url === "/themes" || tab.url === "/settings") {
       setEntryPath(tab.url);
     }
+    if (apps?.find((app) => app.url === tab.url)?.openMode === "new-tab") {
+      window.open(tab.url, "_blank", "noopener,noreferrer");
+      return;
+    }
     tabs.open(tab);
   }
 
@@ -331,6 +340,10 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
       return;
     }
     const matched = apps?.find((app) => link.startsWith(app.url));
+    if (matched?.openMode === "new-tab") {
+      window.open(link, "_blank", "noopener,noreferrer");
+      return;
+    }
     tabs.open({ url: link, title: matched?.name ?? path });
   }
 

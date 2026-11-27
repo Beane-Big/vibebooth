@@ -4,6 +4,7 @@ import {
   api,
   ApiError,
   APPS_CHANGED_EVENT,
+  appOpenModeOptions,
   appScopeOptions,
   defaultAppScope,
   finalizeModuleInstall,
@@ -11,6 +12,7 @@ import {
   notifyAppsChanged,
   privilegeInfo,
   type AppAccess,
+  type AppOpenMode,
   type AppScope,
   type InstalledModule,
 } from "../api";
@@ -54,6 +56,8 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
   const accessRef = useRef(access);
   accessRef.current = access;
   const [savingAccess, setSavingAccess] = useState<string | null>(null);
+  const [openModes, setOpenModes] = useState<Record<string, AppOpenMode>>({});
+  const [savingOpenMode, setSavingOpenMode] = useState<string | null>(null);
 
   async function changeAccess(id: string, policy: AppAccess) {
     setSavingAccess(id);
@@ -64,6 +68,19 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
       setError(err instanceof Error ? err.message : "保存失败");
     } finally {
       setSavingAccess(null);
+    }
+  }
+
+  async function changeOpenMode(id: string, openMode: AppOpenMode) {
+    setSavingOpenMode(id);
+    try {
+      await api.setAppOpenMode(id, openMode);
+      setOpenModes((previous) => ({ ...previous, [id]: openMode }));
+      window.dispatchEvent(new CustomEvent(APPS_CHANGED_EVENT, { detail: { moduleId: id } }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setSavingOpenMode(null);
     }
   }
 
@@ -83,6 +100,7 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
 
   function load() {
     if (canManageAccess) api.appAccess().then(setAccess).catch((err) => setError(err.message));
+    api.appOpenModes().then(setOpenModes).catch((err) => setError(err.message));
     api
       .modules()
       .then(setModules)
@@ -352,6 +370,17 @@ export default function Modules({ canManageAccess }: { canManageAccess: boolean 
                     {m.requiredBy.length > 0 && ` · 被 ${m.requiredBy.join("、")} 依赖`}
                   </Typography.Text>
                 </Flex>
+                {openModes[m.id] && (
+                  <Select
+                    aria-label={`${m.name}打开方式`}
+                    value={openModes[m.id]}
+                    style={{ minWidth: 132 }}
+                    disabled={busy || savingOpenMode !== null}
+                    loading={savingOpenMode === m.id}
+                    onChange={(mode) => changeOpenMode(m.id, mode)}
+                    options={appOpenModeOptions}
+                  />
+                )}
                 {access[m.id] && (
                   <Select
                     aria-label={`${m.name}访问范围`}
