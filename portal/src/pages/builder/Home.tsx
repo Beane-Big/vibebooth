@@ -254,8 +254,9 @@ export default function Home({ onSettings }: { onSettings: () => void }) {
     for (const [i, item] of files.entries()) {
       setUploading(i);
       try {
-        const b = await api.upload(item.file);
-        if (item.installAfter && me?.admin) {
+        const installAfter = item.installAfter && Boolean(me?.admin);
+        const b = await api.upload(item.file, installAfter);
+        if (installAfter) {
           setAuto((items) => [
             ...items.filter((x) => x.id !== b.id),
             { id: b.id, scope: item.scope },

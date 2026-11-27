@@ -13,6 +13,9 @@ import (
 var notifyClient = &http.Client{Timeout: 5 * time.Second}
 
 func notifyBuildResult(rec *Build, buildErr error) {
+	if rec == nil || (buildErr == nil && rec.InstallAfter) {
+		return
+	}
 	coreURL := strings.TrimRight(env("CORE_URL", "http://core:8080"), "/")
 	title := fmt.Sprintf("应用构建成功：%s %s", rec.ModuleName, rec.Version)
 	body := fmt.Sprintf("%s（%s）构建完成，可前往安装。", rec.ModuleName, rec.ModuleID)

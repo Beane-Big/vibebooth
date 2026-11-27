@@ -41,6 +41,7 @@ type Build struct {
 	InstallStatus string     `json:"installStatus"` // 空表示没在构建器里装过，否则是 success 或 failed
 	InstalledBy   string     `json:"installedBy"`
 	InstalledAt   *time.Time `json:"installedAt"`
+	InstallAfter  bool       `json:"installAfter"` // 上传时是否勾选“构建并安装”；为 true 时构建成功不再推送“前往安装”消息
 }
 
 // 安装结果。
@@ -108,6 +109,7 @@ var migrations = []string{
 	`ALTER TABLE builds ADD COLUMN install_status TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE builds ADD COLUMN installed_by TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE builds ADD COLUMN installed_at TIMESTAMP`,
+	`ALTER TABLE builds ADD COLUMN install_after INTEGER NOT NULL DEFAULT 0`,
 }
 
 // OpenStore 打开模块自己的 SQLite 文件；数据库只属于本模块，放在本模块的卷里。
@@ -132,18 +134,20 @@ func OpenStore(path string) (*Store, error) {
 }
 
 const buildColumns = `id, module_id, module_name, version, status, error, hint, package_size, created_by, created_at, started_at, finished_at,
-	install_status, installed_by, installed_at`
+	install_status, installed_by, installed_at, install_after`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scanBuild(row scanner) (*Build, error) {
 	var b Build
 	var started, finished, installed sql.NullTime
+	var installAfter int
 	err := row.Scan(&b.ID, &b.ModuleID, &b.ModuleName, &b.Version, &b.Status, &b.Error, &b.Hint, &b.PackageSize,
-		&b.CreatedBy, &b.CreatedAt, &started, &finished, &b.InstallStatus, &b.InstalledBy, &installed)
+		&b.CreatedBy, &b.CreatedAt, &started, &finished, &b.InstallStatus, &b.InstalledBy, &installed, &installAfter)
 	if err != nil {
 		return nil, err
 	}
+	b.InstallAfter = installAfter != 0
 	if started.Valid {
 		b.StartedAt = &started.Time
 	}
@@ -191,8 +195,12 @@ func (s *Store) Get(ctx context.Context, id int64) (*Build, error) {
 func (s *Store) Add(ctx context.Context, b *Build) error {
 	b.Status = statusQueued
 	b.CreatedAt = time.Now().UTC()
-	res, err := s.db.ExecContext(ctx, `INSERT INTO builds (module_id, module_name, version, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		b.ModuleID, b.ModuleName, b.Version, b.Status, b.CreatedBy, b.CreatedAt)
+	installAfter := 0
+	if b.InstallAfter {
+		installAfter = 1
+	}
+	res, err := s.db.ExecContext(ctx, `INSERT INTO builds (module_id, module_name, version, status, created_by, created_at, install_after) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		b.ModuleID, b.ModuleName, b.Version, b.Status, b.CreatedBy, b.CreatedAt, installAfter)
 	if err != nil {
 		return err
 	}

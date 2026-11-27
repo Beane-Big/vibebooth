@@ -117,7 +117,7 @@ func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, builds)
 }
 
-// upload 接收源码包（表单字段 source）。先按平台规则检查清单和 compose.yaml，通过了才排队构建。
+// upload 接收源码包（表单字段 source，可选 installAfter）。先按平台规则检查清单和 compose.yaml，通过了才排队构建。
 func (h *handlers) upload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxSourceSize+1<<20)
 	mr, err := r.MultipartReader()
@@ -126,13 +126,31 @@ func (h *handlers) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var tmp string
+	var installAfter bool
+	defer func() {
+		if tmp != "" {
+			os.Remove(tmp)
+		}
+	}()
 	for {
 		part, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "请上传源码包")
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("源码包不能超过 %d MB", maxSourceSize>>20))
+			} else {
+				writeError(w, http.StatusBadRequest, "请上传源码包")
+			}
 			return
 		}
-		if part.FormName() == "source" {
+		switch part.FormName() {
+		case "source":
+			if tmp != "" {
+				continue
+			}
 			tmp, err = saveUpload(h.builder.dir, part)
 			if err != nil {
 				var tooLarge *http.MaxBytesError
@@ -143,16 +161,28 @@ func (h *handlers) upload(w http.ResponseWriter, r *http.Request) {
 				}
 				return
 			}
-			break
+		case "installAfter":
+			data, _ := io.ReadAll(io.LimitReader(part, 16))
+			v := strings.TrimSpace(string(data))
+			installAfter = v == "true" || v == "1"
 		}
 	}
-	defer os.Remove(tmp)
+	if tmp == "" {
+		writeError(w, http.StatusBadRequest, "请上传源码包")
+		return
+	}
 	src, err := inspectSource(tmp)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	rec := &Build{ModuleID: src.manifest.ID, ModuleName: src.manifest.Name, Version: src.manifest.Version, CreatedBy: auth.UserFrom(r.Context()).Name}
+	rec := &Build{
+		ModuleID:     src.manifest.ID,
+		ModuleName:   src.manifest.Name,
+		Version:      src.manifest.Version,
+		CreatedBy:    auth.UserFrom(r.Context()).Name,
+		InstallAfter: installAfter,
+	}
 	if err := h.store.Add(r.Context(), rec); err != nil {
 		internalError(w, err)
 		return
@@ -165,6 +195,7 @@ func (h *handlers) upload(w http.ResponseWriter, r *http.Request) {
 		internalError(w, err)
 		return
 	}
+	tmp = ""
 	h.builder.enqueue(rec.ID)
 	writeJSON(w, http.StatusCreated, rec)
 }

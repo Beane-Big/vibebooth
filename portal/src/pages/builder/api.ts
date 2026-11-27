@@ -19,6 +19,7 @@ export type Build = {
   installStatus: "" | "success" | "failed";
   installedBy: string;
   installedAt: string | null;
+  installAfter?: boolean;
 };
 
 // 保留规则：每个模块成功和失败的构建各留最近 maxPackages 个，超过 maxDays 天的删除。
@@ -120,8 +121,9 @@ export const api = {
   me: () => request<Me>("/api/platform/builder/me"),
   builds: () => send<Build[]>("/api/platform/builder/builds"),
   build: (id: number) => request<BuildDetail>(`/api/platform/builder/builds/${id}`),
-  upload: (file: File) => {
+  upload: (file: File, installAfter = false) => {
     const form = new FormData();
+    if (installAfter) form.append("installAfter", "true");
     form.append("source", file);
     return request<Build>("/api/platform/builder/builds", { method: "POST", body: form });
   },
