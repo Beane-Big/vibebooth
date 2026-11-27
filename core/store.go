@@ -226,6 +226,14 @@ CREATE TABLE IF NOT EXISTS notification_channels (
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS notification_channels_user_idx ON notification_channels (user_id);
+
+-- 每位登录用户自己的首页应用排序与隐藏列表（builtin:<id> 表示内置应用，<id> 表示模块）。
+CREATE TABLE IF NOT EXISTS user_home_prefs (
+	user_id     BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	app_order   TEXT[] NOT NULL DEFAULT '{}',
+	hidden_apps TEXT[] NOT NULL DEFAULT '{}',
+	updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `
 
 func (s *Store) Migrate(ctx context.Context) error {

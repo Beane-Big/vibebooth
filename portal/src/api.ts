@@ -75,6 +75,12 @@ export type App = {
   loginRequired?: boolean;
 };
 
+// 每位登录用户自己的首页应用排序与隐藏列表（builtin:<id> 为内置应用，<id> 为模块）。
+export type HomePrefs = {
+  order: string[];
+  hidden: string[];
+};
+
 // 已安装的主题包，字段和 theme.yaml 一样（见 docs/theme-spec.md）；文件在 /api/platform/themes/<id>/<文件名>。
 export type ThemeInfo = {
   id: string;
@@ -364,6 +370,9 @@ export const api = {
   // 改自己的密码，要先输入当前密码；其他设备要重新登录，当前设备不用。
   setMyPassword: (currentPassword: string, password: string) =>
     put("/api/platform/me/password", { currentPassword, password }),
+  homePrefs: () => request<HomePrefs>("/api/platform/me/home-prefs"),
+  saveHomePrefs: (input: Partial<HomePrefs>) =>
+    request<HomePrefs>("/api/platform/me/home-prefs", { method: "PUT", body: JSON.stringify(input) }),
   appAccess: () => request<Record<string, AppAccess>>("/api/platform/app-access"),
   setAppAccess: (id: string, access: AppAccess) => put("/api/platform/app-access/" + encodeURIComponent(id), access),
   contacts: () => request<Contact[]>("/api/platform/contacts"),

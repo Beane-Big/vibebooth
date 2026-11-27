@@ -1,6 +1,6 @@
 import * as React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
-import { Component, type ComponentType, type ErrorInfo, type MouseEvent, type ReactNode } from "react";
+import { Component, type AnchorHTMLAttributes, type ComponentType, type ErrorInfo, type MouseEvent, type ReactNode } from "react";
 import {
   Alert,
   Avatar,
@@ -52,8 +52,14 @@ export type ThemeApp = {
   tint?: [string, string];
   healthy: boolean;
   builtin: boolean;
-  // 放到 <a> 上：普通点击在门户里以标签页打开，按住 Ctrl / Cmd 或中键在浏览器新标签页打开。
-  link: { href: string; onClick: (e: MouseEvent) => void };
+  // 放到 <a> 上：普通点击在门户里以标签页打开，按住 Ctrl / Cmd 或中键在浏览器新标签页打开；
+  // 登录后同时承载拖拽排序、右键菜单与移动端长按事件。
+  link: { href: string; onClick: (e: MouseEvent) => void } & Partial<
+    Pick<
+      AnchorHTMLAttributes<HTMLAnchorElement>,
+      "draggable" | "onDragStart" | "onDragOver" | "onDrop" | "onDragEnd" | "onContextMenu" | "onTouchStart" | "onTouchMove" | "onTouchEnd" | "onTouchCancel"
+    >
+  > & { "data-home-key"?: string; "data-dragging"?: string };
 };
 
 export type HomeProps = {
