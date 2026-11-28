@@ -1,92 +1,198 @@
-import { useCallback, useEffect, useState } from "react";
-import { Button, Card, Col, Flex, Row, Space, Tag, Typography } from "antd";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { App as AntApp, Button, Card, Col, Flex, Row, Space, Tag, Typography } from "antd";
 import {
   ArrowRightOutlined,
   CheckCircleFilled,
   CloseOutlined,
   CompassOutlined,
 } from "@ant-design/icons";
-import { isAdmin, type Me } from "../api";
+import { api, isAdmin, type Me, type OnboardingState } from "../api";
 import { useSiteInfo } from "../site";
 
-type StoredState = {
-  dismissed: boolean;
-  done: string[];
-};
+const legacyStorageKey = (userId: number) => `vb:onboarding:${userId}`;
 
-const storageKey = (userId: number) => `vb:onboarding:${userId}`;
+function normalizeState(raw?: Partial<OnboardingState> | null): OnboardingState {
+  return {
+    dismissed: raw?.dismissed === true,
+    done: Array.isArray(raw?.done)
+      ? Array.from(new Set(raw.done.filter((x): x is string => typeof x === "string" && x.trim() !== "")))
+      : [],
+  };
+}
 
-function readState(userId: number): StoredState {
+function readLegacyState(userId: number): OnboardingState | null {
   try {
-    const raw = localStorage.getItem(storageKey(userId));
-    if (!raw) return { dismissed: false, done: [] };
-    const parsed = JSON.parse(raw) as Partial<StoredState>;
-    return {
-      dismissed: parsed.dismissed === true,
-      done: Array.isArray(parsed.done) ? parsed.done.filter((x): x is string => typeof x === "string") : [],
-    };
+    const raw = localStorage.getItem(legacyStorageKey(userId));
+    if (!raw) return null;
+    return normalizeState(JSON.parse(raw) as Partial<OnboardingState>);
   } catch {
-    return { dismissed: false, done: [] };
+    return null;
   }
 }
 
-function writeState(userId: number, state: StoredState) {
+function removeLegacyState(userId: number) {
   try {
-    localStorage.setItem(storageKey(userId), JSON.stringify(state));
+    localStorage.removeItem(legacyStorageKey(userId));
   } catch {}
 }
 
-export function useOnboarding(userId: number) {
-  const [state, setState] = useState<StoredState>(() => readState(userId));
+function mergeLegacy(
+  server: OnboardingState,
+  legacy: OnboardingState | null,
+): { merged: OnboardingState; changed: boolean } {
+  if (!legacy) return { merged: server, changed: false };
+  const dismissed = server.dismissed || legacy.dismissed;
+  const done = Array.from(new Set([...server.done, ...legacy.done]));
+  const changed = dismissed !== server.dismissed || done.length !== server.done.length;
+  return { merged: { dismissed, done }, changed };
+}
 
+export function useOnboarding(userId: number, serverState?: OnboardingState) {
+  const { message } = AntApp.useApp();
+  const server = normalizeState(serverState);
+  const serverRef = useRef(server);
+  serverRef.current = server;
+
+  const [state, setState] = useState<OnboardingState>(() => mergeLegacy(server, readLegacyState(userId)).merged);
+  // 已关闭后通过菜单再次查看仅临时展开，不把后端 dismissed 改回 false，刷新或下次进入不会再自动打开。
+  const [manualOpen, setManualOpen] = useState(false);
+
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const epochRef = useRef(0);
+  const pendingRef = useRef(0);
+  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
+
+  const enqueueSave = useCallback(
+    (
+      targetEpoch: number,
+      patch: Partial<OnboardingState>,
+      options?: { silent?: boolean; onSuccess?: () => void },
+    ) => {
+      pendingRef.current += 1;
+      queueRef.current = queueRef.current
+        .catch(() => {})
+        .then(() => api.saveOnboarding(patch))
+        .then((saved) => {
+          options?.onSuccess?.();
+          if (epochRef.current === targetEpoch && pendingRef.current === 1) {
+            const next = normalizeState(saved);
+            stateRef.current = next;
+            setState(next);
+          }
+        })
+        .catch((err) => {
+          if (epochRef.current !== targetEpoch) return;
+          if (!options?.silent) {
+            message.error(err instanceof Error ? err.message : "保存新手引导状态失败");
+          }
+          if (pendingRef.current === 1) {
+            api
+              .onboarding()
+              .then((fresh) => {
+                if (epochRef.current === targetEpoch) {
+                  const next = normalizeState(fresh);
+                  stateRef.current = next;
+                  setState(next);
+                }
+              })
+              .catch(() => {});
+          }
+        })
+        .finally(() => {
+          if (epochRef.current === targetEpoch) {
+            pendingRef.current = Math.max(0, pendingRef.current - 1);
+          }
+        });
+    },
+    [message],
+  );
+
+  // 登录或切换账号时，以当前用户在服务端保存的状态为准，并将早期浏览器本地记录一次性迁移到后端。
   useEffect(() => {
-    setState(readState(userId));
-  }, [userId]);
+    const epoch = epochRef.current + 1;
+    epochRef.current = epoch;
+    pendingRef.current = 0;
+    setManualOpen(false);
+
+    const legacy = readLegacyState(userId);
+    const { merged, changed } = mergeLegacy(serverRef.current, legacy);
+    stateRef.current = merged;
+    setState(merged);
+
+    if (legacy) {
+      if (changed) {
+        enqueueSave(epoch, merged, {
+          silent: true,
+          onSuccess: () => removeLegacyState(userId),
+        });
+      } else {
+        removeLegacyState(userId);
+      }
+    }
+  }, [userId, enqueueSave]);
+
+  const serverDismissed = server.dismissed;
+  const serverDoneKey = server.done.join("\0");
+  useEffect(() => {
+    if (pendingRef.current > 0) return;
+    setState((prev) => {
+      const next: OnboardingState = {
+        dismissed: prev.dismissed || serverDismissed,
+        done: serverRef.current.done,
+      };
+      stateRef.current = next;
+      return next;
+    });
+  }, [userId, serverDismissed, serverDoneKey]);
 
   const dismiss = useCallback(() => {
-    setState((prev) => {
-      const next = { ...prev, dismissed: true };
-      writeState(userId, next);
-      return next;
-    });
-  }, [userId]);
+    setManualOpen(false);
+    if (stateRef.current.dismissed) return;
+    const next: OnboardingState = { ...stateRef.current, dismissed: true };
+    stateRef.current = next;
+    setState(next);
+    enqueueSave(epochRef.current, { dismissed: true });
+  }, [enqueueSave]);
 
   const reopen = useCallback(() => {
-    setState((prev) => {
-      const next = { ...prev, dismissed: false };
-      writeState(userId, next);
-      return next;
-    });
-  }, [userId]);
+    setManualOpen(true);
+  }, []);
 
   const markDone = useCallback(
     (stepId: string) => {
-      setState((prev) => {
-        if (prev.done.includes(stepId)) return prev;
-        const next = { ...prev, done: [...prev.done, stepId] };
-        writeState(userId, next);
-        return next;
-      });
+      if (stateRef.current.done.includes(stepId)) return;
+      const nextDone = [...stateRef.current.done, stepId];
+      const next: OnboardingState = { ...stateRef.current, done: nextDone };
+      stateRef.current = next;
+      setState(next);
+      enqueueSave(epochRef.current, { done: nextDone });
     },
-    [userId],
+    [enqueueSave],
   );
 
   const toggleDone = useCallback(
     (stepId: string) => {
-      setState((prev) => {
-        const exists = prev.done.includes(stepId);
-        const next = {
-          ...prev,
-          done: exists ? prev.done.filter((id) => id !== stepId) : [...prev.done, stepId],
-        };
-        writeState(userId, next);
-        return next;
-      });
+      const exists = stateRef.current.done.includes(stepId);
+      const nextDone = exists
+        ? stateRef.current.done.filter((id) => id !== stepId)
+        : [...stateRef.current.done, stepId];
+      const next: OnboardingState = { ...stateRef.current, done: nextDone };
+      stateRef.current = next;
+      setState(next);
+      enqueueSave(epochRef.current, { done: nextDone });
     },
-    [userId],
+    [enqueueSave],
   );
 
-  return { state, dismiss, reopen, markDone, toggleDone };
+  return {
+    state,
+    visible: !state.dismissed || manualOpen,
+    dismiss,
+    reopen,
+    markDone,
+    toggleDone,
+  };
 }
 
 type StepDef = {
@@ -103,6 +209,7 @@ export default function OnboardingGuide({
   hasModules,
   hasCustomTheme,
   doneIds,
+  dismissed = false,
   onNavigate,
   onMarkDone,
   onToggleDone,
@@ -112,6 +219,7 @@ export default function OnboardingGuide({
   hasModules: boolean;
   hasCustomTheme: boolean;
   doneIds: string[];
+  dismissed?: boolean;
   onNavigate: (link: string) => void;
   onMarkDone: (id: string) => void;
   onToggleDone: (id: string) => void;
@@ -195,7 +303,7 @@ export default function OnboardingGuide({
       }
       extra={
         <Button type="text" size="small" icon={<CloseOutlined />} onClick={onDismiss}>
-          不再显示
+          {dismissed ? "关闭" : "不再显示"}
         </Button>
       }
     >

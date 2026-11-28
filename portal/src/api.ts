@@ -27,10 +27,21 @@ export const userDisplayName = (user: User) => user.displayName.trim() || user.u
 
 export const isAdmin = (user: User) => user.roles.includes("admin");
 
+export type OnboardingState = {
+  dismissed: boolean;
+  done: string[];
+};
+
 // 当前登录的人：登录和 /me 接口在账号信息之外还带上平台自己的功能权限（管理员总有全部）。
 // platform 为 false 表示不能用门户：门户只显示“没有权限”，他只能直接打开自己能用的应用。
 // photo 是账号关联的成员的照片，没有时为空。stats 表示活跃度统计开着，门户要告诉他会记录使用时间。
-export type Me = User & { perms: string[]; platform: boolean; photo: string; stats: boolean };
+export type Me = User & {
+  perms: string[];
+  platform: boolean;
+  photo: string;
+  stats: boolean;
+  onboarding?: OnboardingState;
+};
 
 // 平台自己的功能权限，和 core/menus.go 里的 platformModule 一致。
 export type PlatformPerm = "settings" | "modules" | "members";
@@ -384,6 +395,9 @@ export const api = {
   homePrefs: () => request<HomePrefs>("/api/platform/me/home-prefs"),
   saveHomePrefs: (input: Partial<HomePrefs>) =>
     request<HomePrefs>("/api/platform/me/home-prefs", { method: "PUT", body: JSON.stringify(input) }),
+  onboarding: () => request<OnboardingState>("/api/platform/me/onboarding"),
+  saveOnboarding: (input: Partial<OnboardingState>) =>
+    request<OnboardingState>("/api/platform/me/onboarding", { method: "PUT", body: JSON.stringify(input) }),
   appAccess: () => request<Record<string, AppAccess>>("/api/platform/app-access"),
   setAppAccess: (id: string, access: AppAccess) => put("/api/platform/app-access/" + encodeURIComponent(id), access),
   appOpenModes: () => request<Record<string, AppOpenMode>>("/api/platform/app-open-modes"),

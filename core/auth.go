@@ -167,13 +167,19 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user *User) {
 		internalError(w, err)
 		return
 	}
+	onboarding, err := s.store.OnboardingState(r.Context(), user.ID)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, struct {
 		*User
-		Perms    []string `json:"perms"`
-		Platform bool     `json:"platform"`
-		Photo    string   `json:"photo"`
-		Stats    bool     `json:"stats"`
-	}{user, perms, appAllowed(user, platformModule, g), photo, stats})
+		Perms      []string        `json:"perms"`
+		Platform   bool            `json:"platform"`
+		Photo      string          `json:"photo"`
+		Stats      bool            `json:"stats"`
+		Onboarding OnboardingState `json:"onboarding"`
+	}{user, perms, appAllowed(user, platformModule, g), photo, stats, onboarding})
 }
 
 func (s *Server) currentUser(r *http.Request) (*User, error) {

@@ -238,6 +238,14 @@ CREATE TABLE IF NOT EXISTS user_home_prefs (
 	hidden_apps TEXT[] NOT NULL DEFAULT '{}',
 	updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- 每位登录用户自己的新手指引状态：关闭后不再自动打开，已完成步骤跨设备同步。
+CREATE TABLE IF NOT EXISTS user_onboarding (
+	user_id    BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	dismissed  BOOLEAN NOT NULL DEFAULT false,
+	done_steps TEXT[] NOT NULL DEFAULT '{}',
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `
 
 func (s *Store) Migrate(ctx context.Context) error {

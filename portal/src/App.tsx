@@ -250,7 +250,7 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
   // 每个标签被刷新的次数：平台自带的应用用它作 key 重新挂载，首页变了就重新取应用列表。
   const [reloads, setReloads] = useState<Record<string, number>>({});
   const [entryPath, setEntryPath] = useState(() => location.pathname);
-  const onboarding = useOnboarding(user.id);
+  const onboarding = useOnboarding(user.id, user.onboarding);
   const builtins = builtinAppsFor(user);
   const findBuiltin = (path: string) => builtins.find((app) => app.url === (builtinAliases[path] ?? path));
   useActivityBeat(tabs.active);
@@ -405,12 +405,13 @@ function Portal({ user, onMeChanged, onLogout }: { user: Me; onMeChanged: () => 
       >
         <div className="content" style={tabs.active !== PORTAL_TAB ? { display: "none" } : undefined}>
           {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
-          {apps && !onboarding.state.dismissed && (
+          {apps && onboarding.visible && (
             <OnboardingGuide
               user={user}
               hasModules={apps.length > 0}
               hasCustomTheme={theme.themes.length > 0 || skin !== "classic" || Boolean(wallpaper)}
               doneIds={onboarding.state.done}
+              dismissed={onboarding.state.dismissed}
               onNavigate={openLink}
               onMarkDone={onboarding.markDone}
               onToggleDone={onboarding.toggleDone}
