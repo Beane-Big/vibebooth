@@ -2,7 +2,8 @@
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  min-height: 100dvh;
+  min-height: 100vh;
+  min-height: var(--vb-vh);
   display: grid;
   grid-template-rows: 1fr auto;
   justify-items: center;

@@ -21,7 +21,20 @@ function embedded() {
   return true;
 }
 
+// 旧版 iOS Safari（< 15.4）不支持 100dvh，100vh 会把底部工具栏算进去导致页面和内嵌应用底部被遮挡。
+function installViewportFallback() {
+  if (typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("height", "100dvh")) return;
+  const sync = () => {
+    if (window.innerHeight > 0) document.documentElement.style.setProperty("--vb-vh", `${window.innerHeight}px`);
+  };
+  sync();
+  window.addEventListener("resize", sync);
+  window.addEventListener("orientationchange", sync);
+  window.addEventListener("pageshow", sync);
+}
+
 if (!embedded()) {
+  installViewportFallback();
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <ThemeProvider>

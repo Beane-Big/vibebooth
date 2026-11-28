@@ -11,8 +11,25 @@ body {
   body { background: var(--bg, #161618); }
 }
 
+/* 视口高度：现代浏览器用 100dvh（随 iOS Safari 底部地址栏收放动态调整）；
+   不支持 dvh 的旧版 iOS Safari 由 main.tsx 写入 window.innerHeight 兜底，避免内嵌应用底部被工具栏遮挡。 */
+:root {
+  --vb-vh: 100vh;
+}
+@supports (height: 100dvh) {
+  :root {
+    --vb-vh: 100dvh;
+  }
+}
+
+.portal-layout {
+  min-height: 100vh;
+  min-height: var(--vb-vh);
+}
+
 .center {
   min-height: 100vh;
+  min-height: var(--vb-vh);
   display: flex;
   flex-direction: column;
   align-items: center;

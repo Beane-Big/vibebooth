@@ -52,7 +52,7 @@ export default function Layout({
   }
 
   return (
-    <AntLayout className={skinClass(skin, activeTheme)} style={{ minHeight: "100vh", background: plain ? "var(--surface)" : undefined }}>
+    <AntLayout className={`portal-layout ${skinClass(skin, activeTheme)}`} style={{ background: plain ? "var(--surface)" : undefined }}>
       <AntLayout.Header className="topbar">
         {TopbarBackground && activeTheme && (
           // 主题的背景出错时不显示它，顶栏照常能用。
