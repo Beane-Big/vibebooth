@@ -66,7 +66,7 @@ export type ContextMenuState = {
 
 // 仿 iOS 隐藏文件夹图标：2×2 磨砂小方块 + 中央隐藏图标。
 export function HiddenFolderGlyph({ count }: { count: number }) {
-  const slots = Math.min(4, Math.max(1, count));
+  const slots = Math.min(4, Math.max(0, count));
   return (
     <span className="vb-hidden-glyph" aria-hidden="true">
       <span className="vb-hidden-glyph-grid">

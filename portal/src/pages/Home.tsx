@@ -192,11 +192,6 @@ export default function Home({
   const visibleItems = useMemo(() => orderedAll.filter((it) => !hiddenSet.has(it.key)), [orderedAll, hiddenSet]);
   const hiddenItems = useMemo(() => orderedAll.filter((it) => hiddenSet.has(it.key)), [orderedAll, hiddenSet]);
 
-  // 隐藏应用被全部取消隐藏或卸载后，自动关闭隐藏文件夹弹窗。
-  useEffect(() => {
-    if (hiddenOpen && hiddenItems.length === 0) setHiddenOpen(false);
-  }, [hiddenOpen, hiddenItems.length]);
-
   const savePrefs = useCallback(
     (patch: Partial<HomePrefs>) => {
       if (!canCustomize) return;
@@ -621,7 +616,7 @@ function themeApps({
     ...installingNew.map((it) => toThemeApp(it, false)),
   ];
 
-  if (hiddenCount > 0) {
+  if (handlers.canCustomize) {
     list.push({
       id: HIDDEN_FOLDER_ID,
       name: "已隐藏",
@@ -659,7 +654,7 @@ function TilesHome({
       {installingNew.map((item) => (
         <AppTile key={`installing:${item.key}`} item={item} isNew handlers={handlers} />
       ))}
-      {hiddenCount > 0 && <HiddenFolderTile count={hiddenCount} onOpen={onOpenHiddenFolder} />}
+      {handlers.canCustomize && <HiddenFolderTile count={hiddenCount} onOpen={onOpenHiddenFolder} />}
     </div>
   );
 }
@@ -680,7 +675,7 @@ function ClassicHome({
       {installingNew.map((item) => (
         <AppCard key={`installing:${item.key}`} item={item} isNew handlers={handlers} />
       ))}
-      {hiddenCount > 0 && <HiddenFolderCard count={hiddenCount} onOpen={onOpenHiddenFolder} />}
+      {handlers.canCustomize && <HiddenFolderCard count={hiddenCount} onOpen={onOpenHiddenFolder} />}
     </Row>
   );
 }
